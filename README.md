@@ -11,7 +11,7 @@ VASSAL's built-in module editor lets you edit a module or extension in isolation
 **Current capabilities:**
 
 1. Open a VASSAL module (`.vmod`) and one or more of its extensions (`.vmdx`) simultaneously.
-2. View the component hierarchy of each file as a tree, with component type names matching the VASSAL module editor.
+2. View the component hierarchy of each file as a tree, labelled like the VASSAL module editor — `configure name [Component Type]` (e.g. `World Maps [Map Window]`), so components of the same type can be told apart.
 3. Select one or more components using click, Shift-click (range), or Ctrl-click (discontiguous); or right-click to search by name.
 4. Move all selected components from one file's hierarchy into another, automatically copying any image assets they reference.
 5. Copy selected components into another file's hierarchy, creating duplicates without removing the originals. A copy duplicates only the selected components themselves — not their child components.

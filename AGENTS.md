@@ -24,9 +24,16 @@ Also: `make jar` / `make run` / `make clean` (see Makefile). No test suite yet. 
 |---|---|
 | `Main` | `SwingUtilities.invokeLater` entry point |
 | `model/VassalArchive` | Opens/saves a `.vmod` or `.vmdx` (ZIP + DOM). Tracks pending images. |
-| `model/ComponentNode` | Wraps a `org.w3c.dom.Element`; computes display label and collects image references from subtree |
+| `model/ComponentNode` | Wraps a `org.w3c.dom.Element`; computes the editor-style display label (see [Display names](#display-names)) and collects image references from subtree |
 | `gui/ArchivePanel` | `JPanel` containing a `JTree` built from `VassalArchive.getRootElement()` |
 | `gui/MainWindow` | Top-level `JFrame` — split pane of two `ArchivePanel`s, toolbar, status bar |
+
+### Display names
+
+`ComponentNode.getDisplayName()` mirrors VASSAL's editor tree, which renders each node as `configureName [Component Type]` (`ConfigureTree.ConfigureTreeNode.toString()` in the engine) — the component's editable name first, then its type in brackets. When a component has no configure name, only `[Component Type]` is shown.
+
+- **Component Type** comes from `DISPLAY_NAMES` (simple class name → editor label, sourced from VASSAL's `Editor.*.component_type` properties). Note the editor class for a deck is `DrawPile` ("Deck"), not the runtime `Deck` class.
+- **Configure name** is read from a *class-specific* XML attribute, because VASSAL routes a different attribute to `setConfigureName()` per class. `NAME_ATTRIBUTES` holds the exceptions (e.g. `Map`/`PrivateMap`/`PlayerHand` → `mapName`, widgets and `PieceSlot`/`CardSlot` → `entryName`, charts → `chartName`, `AboutScreen`/`HelpFile` → `title`, deck key commands → `menuText`, `Flare` → `flareName`, `ChessClock` → `side`). Classes not listed default to `name`, falling back to `FALLBACK_NAME_ATTRS` only when that is empty. This is what lets the utility distinguish, e.g., multiple Map Windows ("World Maps [Map Window]" vs "Impulse and Weather [Map Window]").
 
 ### Selection model
 

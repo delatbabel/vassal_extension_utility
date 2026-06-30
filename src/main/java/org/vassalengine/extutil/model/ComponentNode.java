@@ -90,11 +90,13 @@ public class ComponentNode {
         DISPLAY_NAMES.put("PieceWindow",                   "Game Piece Palette");
         DISPLAY_NAMES.put("PieceSlot",                     "Single piece");
         DISPLAY_NAMES.put("CardSlot",                      "Card");
+        DISPLAY_NAMES.put("DrawPile",                      "Deck");   // editor class for a deck
         DISPLAY_NAMES.put("Deck",                          "Deck");
 
         // Charts and help
         DISPLAY_NAMES.put("ChartWindow",                   "Chart Window Menu");
         DISPLAY_NAMES.put("Chart",                         "Chart");
+        DISPLAY_NAMES.put("HtmlChart",                     "HTML Chart");   // actual class name
         DISPLAY_NAMES.put("HTMLChart",                     "HTML Chart");
         DISPLAY_NAMES.put("AboutScreen",                   "About Screen");
         DISPLAY_NAMES.put("HelpFile",                      "Plain Text Help File");
@@ -176,6 +178,53 @@ public class ComponentNode {
         DISPLAY_NAMES.put("Chatter",                       "Chat Log");
     }
 
+    // Maps simple Java class name → the XML attribute that holds the component's
+    // "configure name" (the editable name shown in the VASSAL module editor).
+    // VASSAL routes one attribute per class to Configurable.setConfigureName();
+    // most classes use "name", so only the exceptions are listed here.  Classes
+    // absent from this map fall back to FALLBACK_NAME_ATTRS (starting with "name").
+    private static final Map<String, String> NAME_ATTRIBUTES = new HashMap<>();
+    static {
+        // Maps store their name in "mapName" (PrivateMap/PlayerHand extend Map)
+        NAME_ATTRIBUTES.put("Map",                  "mapName");
+        NAME_ATTRIBUTES.put("PrivateMap",           "mapName");
+        NAME_ATTRIBUTES.put("PlayerHand",           "mapName");
+
+        // Charts
+        NAME_ATTRIBUTES.put("Chart",                "chartName");
+        NAME_ATTRIBUTES.put("HtmlChart",            "chartName");
+        NAME_ATTRIBUTES.put("HTMLChart",            "chartName");
+
+        // Title-named components
+        NAME_ATTRIBUTES.put("AboutScreen",          "title");
+        NAME_ATTRIBUTES.put("HelpFile",             "title");
+
+        // Widgets and piece slots use "entryName"
+        NAME_ATTRIBUTES.put("TabWidget",            "entryName");
+        NAME_ATTRIBUTES.put("BoxWidget",            "entryName");
+        NAME_ATTRIBUTES.put("PanelWidget",          "entryName");
+        NAME_ATTRIBUTES.put("ListWidget",           "entryName");
+        NAME_ATTRIBUTES.put("MapWidget",            "entryName");
+        NAME_ATTRIBUTES.put("PieceSlot",            "entryName");
+        NAME_ATTRIBUTES.put("CardSlot",             "entryName");
+
+        // Deck key commands are named by their menu text
+        NAME_ATTRIBUTES.put("DeckGlobalKeyCommand", "menuText");
+        NAME_ATTRIBUTES.put("DeckSendKeyCommand",   "menuText");
+        NAME_ATTRIBUTES.put("DeckSortKeyCommand",   "menuText");
+
+        // Misc components with non-standard name attributes
+        NAME_ATTRIBUTES.put("ChangePropertyButton", "text");
+        NAME_ATTRIBUTES.put("SpecialDieFace",        "text");
+        NAME_ATTRIBUTES.put("ChessClock",            "side");
+        NAME_ATTRIBUTES.put("Flare",                 "flareName");
+    }
+
+    // Best-effort name attributes for classes not listed in NAME_ATTRIBUTES.
+    // "name" first (VASSAL's overwhelming default), then other common keys.
+    private static final String[] FALLBACK_NAME_ATTRS =
+            {"name", "entryName", "mapName", "chartName", "title", "description", "fileName"};
+
     private final Element element;
 
     public ComponentNode(Element element) {
@@ -187,9 +236,12 @@ public class ComponentNode {
     }
 
     /**
-     * Returns a human-readable label matching the VASSAL module editor naming conventions.
-     * Format: "Component Type Name [instance name]"
-     * For ExtensionElement: "Extension Element → target path"
+     * Returns a human-readable label matching the VASSAL module editor naming
+     * conventions.  VASSAL renders each tree node as
+     * <code>configureName [Component Type]</code> — the component's editable name
+     * first, then its type in brackets (see {@code ConfigureTree.ConfigureTreeNode}).
+     * When a component has no configure name only the bracketed type is shown.
+     * For ExtensionElement: "Extension Element → target path".
      */
     public String getDisplayName() {
         String tagName = element.getTagName();
@@ -202,11 +254,11 @@ public class ComponentNode {
         String simpleClass = shortClassName(tagName);
         String typeName = DISPLAY_NAMES.getOrDefault(simpleClass, simpleClass);
 
-        String instanceLabel = pickLabel(element);
+        String instanceLabel = pickLabel(element, simpleClass);
         if (instanceLabel != null && !instanceLabel.isEmpty()) {
-            return typeName + " [" + instanceLabel + "]";
+            return instanceLabel + " [" + typeName + "]";
         }
-        return typeName;
+        return "[" + typeName + "]";
     }
 
     /**
@@ -257,11 +309,27 @@ public class ComponentNode {
         return dot >= 0 ? fqn.substring(dot + 1) : fqn;
     }
 
-    private static String pickLabel(Element el) {
-        for (String attr : new String[]{"name", "entryName", "description", "title", "fileName"}) {
+    /**
+     * Returns the component's configure name (the editable name shown in the
+     * VASSAL editor), or null if it has none.
+     *
+     * For classes listed in {@link #NAME_ATTRIBUTES} the exact VASSAL name
+     * attribute is used, so the label matches the module editor.  Unlisted
+     * classes (which almost always use "name") fall back to a short list of
+     * common name attributes.
+     */
+    private static String pickLabel(Element el, String simpleClass) {
+        String attr = NAME_ATTRIBUTES.get(simpleClass);
+        String val = (attr != null) ? el.getAttribute(attr) : firstNonEmpty(el, FALLBACK_NAME_ATTRS);
+        if (val == null || val.isEmpty()) return null;
+        return val.length() > 60 ? val.substring(0, 57) + "..." : val;
+    }
+
+    private static String firstNonEmpty(Element el, String[] attrs) {
+        for (String attr : attrs) {
             String val = el.getAttribute(attr);
             if (val != null && !val.isEmpty()) {
-                return val.length() > 60 ? val.substring(0, 57) + "..." : val;
+                return val;
             }
         }
         return null;
