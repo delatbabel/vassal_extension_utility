@@ -74,7 +74,7 @@ Newly added subtrees (e.g. just-moved components) have no prior state and theref
 
 `ArchivePanel` uses `DISCONTIGUOUS_TREE_SELECTION`:
 - Click / Shift-click / Ctrl-click work as standard multi-select.
-- Right-click → "Search and select…" opens an input dialog; `ArchivePanel.selectMatching()` walks the subtree of the **currently selected node** (falling back to the root when nothing is selected) with `depthFirstEnumeration()`, skips the scope node itself, and calls `tree.setSelectionPaths()` with all **case-sensitive** partial matches. Scoping means a search under "Counters" never selects matches under another branch such as "Game Maps", and "HW" does not match "hw".
+- Right-click → "Search and select…" opens an input dialog; `ArchivePanel.selectMatching()` walks the subtree of the **currently selected node** (falling back to the root when nothing is selected) with `depthFirstEnumeration()`, skips the scope node itself, and calls `tree.setSelectionPaths()` with all **case-sensitive** partial matches. Scoping means a search under "Counters" never selects matches under another branch such as "Game Maps", and "HW" does not match "hw". The query is used **verbatim — never trimmed** — so spaces are significant: searching `" T "` matches "CHCOM T MiG7" but not "CHCOM MOT".
 - `getSelectedNodes()` → `List<DefaultMutableTreeNode>` (all selected; for source).
 - `getSelectedNode()` → first selected path (for destination parent).
 

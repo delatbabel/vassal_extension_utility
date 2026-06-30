@@ -282,7 +282,10 @@ public class ArchivePanel extends JPanel {
     /**
      * Opens an input dialog and selects all tree nodes <em>under the currently
      * selected component</em> whose display name contains the entered string.
-     * The match is <strong>case-sensitive</strong> ("HW" does not match "hw").
+     * The match is <strong>case-sensitive</strong> ("HW" does not match "hw")
+     * and <strong>space-significant</strong>: the query is used verbatim, with no
+     * leading, trailing, or internal spaces stripped, so searching for " T " finds
+     * "CHCOM T MiG7" but not "CHCOM MOT".
      * Scrolls to the first match and replaces the existing selection.
      *
      * The search is scoped to the subtree of the first selected node; when
@@ -297,12 +300,12 @@ public class ArchivePanel extends JPanel {
         String query = (String) JOptionPane.showInputDialog(
                 this,
                 "Select components under \"" + scopeLabel(scope) + "\"\n"
-                        + "whose name contains (case-sensitive):",
+                        + "whose name contains (case-sensitive; spaces are significant):",
                 "Search and Select",
                 JOptionPane.PLAIN_MESSAGE,
                 null, null, "");
         if (query == null) return;   // cancelled
-        selectMatching(query.trim(), scope);
+        selectMatching(query, scope);   // verbatim — spaces are part of the search
     }
 
     private void selectMatching(String query, DefaultMutableTreeNode scope) {
