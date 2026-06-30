@@ -111,6 +111,14 @@ Image files are stored under the `images/` prefix inside the ZIP. The XML refere
 
 Absolute paths beginning with `/images/` reference bundled VASSAL engine images rather than module images.
 
+**Game pieces reference images in element text, not attributes.** A `PieceSlot` (or `CardSlot`) stores its piece as a serialised definition in the element's text content, and the image filenames live inside it — e.g.:
+
+```xml
+<VASSAL.build.widget.PieceSlot entryName="Army/Corps" gpid="17023" ...>+/null/emb2;Activate;128;A;Flip;128;;;128;;;;1;false;0;0;Black _Corps.png,Black _CorpsBack.png;,+_Back;...	piece;;;USA.png;...</VASSAL.build.widget.PieceSlot>
+```
+
+Here `Black _Corps.png`, `Black _CorpsBack.png`, and `USA.png` are images, embedded among `;`-, `,`-, `/`-, tab- and backslash-delimited fields. Any tool moving pieces between archives must scan this text (not just attributes) to find every referenced image — see `ComponentNode.collectImageReferences`.
+
 ## Pre-defined Setup Files
 
 A `PredefinedSetup` component with `useFile="true"` references a bundled saved game via its `file` attribute, e.g.:

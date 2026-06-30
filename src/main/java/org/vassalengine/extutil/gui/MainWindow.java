@@ -382,11 +382,29 @@ public class MainWindow extends JFrame {
             dstElem = ((ComponentNode) dstNode.getUserObject()).getElement();
         }
 
+        // Grafting into an extension: when the target is an extension and the
+        // destination would be its top level (nothing selected, or the extension
+        // root selected), each component is wrapped in an ExtensionElement that
+        // targets its original module location, rather than recreated raw.
+        Element dstRoot = dst.getArchive().getRootElement();
+        boolean graftIntoExtension = dst.getArchive().isExtension()
+                && (recreateParents || (dstElem != null && dstElem.isSameNode(dstRoot)));
+
         // Confirm
         String srcSummary = srcNodes.size() == 1
                 ? "\"" + srcComps.get(0).getDisplayName() + "\""
                 : srcNodes.size() + " components";
-        if (recreateParents) {
+        if (graftIntoExtension) {
+            int confirm = JOptionPane.showConfirmDialog(this,
+                    verb + " " + srcSummary + " into the extension at the top level.\n\n"
+                    + "Each will be wrapped in an Extension Element targeting its original\n"
+                    + "location in the module's tree, so VASSAL grafts it back into the same\n"
+                    + "position.\n\n"
+                    + "Referenced images and Pre-defined setup files will be copied "
+                    + "to the destination archive.",
+                    "Graft into Extension", JOptionPane.OK_CANCEL_OPTION);
+            if (confirm != JOptionPane.OK_OPTION) return;
+        } else if (recreateParents) {
             int confirm = JOptionPane.showConfirmDialog(this,
                     "No destination parent is selected in the target panel.\n\n"
                     + "Copy the parent component(s) of " + srcSummary + " — every ancestor\n"
@@ -437,8 +455,14 @@ public class MainWindow extends JFrame {
             //     the destination up front (reusing equivalent existing elements),
             //     and any images / setup files those ancestors reference are queued too.
             List<Element> dstParents = new ArrayList<>(srcComps.size());
-            if (recreateParents) {
-                Element dstRoot = dstArchive.getRootElement();
+            if (graftIntoExtension) {
+                // Wrap each component in an ExtensionElement targeting its original
+                // module location; reuse one wrapper per distinct target.
+                for (ComponentNode comp : srcComps) {
+                    String target = moduleTargetPath(comp.getElement());
+                    dstParents.add(findOrCreateExtensionElement(dstDoc, dstRoot, target));
+                }
+            } else if (recreateParents) {
                 for (ComponentNode comp : srcComps) {
                     dstParents.add(ensureAncestorPath(comp.getElement(), dstDoc, dstRoot,
                             allImageRefs, allSetupFiles, srcImageNames));
@@ -649,6 +673,112 @@ public class MainWindow extends JFrame {
             }
         }
         return true;
+    }
+
+    // -----------------------------------------------------------------------
+    // Grafting into an extension
+    // -----------------------------------------------------------------------
+    //
+    // An extension (.vmdx) does not hold components directly: each is wrapped in a
+    // <VASSAL.build.module.ExtensionElement target="..."> whose target names the
+    // path, in the *parent module's* tree, of the component to graft into.  So a
+    // component moved/copied to the top level of an extension must be placed inside
+    // an ExtensionElement targeting its original parent, not appended raw (which
+    // VASSAL silently ignores).
+
+    private static final String EXTENSION_ELEMENT = "VASSAL.build.module.ExtensionElement";
+
+    /**
+     * Builds the {@code target} path for an {@link #EXTENSION_ELEMENT} that grafts
+     * {@code srcElem} back into the position its parent occupies in the module tree.
+     * The path is the chain of {@code className:configureName} tokens from the
+     * top-level module component down to {@code srcElem}'s immediate parent, encoded
+     * exactly as VASSAL's {@code ComponentPathBuilder}/{@code SequenceEncoder} do
+     * ('/'-joined tokens, ':'-joined class/name, delimiters backslash-escaped).
+     *
+     * If the source is itself an extension, an ancestor {@code ExtensionElement}'s
+     * own target is used as the prefix.  An empty result means "graft at the module
+     * root" (a direct child of {@code GameModule}).
+     */
+    private static String moduleTargetPath(Element srcElem) {
+        Element srcRoot = srcElem.getOwnerDocument().getDocumentElement();
+        List<String> tokens = new ArrayList<>();   // top-most first
+        String prefix = null;
+        Node p = srcElem.getParentNode();
+        while (p instanceof Element && !p.isSameNode(srcRoot)) {
+            Element e = (Element) p;
+            if (EXTENSION_ELEMENT.equals(e.getTagName())) {
+                String t = e.getAttribute("target");
+                if (t != null && !t.isEmpty()) prefix = t;
+                break;   // the target already encodes the module path to here
+            }
+            tokens.add(0, seqToken(e.getTagName(), new ComponentNode(e).getConfigureName()));
+            p = p.getParentNode();
+        }
+        String path = seqJoin('/', tokens);
+        if (prefix != null) {
+            // Both prefix and path are already '/'-encoded; splice with a literal '/'.
+            return path.isEmpty() ? prefix : prefix + "/" + path;
+        }
+        return path;
+    }
+
+    /**
+     * Finds the {@link #EXTENSION_ELEMENT} child of {@code extRoot} with the given
+     * target, or creates and appends one.  Reusing an existing wrapper keeps
+     * multiple components grafted to the same module location together.
+     */
+    private static Element findOrCreateExtensionElement(Document dstDoc, Element extRoot,
+                                                        String target) {
+        NodeList children = extRoot.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() == Node.ELEMENT_NODE
+                    && EXTENSION_ELEMENT.equals(((Element) child).getTagName())
+                    && target.equals(((Element) child).getAttribute("target"))) {
+                return (Element) child;
+            }
+        }
+        Element ee = dstDoc.createElement(EXTENSION_ELEMENT);
+        ee.setAttribute("target", target);
+        extRoot.appendChild(ee);
+        return ee;
+    }
+
+    // --- Minimal faithful port of VASSAL's SequenceEncoder string encoding ------
+
+    /** Encodes a {@code className:name} token (name may be null) like {@code SequenceEncoder(class, ':').append(name)}. */
+    private static String seqToken(String className, String name) {
+        StringBuilder buf = new StringBuilder();
+        seqAppend(buf, className, ':', false);
+        if (name != null) {
+            seqAppend(buf, name, ':', true);
+        }
+        return buf.toString();
+    }
+
+    /** Joins encoded tokens with {@code delim} like {@code SequenceEncoder(delim)}. */
+    private static String seqJoin(char delim, List<String> tokens) {
+        StringBuilder buf = new StringBuilder();
+        for (int i = 0; i < tokens.size(); i++) {
+            seqAppend(buf, tokens.get(i), delim, i > 0);
+        }
+        return buf.toString();
+    }
+
+    /** Appends one element to a SequenceEncoder-style buffer (delimiter-escaped, quoted when needed). */
+    private static void seqAppend(StringBuilder buf, String s, char delim, boolean addDelimiter) {
+        if (addDelimiter) buf.append(delim);
+        if (s == null || s.isEmpty()) return;
+        boolean quote = s.charAt(0) == '\\'
+                || (s.charAt(0) == '\'' && s.charAt(s.length() - 1) == '\'');
+        if (quote) buf.append('\'');
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == delim) buf.append('\\');
+            buf.append(c);
+        }
+        if (quote) buf.append('\'');
     }
 
     // -----------------------------------------------------------------------

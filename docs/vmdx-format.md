@@ -104,11 +104,15 @@ The root element is `VASSAL.build.module.ModuleExtension`. Rather than replicati
 
 Each path segment has the form `ClassName:identifierValue` where:
 - `ClassName` is the fully-qualified Java class name of the component
-- `identifierValue` is the component's `name`, `entryName`, or other identifying attribute
+- `identifierValue` is the component's configure name (`name`, `entryName`, etc.)
+
+The path is produced by VASSAL's `ComponentPathBuilder` using a `SequenceEncoder`: segments are joined with `/`, the class and name within a segment are joined with `:`, and any literal `/` or `:` inside a name is backslash-escaped (e.g. a list named `Black Symbol / Black Text` encodes as `...ListWidget:Black Symbol \/ Black Text`). An **empty** target means "graft at the module root" (a direct child of `GameModule`).
 
 **Example:** `VASSAL.build.module.ChartWindow:Charts/VASSAL.build.widget.TabWidget:tabs`
 
 This means: find the `ChartWindow` whose `name` is `"Charts"`, then find the `TabWidget` whose `entryName` is `"tabs"` inside it. The `ExtensionElement`'s child component will be appended to that `TabWidget`.
+
+> **Critical for moving components into an extension:** a component must be placed *inside* an `ExtensionElement` whose `target` is the module path of its original parent — appending the raw component directly under the `ModuleExtension` root makes VASSAL silently ignore it (it will not appear in the editor at all). When the Extension Utility moves/copies a component to the top level of an extension it builds this wrapper automatically (`MainWindow.moduleTargetPath()` reproduces the `ComponentPathBuilder`/`SequenceEncoder` encoding exactly).
 
 **Common target patterns:**
 

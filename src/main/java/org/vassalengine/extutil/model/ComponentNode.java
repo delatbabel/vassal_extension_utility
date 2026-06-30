@@ -269,11 +269,23 @@ public class ComponentNode {
         return collectImageReferences(archiveImageNames, true);
     }
 
+    // Delimiters separating fields inside a serialised game-piece definition
+    // (SequenceEncoder uses ';', layers use ',', traits are tab/backslash/newline
+    // separated, and piece/state are split by '/').  Splitting on these isolates
+    // candidate image filenames, which themselves contain none of these characters.
+    private static final java.util.regex.Pattern PIECE_FIELD_DELIM =
+            java.util.regex.Pattern.compile("[;,/\\t\\r\\n\\\\]+");
+
     /**
      * Collects image filenames referenced by this element.
      * When {@code recurse} is true the entire subtree is scanned (used by Move,
-     * which carries descendants); when false only this element's own attributes
-     * are scanned (used by Copy, which copies the element without its children).
+     * which carries descendants); when false only this element itself is scanned
+     * (used by Copy, which copies the element without its children).
+     *
+     * Both element attributes (e.g. {@code image}, {@code icon}) and element text
+     * content are scanned: game pieces ({@code PieceSlot}/{@code CardSlot}) store
+     * their image filenames inside the serialised piece definition held as the
+     * element's text, not in attributes.
      */
     public Set<String> collectImageReferences(Set<String> archiveImageNames, boolean recurse) {
         Set<String> refs = new HashSet<>();
@@ -285,23 +297,47 @@ public class ComponentNode {
                                   boolean recurse) {
         NamedNodeMap attrs = el.getAttributes();
         for (int i = 0; i < attrs.getLength(); i++) {
-            String value = attrs.item(i).getNodeValue();
-            if (value != null && !value.isEmpty()) {
-                String bare = value.startsWith("/images/") ? value.substring(8) :
-                              value.startsWith("images/") ? value.substring(7) : value;
-                if (archiveImageNames.contains(bare)) {
-                    refs.add(bare);
-                }
-            }
+            addImageIfKnown(attrs.item(i).getNodeValue(), archiveImageNames, refs);
         }
-        if (!recurse) return;
         NodeList children = el.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             Node child = children.item(i);
-            if (child.getNodeType() == Node.ELEMENT_NODE) {
+            short type = child.getNodeType();
+            if (type == Node.TEXT_NODE || type == Node.CDATA_SECTION_NODE) {
+                collectImageRefsFromText(child.getNodeValue(), archiveImageNames, refs);
+            } else if (recurse && type == Node.ELEMENT_NODE) {
                 collectImageRefs((Element) child, archiveImageNames, refs, true);
             }
         }
+    }
+
+    /** Adds a single attribute value to {@code refs} if it names a known image. */
+    private static void addImageIfKnown(String value, Set<String> archiveImageNames,
+                                        Set<String> refs) {
+        if (value == null || value.isEmpty()) return;
+        String bare = stripImagesPrefix(value);
+        if (archiveImageNames.contains(bare)) {
+            refs.add(bare);
+        }
+    }
+
+    /** Tokenises a serialised piece definition and adds any tokens that name known images. */
+    private static void collectImageRefsFromText(String text, Set<String> archiveImageNames,
+                                                 Set<String> refs) {
+        if (text == null || text.isEmpty()) return;
+        for (String token : PIECE_FIELD_DELIM.split(text)) {
+            if (token.isEmpty()) continue;
+            String bare = stripImagesPrefix(token);
+            if (archiveImageNames.contains(bare)) {
+                refs.add(bare);
+            }
+        }
+    }
+
+    private static String stripImagesPrefix(String value) {
+        if (value.startsWith("/images/")) return value.substring(8);
+        if (value.startsWith("images/"))  return value.substring(7);
+        return value;
     }
 
     /** VASSAL class whose {@code file} attribute names a bundled {@code .vsav} save file. */
@@ -348,17 +384,28 @@ public class ComponentNode {
 
     /**
      * Returns the component's configure name (the editable name shown in the
-     * VASSAL editor), or null if it has none.
+     * VASSAL editor) exactly as stored, or null if it has none.  Unlike the tree
+     * label this is never truncated, so it is safe to use when building the
+     * {@code target} path of an {@code ExtensionElement}, which VASSAL matches
+     * against {@code Configurable.getConfigureName()}.
      *
      * For classes listed in {@link #NAME_ATTRIBUTES} the exact VASSAL name
-     * attribute is used, so the label matches the module editor.  Unlisted
-     * classes (which almost always use "name") fall back to a short list of
-     * common name attributes.
+     * attribute is used; unlisted classes (which almost always use "name") fall
+     * back to a short list of common name attributes.
      */
-    private static String pickLabel(Element el, String simpleClass) {
+    public String getConfigureName() {
+        return rawConfigureName(element, shortClassName(element.getTagName()));
+    }
+
+    private static String rawConfigureName(Element el, String simpleClass) {
         String attr = NAME_ATTRIBUTES.get(simpleClass);
         String val = (attr != null) ? el.getAttribute(attr) : firstNonEmpty(el, FALLBACK_NAME_ATTRS);
-        if (val == null || val.isEmpty()) return null;
+        return (val == null || val.isEmpty()) ? null : val;
+    }
+
+    private static String pickLabel(Element el, String simpleClass) {
+        String val = rawConfigureName(el, simpleClass);
+        if (val == null) return null;
         return val.length() > 60 ? val.substring(0, 57) + "..." : val;
     }
 
