@@ -23,7 +23,7 @@ Also: `make jar` / `make run` / `make clean` (see Makefile). No test suite yet. 
 | Class | Role |
 |---|---|
 | `Main` | `SwingUtilities.invokeLater` entry point |
-| `model/VassalArchive` | Opens/saves a `.vmod` or `.vmdx` (ZIP + DOM). Tracks pending images/files/deletions. `createExtension(module)` builds a new empty extension; `save()`/`saveAs(file)` write atomically (see [New extension & Save As](#new-extension--save-as)). |
+| `model/VassalArchive` | Opens/saves a `.vmod` or `.vmdx` (ZIP + DOM). Tracks pending images/files/deletions. `createExtension(module)` builds a new empty extension; `save()`/`saveAs(file)` write atomically (see [New extension & Save As](#new-extension--save-as)); `findUnusedImages()`/`removeImage(name)` back the unused-image tool (see [Remove unused images](#remove-unused-images)). |
 | `model/RecentFilesStore` | Persists the 5 most-recently-opened files per panel to `~/.vassal-extension-utility/recent-files.properties` (see [Recent files](#recent-files)) |
 | `model/ComponentNode` | Wraps a `org.w3c.dom.Element`; computes the editor-style display label (see [Display names](#display-names)) and collects image references from subtree |
 | `gui/ArchivePanel` | `JPanel` containing a `JTree` built from `VassalArchive.getRootElement()`; `refresh()` preserves expansion/selection/scroll across rebuilds (see [Tree state preservation](#tree-state-preservation)) |
@@ -52,6 +52,12 @@ Also: `make jar` / `make run` / `make clean` (see Makefile). No test suite yet. 
 **File → Save Extension As… (right)** (`saveArchiveAs(rightPanel)`) prompts for a destination, defaulting to `moduleExtensionDir()` — the conventional sibling directory named like the module file with `.vmod` replaced by `_ext` (e.g. `EuropaNewMapV090.vmod` → `EuropaNewMapV090_ext/`) — **creating that directory** if absent. It forces a `.vmdx` extension and confirms overwrite.
 
 Saving is unified in `VassalArchive.writeArchive(source, target)`: it copies surviving entries from `source` (the current file, or **null** for a brand-new archive — then nothing is copied), then writes pending images, pending files, and the rewritten `buildFile.xml`, and atomically moves the temp file into place. `save()` writes back to the existing file (throws if there is none); `saveAs(target)` writes to a new file (creating parent dirs) and adopts it. `saveAll()` routes any modified archive with no file through Save As.
+
+### Remove unused images
+
+**Tools → Remove Unused Images (left/right)…** (`MainWindow.removeUnusedImages`) duplicates VASSAL's tool of the same name. `VassalArchive.findUnusedImages()` returns the archive's image entries minus everything `ComponentNode.collectReferencedImages()` finds referenced across the whole build tree (attributes **and** piece-definition text — the same scan used by Move/Copy — plus the legacy suffix-less `.gif` fall-back VASSAL applies, which errs toward keeping an image). For an extension this naturally operates on the extension's own images and components.
+
+The dialog lists the unreferenced images in a multi-select `JList`, all pre-selected; the user may deselect any to keep (detection is heuristic — an image could be used by custom code, hence the confirmation). Confirmed images are dropped via `VassalArchive.removeImage(name)`, which queues the `images/<name>` entry in `pendingDeletions` and drops it from the live image set — **applied on the next save**, like every other edit. Nothing is deleted from disk until the user saves.
 
 ### Tree state preservation
 

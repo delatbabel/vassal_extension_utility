@@ -150,6 +150,19 @@ public class MainWindow extends JFrame {
         fileMenu.add(quit);
 
         bar.add(fileMenu);
+
+        JMenu toolsMenu = new JMenu("Tools");
+        toolsMenu.setMnemonic('T');
+
+        JMenuItem unusedLeft = new JMenuItem("Remove Unused Images (left)…");
+        unusedLeft.addActionListener(e -> removeUnusedImages(leftPanel));
+        JMenuItem unusedRight = new JMenuItem("Remove Unused Images (right)…");
+        unusedRight.addActionListener(e -> removeUnusedImages(rightPanel));
+
+        toolsMenu.add(unusedLeft);
+        toolsMenu.add(unusedRight);
+        bar.add(toolsMenu);
+
         return bar;
     }
 
@@ -381,6 +394,64 @@ public class MainWindow extends JFrame {
             return ext.getFile().getName();
         }
         return "NewExtension.vmdx";
+    }
+
+    // -----------------------------------------------------------------------
+    // Remove unused images
+    // -----------------------------------------------------------------------
+
+    /**
+     * Finds images in {@code panel}'s archive that are not referenced by any
+     * component and, after user confirmation, marks the chosen ones for removal
+     * (written out on the next save).  Mirrors VASSAL's "Remove Unused Images".
+     */
+    private void removeUnusedImages(ArchivePanel panel) {
+        VassalArchive va = panel.getArchive();
+        if (va == null) {
+            status("Open a file in the " + (panel == leftPanel ? "left" : "right")
+                    + " panel first.");
+            return;
+        }
+
+        Set<String> unused = va.findUnusedImages();
+        if (unused.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "No unused images found in \"" + va.getDisplayName() + "\".",
+                    "Remove Unused Images", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        // Pre-select every unused image; the user can deselect any to keep.
+        JList<String> list = new JList<>(unused.toArray(new String[0]));
+        list.setSelectionInterval(0, unused.size() - 1);
+        list.setVisibleRowCount(Math.min(16, unused.size()));
+        JScrollPane scroll = new JScrollPane(list);
+        scroll.setPreferredSize(new Dimension(380, 320));
+
+        JPanel content = new JPanel(new BorderLayout(6, 6));
+        content.add(new JLabel("<html><b>" + unused.size()
+                + "</b> image(s) appear to be unreferenced in \"" + va.getDisplayName() + "\".<br>"
+                + "They may still be used by custom code. Select the ones to remove:</html>"),
+                BorderLayout.NORTH);
+        content.add(scroll, BorderLayout.CENTER);
+
+        int choice = JOptionPane.showConfirmDialog(this, content,
+                "Remove Unused Images", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (choice != JOptionPane.OK_OPTION) return;
+
+        List<String> selected = list.getSelectedValuesList();
+        if (selected.isEmpty()) {
+            status("No images selected — nothing removed.");
+            return;
+        }
+
+        for (String img : selected) {
+            va.removeImage(img);
+        }
+        panel.refresh();   // refresh the panel title (modified marker)
+        updateRoleBorders();
+        status(String.format("Marked %d unused image(s) for removal from \"%s\" — Save to apply.",
+                selected.size(), va.getFile() != null ? va.getFile().getName() : va.getDisplayName()));
     }
 
     /**

@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -268,6 +269,36 @@ public class VassalArchive {
         pendingFiles.remove(entryName);
         pendingDeletions.add(entryName);
         modified = true;
+    }
+
+    /**
+     * Marks an image (bare name) to be dropped from this archive on the next save,
+     * and removes it from the live image set.  No effect if the image is absent.
+     */
+    public void removeImage(String bareName) {
+        removeEntry(IMAGE_DIR + bareName);
+        imageNames.remove(bareName);
+        pendingImages.remove(bareName);
+    }
+
+    // -----------------------------------------------------------------------
+    // Unused images
+    // -----------------------------------------------------------------------
+
+    /**
+     * Returns the bare names of images present in this archive that are not
+     * referenced by any component in its build tree — the candidates for VASSAL's
+     * "Remove Unused Images" operation.  Detection is a heuristic (an image may
+     * still be used by custom code), so removal is always user-confirmed; the
+     * legacy suffix-less {@code .gif} reference form is honoured (see
+     * {@link ComponentNode#collectReferencedImages}).
+     */
+    public Set<String> findUnusedImages() {
+        Set<String> referenced =
+                new ComponentNode(getRootElement()).collectReferencedImages(imageNames);
+        Set<String> unused = new TreeSet<>(imageNames);
+        unused.removeAll(referenced);
+        return unused;
     }
 
     // -----------------------------------------------------------------------

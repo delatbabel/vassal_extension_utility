@@ -17,6 +17,7 @@ VASSAL's built-in module editor lets you edit a module or extension in isolation
 5. Copy selected components into another file's hierarchy, creating duplicates without removing the originals. A copy duplicates only the selected components themselves — not their child components.
 6. Reopen recent files from **File → Open Recent …** — the 5 most-recently-opened files for each panel are remembered between sessions.
 7. Create a new empty extension for the loaded module (**File → New Extension**) and save it with **File → Save Extension As…**, which defaults to the module's `_ext` directory (creating it if needed).
+8. Remove unused (unreferenced) images from a module or extension (**Tools → Remove Unused Images**), after reviewing and confirming the list — mirroring the VASSAL editor's tool of the same name.
 
 ## Building
 
@@ -59,7 +60,8 @@ java -jar target/extension-utility-1.0-jar-with-dependencies.jar
 6. Images referenced by any transferred component are automatically copied to the destination archive — including the counter images embedded in game pieces (`PieceSlot`/`CardSlot`), whose filenames live in the piece definition rather than in attributes. Images are **never** removed from the source (the same image may be used by other components that remain). The saved-game file (`.vsav`) of any **Pre-defined setup** is also copied — and on a **Move** it is genuinely moved: removed from the source once no remaining Pre-defined setup there still references it (so a `.vsav` shared by another setup is kept).
 7. If both a parent and its child are selected, only the parent is transferred (on a move the child is carried with it automatically; on a copy the child is excluded along with all other children).
 8. After each transfer the trees are redrawn, but your view is kept: branches you had expanded stay expanded, collapsed ones stay collapsed, your selection is retained, and the scroll position stays in approximately the same place.
-9. **File → Save All** (or Ctrl+S) writes all modified archives back to disk.
+9. **Tools → Remove Unused Images** (left or right panel) lists the images in that archive that no component references. Review the list — deselect any you want to keep (they could be used by custom code) — and confirm to mark the rest for removal. The images are deleted when you save.
+10. **File → Save All** (or Ctrl+S) writes all modified archives back to disk.
 
 ## File Format Documentation
 

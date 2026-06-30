@@ -289,49 +289,72 @@ public class ComponentNode {
      */
     public Set<String> collectImageReferences(Set<String> archiveImageNames, boolean recurse) {
         Set<String> refs = new HashSet<>();
-        collectImageRefs(element, archiveImageNames, refs, recurse);
+        collectImageRefs(element, archiveImageNames, refs, recurse, false);
+        return refs;
+    }
+
+    /** Image file suffixes VASSAL recognises (see {@code ImageUtils.IMAGE_SUFFIXES}). */
+    private static final String[] IMAGE_SUFFIXES = {".gif", ".png", ".svg", ".jpg", ".jpeg"};
+
+    /**
+     * Collects every archive image referenced anywhere in this element's subtree —
+     * used to decide which images are unused.  Like {@link #collectImageReferences}
+     * but with the legacy fall-back VASSAL applies in its "Remove Unused Images"
+     * tool: a reference that omits the file suffix (e.g. {@code "foo"}) also counts
+     * as a reference to {@code "foo.gif"}.  This errs toward keeping an image, which
+     * is the safe direction when deciding what to delete.
+     */
+    public Set<String> collectReferencedImages(Set<String> archiveImageNames) {
+        Set<String> refs = new HashSet<>();
+        collectImageRefs(element, archiveImageNames, refs, true, true);
         return refs;
     }
 
     private void collectImageRefs(Element el, Set<String> archiveImageNames, Set<String> refs,
-                                  boolean recurse) {
+                                  boolean recurse, boolean gifFallback) {
         NamedNodeMap attrs = el.getAttributes();
         for (int i = 0; i < attrs.getLength(); i++) {
-            addImageIfKnown(attrs.item(i).getNodeValue(), archiveImageNames, refs);
+            matchImage(attrs.item(i).getNodeValue(), archiveImageNames, refs, gifFallback);
         }
         NodeList children = el.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             Node child = children.item(i);
             short type = child.getNodeType();
             if (type == Node.TEXT_NODE || type == Node.CDATA_SECTION_NODE) {
-                collectImageRefsFromText(child.getNodeValue(), archiveImageNames, refs);
+                String text = child.getNodeValue();
+                if (text != null && !text.isEmpty()) {
+                    for (String token : PIECE_FIELD_DELIM.split(text)) {
+                        matchImage(token, archiveImageNames, refs, gifFallback);
+                    }
+                }
             } else if (recurse && type == Node.ELEMENT_NODE) {
-                collectImageRefs((Element) child, archiveImageNames, refs, true);
+                collectImageRefs((Element) child, archiveImageNames, refs, true, gifFallback);
             }
         }
     }
 
-    /** Adds a single attribute value to {@code refs} if it names a known image. */
-    private static void addImageIfKnown(String value, Set<String> archiveImageNames,
-                                        Set<String> refs) {
+    /**
+     * Adds {@code value} (an attribute value or piece-definition token) to
+     * {@code refs} if it names a known archive image.  With {@code gifFallback},
+     * a suffix-less value also matches {@code value + ".gif"}.
+     */
+    private static void matchImage(String value, Set<String> archiveImageNames,
+                                   Set<String> refs, boolean gifFallback) {
         if (value == null || value.isEmpty()) return;
         String bare = stripImagesPrefix(value);
         if (archiveImageNames.contains(bare)) {
             refs.add(bare);
+        } else if (gifFallback && !hasImageSuffix(bare) && archiveImageNames.contains(bare + ".gif")) {
+            refs.add(bare + ".gif");
         }
     }
 
-    /** Tokenises a serialised piece definition and adds any tokens that name known images. */
-    private static void collectImageRefsFromText(String text, Set<String> archiveImageNames,
-                                                 Set<String> refs) {
-        if (text == null || text.isEmpty()) return;
-        for (String token : PIECE_FIELD_DELIM.split(text)) {
-            if (token.isEmpty()) continue;
-            String bare = stripImagesPrefix(token);
-            if (archiveImageNames.contains(bare)) {
-                refs.add(bare);
-            }
+    private static boolean hasImageSuffix(String name) {
+        String lower = name.toLowerCase();
+        for (String suffix : IMAGE_SUFFIXES) {
+            if (lower.endsWith(suffix)) return true;
         }
+        return false;
     }
 
     private static String stripImagesPrefix(String value) {
