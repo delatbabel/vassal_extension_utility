@@ -13,7 +13,9 @@ import org.vassalengine.extutil.model.ComponentNode;
 import org.vassalengine.extutil.model.VassalArchive;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -21,6 +23,7 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import java.awt.*;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -41,6 +44,10 @@ import java.util.Set;
  *      - Ctrl-click to add or remove individual items.
  *      - Right-click → "Search and select…" to select by partial name match.
  *   3. Single-click one component in the other panel as the destination parent.
+ *      (If nothing is selected there, you will instead be offered the option to
+ *      recreate each source component's parent path — every ancestor up to the
+ *      root, without their other children — in the target panel and transfer the
+ *      components into the recreated location.)
  *   4. Either:
  *      - Click "Move →" or "← Move" to move all selected source components
  *        (with their children) into the destination parent.  The originals are
@@ -227,18 +234,27 @@ public class MainWindow extends JFrame {
     // -----------------------------------------------------------------------
 
     /**
-     * Moves or copies all selected components from src into the selected parent
-     * in dst.
+     * Moves or copies all selected components from src into dst.
+     *
+     * The destination parent is determined as follows:
+     *   - If a node is selected in the target panel, every source component is
+     *     transferred into it.
+     *   - If nothing is selected in the target panel, the user is offered the
+     *     chance to recreate each source component's ancestor path: every parent
+     *     up to the root is shallow-cloned (without its other children) into the
+     *     target archive, and the component is then transferred into the
+     *     recreated parent.  Cancelling aborts the whole operation.
      *
      * Steps:
      *   1. Collect all selected source nodes; filter out descendants of other
      *      selected nodes (transferring a parent already carries its children
      *      on a Move; on a Copy a descendant of another selected node would be
      *      redundant since the parent's own copy keeps it grouped).
-     *   2. Gather all image references across every node to be transferred.
+     *   2. Gather all image references across every node to be transferred (and,
+     *      when recreating parents, the images referenced by those parents).
      *   3. Copy any missing images to the destination archive.
      *   4. For each source element: clone into the destination document
-     *      (deep for Move, shallow for Copy), append to the destination parent,
+     *      (deep for Move, shallow for Copy), append to its destination parent,
      *      and — for Move only — remove from the source document.
      *   5. Rebuild the affected trees.
      *
@@ -267,14 +283,6 @@ public class MainWindow extends JFrame {
             status("Select one or more components in the source panel first.");
             return;
         }
-        if (dstNode == null) {
-            status("Select a destination parent in the target panel first.");
-            return;
-        }
-        if (!(dstNode.getUserObject() instanceof ComponentNode)) {
-            status("Select a valid destination parent node.");
-            return;
-        }
 
         // Remove nodes whose ancestor is also in the selection — transferring the
         // ancestor already accounts for the descendant.
@@ -290,35 +298,75 @@ public class MainWindow extends JFrame {
             srcComps.add((ComponentNode) n.getUserObject());
         }
 
-        ComponentNode dstComp = (ComponentNode) dstNode.getUserObject();
-        Element dstElem = dstComp.getElement();
+        // Determine the destination parent.  With a node selected in the target
+        // panel everything goes under it; with nothing selected we instead offer
+        // to recreate each source component's ancestor path under the target root.
+        boolean recreateParents = (dstNode == null);
+        Element dstElem = null;
+        if (!recreateParents) {
+            if (!(dstNode.getUserObject() instanceof ComponentNode)) {
+                status("Select a valid destination parent node.");
+                return;
+            }
+            dstElem = ((ComponentNode) dstNode.getUserObject()).getElement();
+        }
 
         // Confirm
         String srcSummary = srcNodes.size() == 1
                 ? "\"" + srcComps.get(0).getDisplayName() + "\""
                 : srcNodes.size() + " components";
-        String childNote = copy
-                ? "\n\nOnly the selected component(s) will be copied — their child components will not."
-                : "";
-        int confirm = JOptionPane.showConfirmDialog(this,
-                verb + " " + srcSummary + "\n  into  \""
-                + dstComp.getDisplayName() + "\"?\n\n"
-                + "Referenced images will be copied to the destination archive."
-                + childNote,
-                "Confirm " + verb, JOptionPane.OK_CANCEL_OPTION);
-        if (confirm != JOptionPane.OK_OPTION) return;
+        if (recreateParents) {
+            int confirm = JOptionPane.showConfirmDialog(this,
+                    "No destination parent is selected in the target panel.\n\n"
+                    + "Copy the parent component(s) of " + srcSummary + " — every ancestor\n"
+                    + "up to the root, without their other children — into the target panel,\n"
+                    + "then " + verb.toLowerCase() + " " + srcSummary
+                    + " into the recreated location?\n\n"
+                    + "Referenced images will be copied to the destination archive.",
+                    "Recreate Parent Path", JOptionPane.OK_CANCEL_OPTION);
+            if (confirm != JOptionPane.OK_OPTION) return;
+        } else {
+            String childNote = copy
+                    ? "\n\nOnly the selected component(s) will be copied — their child components will not."
+                    : "";
+            int confirm = JOptionPane.showConfirmDialog(this,
+                    verb + " " + srcSummary + "\n  into  \""
+                    + ((ComponentNode) dstNode.getUserObject()).getDisplayName() + "\"?\n\n"
+                    + "Referenced images will be copied to the destination archive."
+                    + childNote,
+                    "Confirm " + verb, JOptionPane.OK_CANCEL_OPTION);
+            if (confirm != JOptionPane.OK_OPTION) return;
+        }
 
         try {
             VassalArchive srcArchive = src.getArchive();
             VassalArchive dstArchive = dst.getArchive();
             Document dstDoc = dstArchive.getBuildDocument();
+            Set<String> srcImageNames = srcArchive.getImageNames();
 
             // 1. Collect image references from all source components in one pass.
             //    Move carries the full subtree (recurse); Copy duplicates only the
             //    element itself, so only its own attributes are scanned.
             Set<String> allImageRefs = new HashSet<>();
             for (ComponentNode comp : srcComps) {
-                allImageRefs.addAll(comp.collectImageReferences(srcArchive.getImageNames(), !copy));
+                allImageRefs.addAll(comp.collectImageReferences(srcImageNames, !copy));
+            }
+
+            // 1b. Resolve each source component's destination parent.  When
+            //     recreating parents, the ancestor chain is shallow-cloned into
+            //     the destination up front (reusing equivalent existing elements),
+            //     and any images those ancestors reference are queued too.
+            List<Element> dstParents = new ArrayList<>(srcComps.size());
+            if (recreateParents) {
+                Element dstRoot = dstArchive.getRootElement();
+                for (ComponentNode comp : srcComps) {
+                    dstParents.add(ensureAncestorPath(
+                            comp.getElement(), dstDoc, dstRoot, allImageRefs, srcImageNames));
+                }
+            } else {
+                for (int i = 0; i < srcComps.size(); i++) {
+                    dstParents.add(dstElem);
+                }
             }
 
             // 2. Copy images not already present in the destination
@@ -333,7 +381,7 @@ public class MainWindow extends JFrame {
                 }
             }
 
-            // 3. Transfer each source element
+            // 3. Transfer each source element into its resolved destination parent
             int transferred = 0;
             for (int i = 0; i < srcNodes.size(); i++) {
                 Element srcElem = srcComps.get(i).getElement();
@@ -346,7 +394,7 @@ public class MainWindow extends JFrame {
                 }
                 // Deep import for Move (carry children); shallow for Copy (element only).
                 Node imported = dstDoc.importNode(srcElem, !copy);
-                dstElem.appendChild(imported);
+                dstParents.get(i).appendChild(imported);
                 if (!copy) {
                     srcParent.removeChild(srcElem);
                 }
@@ -402,6 +450,85 @@ public class MainWindow extends JFrame {
             cursor = (DefaultMutableTreeNode) cursor.getParent();
         }
         return false;
+    }
+
+    /**
+     * Recreates {@code srcElem}'s chain of ancestors — every parent from just
+     * below the source root down to its immediate parent — under {@code dstRoot}
+     * in the destination document, and returns the destination element that
+     * corresponds to {@code srcElem}'s immediate parent.
+     *
+     * Each ancestor is shallow-cloned (its own attributes only, none of its
+     * children), so the recreated path carries no siblings of the selected
+     * component.  An ancestor is reused rather than re-created when the
+     * destination already contains an equivalent element (same tag name and
+     * attributes) at that level — this consolidates shared paths across multiple
+     * selected components and avoids duplicating pre-existing destination nodes.
+     *
+     * Images referenced by the recreated ancestors' own attributes are added to
+     * {@code imageRefsOut} so they can be copied alongside the components.
+     *
+     * The source root maps onto {@code dstRoot}; if the component is already a
+     * direct child of the source root, {@code dstRoot} itself is returned.
+     */
+    private static Element ensureAncestorPath(Element srcElem, Document dstDoc, Element dstRoot,
+                                              Set<String> imageRefsOut, Set<String> srcImageNames) {
+        Element srcRoot = srcElem.getOwnerDocument().getDocumentElement();
+
+        // Walk up from the immediate parent, collecting ancestors below the root.
+        List<Element> ancestors = new ArrayList<>();
+        Node p = srcElem.getParentNode();
+        while (p instanceof Element && !p.isSameNode(srcRoot)) {
+            ancestors.add((Element) p);
+            p = p.getParentNode();
+        }
+        Collections.reverse(ancestors);   // top-most first, to descend from dstRoot
+
+        Element cursor = dstRoot;
+        for (Element anc : ancestors) {
+            Element match = findMatchingChild(cursor, anc);
+            if (match == null) {
+                match = (Element) dstDoc.importNode(anc, false);   // shallow: no children
+                cursor.appendChild(match);
+            }
+            imageRefsOut.addAll(
+                    new ComponentNode(anc).collectImageReferences(srcImageNames, false));
+            cursor = match;
+        }
+        return cursor;
+    }
+
+    /**
+     * Returns the first child element of {@code parent} that is equivalent to
+     * {@code template} (same tag name and identical attributes), or {@code null}
+     * if none exists.
+     */
+    private static Element findMatchingChild(Element parent, Element template) {
+        NodeList children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() == Node.ELEMENT_NODE
+                    && sameElement((Element) child, template)) {
+                return (Element) child;
+            }
+        }
+        return null;
+    }
+
+    /** True when two elements have the same tag name and identical attribute sets. */
+    private static boolean sameElement(Element a, Element b) {
+        if (!a.getTagName().equals(b.getTagName())) return false;
+        NamedNodeMap aAttrs = a.getAttributes();
+        if (aAttrs.getLength() != b.getAttributes().getLength()) return false;
+        for (int i = 0; i < aAttrs.getLength(); i++) {
+            Node attr = aAttrs.item(i);
+            String name = attr.getNodeName();
+            if (!b.hasAttribute(name)
+                    || !attr.getNodeValue().equals(b.getAttribute(name))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // -----------------------------------------------------------------------

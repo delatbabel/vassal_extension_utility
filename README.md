@@ -46,6 +46,7 @@ java -jar target/extension-utility-1.0-jar-with-dependencies.jar
    - **Ctrl-click** — add or remove individual components from the selection.
    - **Right-click → Search and select…** — type a string; all components whose name contains that string (case-insensitive) are selected automatically.
 4. **Single-click one component** in the other panel to mark it as the **destination parent**.
+   - If you leave the target panel with **nothing selected**, transferring will instead ask whether to **recreate the parent path**: every ancestor of each selected component — all the way up to the root — is copied into the target panel (without their other children), and the components are then transferred into that recreated location. Choose **Cancel** to abort.
 5. Transfer the selection into the destination parent:
    - Click **Move →** (or **← Move**) to move all selected source components, together with their children. The originals are removed from the source.
    - Click **Copy →** (or **← Copy**) to duplicate the selected components into the destination parent. Only the components themselves are copied — **their child components are not** — and the originals are retained.
