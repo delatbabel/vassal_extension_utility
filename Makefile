@@ -23,6 +23,7 @@ help:
 	@echo "VASSAL Extension Utility — available targets:"
 	@echo ""
 	@echo "  compile    Compile Java sources"
+	@echo "  build      Compile Java sources"
 	@echo "  test       Run unit tests"
 	@echo "  jar        Build executable fat JAR ($(DISTJAR))"
 	@echo "  run        Run the application"
@@ -30,6 +31,8 @@ help:
 	@echo "  clean      Remove all build artefacts"
 	@echo ""
 	@echo "  version    Print current version"
+
+build:  compile
 
 compile:
 	$(MVN) compile
