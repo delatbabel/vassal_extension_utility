@@ -10,6 +10,7 @@ package org.vassalengine.extutil.gui;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vassalengine.extutil.model.ComponentNode;
+import org.vassalengine.extutil.model.RecentFilesStore;
 import org.vassalengine.extutil.model.VassalArchive;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -66,6 +67,9 @@ public class MainWindow extends JFrame {
     private final ArchivePanel leftPanel  = new ArchivePanel();
     private final ArchivePanel rightPanel = new ArchivePanel();
     private final JLabel statusBar = new JLabel(" ");
+
+    private final RecentFilesStore recentFiles = new RecentFilesStore();
+    private final JMenu recentMenu = new JMenu("Open Recent …");
 
     public MainWindow() {
         super("VASSAL Extension Utility");
@@ -127,6 +131,8 @@ public class MainWindow extends JFrame {
         fileMenu.addSeparator();
         fileMenu.add(openLeft);
         fileMenu.add(openRight);
+        fileMenu.add(recentMenu);
+        rebuildRecentMenu();
         fileMenu.addSeparator();
         fileMenu.add(saveAll);
         fileMenu.addSeparator();
@@ -215,18 +221,76 @@ public class MainWindow extends JFrame {
 
         if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
 
-        File chosen = fc.getSelectedFile();
+        openArchive(panel, fc.getSelectedFile());
+    }
+
+    /**
+     * Opens {@code file} into {@code panel}, records it in the panel's recent-files
+     * list, and refreshes the "Open Recent" menu.  On failure the error is shown;
+     * if the file no longer exists it is pruned from the recent list.
+     */
+    private void openArchive(ArchivePanel panel, File file) {
         try {
-            VassalArchive va = VassalArchive.open(chosen);
+            VassalArchive va = VassalArchive.open(file);
             panel.setArchive(va);
             updateRoleBorders();
-            status("Opened " + chosen.getName());
+            recordRecent(panel, file);
+            status("Opened " + file.getName());
         } catch (Exception ex) {
-            log.error("Failed to open {}", chosen, ex);
+            log.error("Failed to open {}", file, ex);
+            if (!file.exists()) {
+                recentFiles.remove(file);
+                rebuildRecentMenu();
+            }
             JOptionPane.showMessageDialog(this,
-                    "Could not open file:\n" + ex.getMessage(),
+                    "Could not open file:\n" + file + "\n\n" + ex.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private void recordRecent(ArchivePanel panel, File file) {
+        if (panel == leftPanel) {
+            recentFiles.addLeft(file);
+        } else {
+            recentFiles.addRight(file);
+        }
+        rebuildRecentMenu();
+    }
+
+    /**
+     * Rebuilds the "Open Recent" submenu from the persisted recent-files lists.
+     * Each panel gets its own labelled section; selecting an entry reopens that
+     * file into the corresponding panel.
+     */
+    private void rebuildRecentMenu() {
+        recentMenu.removeAll();
+        boolean addedLeft  = addRecentSection("Left panel",  recentFiles.getLeft(),  leftPanel);
+        if (addedLeft) recentMenu.addSeparator();
+        boolean addedRight = addRecentSection("Right panel", recentFiles.getRight(), rightPanel);
+
+        if (!addedLeft && !addedRight) {
+            JMenuItem none = new JMenuItem("(no recent files)");
+            none.setEnabled(false);
+            recentMenu.add(none);
+        }
+    }
+
+    /**
+     * Adds a non-selectable section header followed by one menu item per recent
+     * file for {@code panel}.  Returns true if any item was added.
+     */
+    private boolean addRecentSection(String title, List<File> files, ArchivePanel panel) {
+        if (files.isEmpty()) return false;
+        JMenuItem header = new JMenuItem(title);
+        header.setEnabled(false);
+        recentMenu.add(header);
+        for (File f : files) {
+            JMenuItem item = new JMenuItem(f.getName());
+            item.setToolTipText(f.getAbsolutePath());
+            item.addActionListener(e -> openArchive(panel, f));
+            recentMenu.add(item);
+        }
+        return true;
     }
 
     // -----------------------------------------------------------------------

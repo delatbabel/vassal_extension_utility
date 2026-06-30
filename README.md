@@ -15,6 +15,7 @@ VASSAL's built-in module editor lets you edit a module or extension in isolation
 3. Select one or more components using click, Shift-click (range), or Ctrl-click (discontiguous); or right-click to search by name.
 4. Move all selected components from one file's hierarchy into another, automatically copying any image assets they reference.
 5. Copy selected components into another file's hierarchy, creating duplicates without removing the originals. A copy duplicates only the selected components themselves — not their child components.
+6. Reopen recent files from **File → Open Recent …** — the 5 most-recently-opened files for each panel are remembered between sessions.
 
 ## Building
 
@@ -40,6 +41,7 @@ java -jar target/extension-utility-1.0-jar-with-dependencies.jar
 
 1. **File → Open Module** — open a `.vmod` file (appears in the left panel).
 2. **File → Open Extension** — open a `.vmdx` file (appears in the right panel).
+   - **File → Open Recent …** lists the 5 most-recently-opened files for each panel (grouped under "Left panel" / "Right panel"); selecting one reopens it into that panel. The lists persist between sessions in `~/.vassal-extension-utility/recent-files.properties`.
 3. **Select source components** in one panel using any combination of:
    - Click — select a single component.
    - **Shift-click** — extend the selection as a contiguous range.
