@@ -24,6 +24,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.Enumeration;
@@ -31,6 +32,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -71,6 +73,85 @@ public class VassalArchive {
         va.modified = false;
         va.load();
         return va;
+    }
+
+    /**
+     * Creates a new, empty extension (.vmdx) bound to the given parent module.
+     *
+     * The returned archive is in-memory only with no backing file — it is marked
+     * modified and must be written with {@link #saveAs(File)}.  Its buildFile root
+     * is a {@code ModuleExtension} referencing the module's name and version; it
+     * carries a freshly built {@code extensiondata} and a copy of the module's
+     * {@code moduledata} (VASSAL stores the parent module's moduledata inside the
+     * extension).  The {@code extensionId} is generated the way VASSAL does — the
+     * last three characters of a random UUID.
+     *
+     * @param module a loaded module (not an extension)
+     */
+    public static VassalArchive createExtension(VassalArchive module) throws Exception {
+        if (module == null || module.isExtension()) {
+            throw new IllegalArgumentException("A module must be loaded to create an extension.");
+        }
+
+        VassalArchive va = new VassalArchive();
+        va.file = null;                       // unsaved — requires saveAs()
+        va.imageNames = new HashSet<>();
+        va.entryNames = new HashSet<>();
+        va.pendingImages = new HashMap<>();
+        va.pendingFiles = new HashMap<>();
+        va.pendingDeletions = new HashSet<>();
+
+        Element modRoot = module.getRootElement();
+        String moduleName    = modRoot.getAttribute("name");
+        String moduleVersion = modRoot.getAttribute("version");
+        String vassalVersion = modRoot.getAttribute("VassalVersion");
+        String extensionId   = UUID.randomUUID().toString();
+        extensionId = extensionId.substring(extensionId.length() - 3);
+
+        DocumentBuilder db = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+        Document doc = db.newDocument();
+        Element root = doc.createElement(EXT_ROOT);
+        root.setAttribute("anyModule", "false");
+        root.setAttribute("description", "");
+        root.setAttribute("extensionId", extensionId);
+        root.setAttribute("module", moduleName);
+        root.setAttribute("moduleVersion", moduleVersion);
+        root.setAttribute("nextPieceSlotId", "0");
+        root.setAttribute("vassalVersion", vassalVersion);
+        root.setAttribute("version", "0.0");
+        doc.appendChild(root);
+        va.buildDocument = doc;
+
+        // The extension embeds a copy of the parent module's moduledata.
+        byte[] moduledata = module.readEntry("moduledata");
+        if (moduledata != null) {
+            va.addPendingFile("moduledata", moduledata);
+        } else {
+            log.warn("Module {} has no moduledata entry", module.getFile());
+        }
+        va.addPendingFile("extensiondata", buildExtensionData(vassalVersion));
+        va.entryNames.add(BUILD_FILE);
+        va.modified = true;
+        return va;
+    }
+
+    private static byte[] buildExtensionData(String vassalVersion) {
+        String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
+                + "<data version=\"1\">\n"
+                + "  <version>0.0</version>\n"
+                + "  <extra1/>\n"
+                + "  <extra2/>\n"
+                + "  <VassalVersion>" + xmlEscape(vassalVersion) + "</VassalVersion>\n"
+                + "  <dateSaved>" + System.currentTimeMillis() + "</dateSaved>\n"
+                + "  <description></description>\n"
+                + "  <universal>false</universal>\n"
+                + "</data>\n";
+        return xml.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static String xmlEscape(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private void load() throws Exception {
@@ -124,7 +205,7 @@ public class VassalArchive {
     public Set<String> getImageNames() { return imageNames; }
 
     public String getDisplayName() {
-        String name = file.getName();
+        String name = (file != null) ? file.getName() : "(unsaved extension)";
         return modified ? name + " *" : name;
     }
 
@@ -194,69 +275,96 @@ public class VassalArchive {
     // -----------------------------------------------------------------------
 
     /**
-     * Serialises the current buildDocument and writes the entire archive to disk,
-     * merging in any pending images.
+     * Serialises the current buildDocument and writes the entire archive back to
+     * its existing file, merging in any pending images/files and applying pending
+     * deletions.
+     *
+     * @throws IllegalStateException if this archive has no file yet (use {@link #saveAs(File)}).
      */
     public void save() throws Exception {
-        byte[] xmlBytes = serialiseBuildFile();
-        File tmp = File.createTempFile("vassalext_", ".zip", file.getParentFile());
-        try {
-            try (ZipFile source = new ZipFile(file);
-                 ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(tmp.toPath()))) {
+        if (file == null) {
+            throw new IllegalStateException("Archive has no file; use saveAs(File).");
+        }
+        writeArchive(file, file);
+    }
 
+    /**
+     * Writes the archive to {@code target} and makes it the archive's file.  Used
+     * to save a newly created extension, or to write an existing archive to a new
+     * location.  The target's parent directory is created if necessary.
+     */
+    public void saveAs(File target) throws Exception {
+        File source = (file != null && file.isFile()) ? file : null;
+        writeArchive(source, target);
+        file = target;
+    }
+
+    /**
+     * Writes the archive to {@code target}, copying surviving entries from
+     * {@code source} (its current backing file, or null for a brand-new archive)
+     * and merging pending images/files and the rewritten buildFile.xml.  On
+     * success pending changes are cleared and the modified flag is reset.
+     */
+    private void writeArchive(File source, File target) throws Exception {
+        byte[] xmlBytes = serialiseBuildFile();
+        Files.createDirectories(target.getAbsoluteFile().getParentFile().toPath());
+        File tmp = File.createTempFile("vassalext_", ".zip",
+                target.getAbsoluteFile().getParentFile());
+        try {
+            try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(tmp.toPath()))) {
                 out.setMethod(ZipOutputStream.DEFLATED);
 
-                // Copy existing entries, skipping buildFile.xml (we'll rewrite it)
-                // and skipping images that are being overwritten by pending images
-                Enumeration<? extends ZipEntry> entries = source.entries();
-                while (entries.hasMoreElements()) {
-                    ZipEntry entry = entries.nextElement();
-                    String name = entry.getName();
-                    if (name.equals(BUILD_FILE)) continue;
-                    if (pendingDeletions.contains(name)) continue;     // dropped from this archive
-                    if (name.startsWith(IMAGE_DIR)) {
-                        String bare = name.substring(IMAGE_DIR.length());
-                        if (pendingImages.containsKey(bare)) continue; // will be written below
+                // Copy surviving entries from the source archive (if any), skipping
+                // buildFile.xml (rewritten), deleted entries, and entries replaced
+                // by pending images/files.
+                if (source != null && source.isFile()) {
+                    try (ZipFile zf = new ZipFile(source)) {
+                        Enumeration<? extends ZipEntry> entries = zf.entries();
+                        while (entries.hasMoreElements()) {
+                            ZipEntry entry = entries.nextElement();
+                            String name = entry.getName();
+                            if (name.equals(BUILD_FILE)) continue;
+                            if (pendingDeletions.contains(name)) continue;
+                            if (name.startsWith(IMAGE_DIR)) {
+                                String bare = name.substring(IMAGE_DIR.length());
+                                if (pendingImages.containsKey(bare)) continue;
+                            }
+                            if (pendingFiles.containsKey(name)) continue;
+                            out.putNextEntry(new ZipEntry(name));
+                            try (InputStream is = zf.getInputStream(entry)) {
+                                is.transferTo(out);
+                            }
+                            out.closeEntry();
+                        }
                     }
-                    if (pendingFiles.containsKey(name)) continue;      // will be written below
-                    ZipEntry newEntry = new ZipEntry(name);
-                    out.putNextEntry(newEntry);
-                    try (InputStream is = source.getInputStream(entry)) {
-                        is.transferTo(out);
-                    }
-                    out.closeEntry();
                 }
 
                 // Write pending images
                 for (Map.Entry<String, byte[]> img : pendingImages.entrySet()) {
-                    ZipEntry imgEntry = new ZipEntry(IMAGE_DIR + img.getKey());
-                    out.putNextEntry(imgEntry);
+                    out.putNextEntry(new ZipEntry(IMAGE_DIR + img.getKey()));
                     out.write(img.getValue());
                     out.closeEntry();
                 }
 
-                // Write pending non-image entries (e.g. .vsav save files) under their exact names
+                // Write pending non-image entries (moduledata, extensiondata, .vsav, …)
                 for (Map.Entry<String, byte[]> entry : pendingFiles.entrySet()) {
-                    ZipEntry ze = new ZipEntry(entry.getKey());
-                    out.putNextEntry(ze);
+                    out.putNextEntry(new ZipEntry(entry.getKey()));
                     out.write(entry.getValue());
                     out.closeEntry();
                 }
 
-                // Write updated buildFile.xml
-                ZipEntry buildEntry = new ZipEntry(BUILD_FILE);
-                out.putNextEntry(buildEntry);
+                // Write the buildFile.xml
+                out.putNextEntry(new ZipEntry(BUILD_FILE));
                 out.write(xmlBytes);
                 out.closeEntry();
             }
 
-            // Atomically replace original
-            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
             pendingImages.clear();
             pendingFiles.clear();
             pendingDeletions.clear();
             modified = false;
-            log.info("Saved {}", file.getName());
+            log.info("Saved {}", target.getName());
 
         } catch (Exception e) {
             Files.deleteIfExists(tmp.toPath());

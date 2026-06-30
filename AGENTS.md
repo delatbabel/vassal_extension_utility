@@ -23,7 +23,7 @@ Also: `make jar` / `make run` / `make clean` (see Makefile). No test suite yet. 
 | Class | Role |
 |---|---|
 | `Main` | `SwingUtilities.invokeLater` entry point |
-| `model/VassalArchive` | Opens/saves a `.vmod` or `.vmdx` (ZIP + DOM). Tracks pending images. |
+| `model/VassalArchive` | Opens/saves a `.vmod` or `.vmdx` (ZIP + DOM). Tracks pending images/files/deletions. `createExtension(module)` builds a new empty extension; `save()`/`saveAs(file)` write atomically (see [New extension & Save As](#new-extension--save-as)). |
 | `model/RecentFilesStore` | Persists the 5 most-recently-opened files per panel to `~/.vassal-extension-utility/recent-files.properties` (see [Recent files](#recent-files)) |
 | `model/ComponentNode` | Wraps a `org.w3c.dom.Element`; computes the editor-style display label (see [Display names](#display-names)) and collects image references from subtree |
 | `gui/ArchivePanel` | `JPanel` containing a `JTree` built from `VassalArchive.getRootElement()`; `refresh()` preserves expansion/selection/scroll across rebuilds (see [Tree state preservation](#tree-state-preservation)) |
@@ -41,6 +41,17 @@ Also: `make jar` / `make run` / `make clean` (see Makefile). No test suite yet. 
 `RecentFilesStore` keeps a separate most-recent-first list (capped at `MAX_RECENT` = 5) for the left and right panels, persisted as a Java properties file at `~/.vassal-extension-utility/recent-files.properties` (keys `left.0..left.4`, `right.0..right.4`). All disk I/O fails soft — a missing/unreadable store yields empty lists and save errors are only logged, so recent-file bookkeeping never blocks opening or saving.
 
 `MainWindow` owns one store and records every successful open via `recordRecent(panel, file)` (which dispatches to `addLeft`/`addRight` by identity comparison against `leftPanel`/`rightPanel`). The **File → Open Recent …** submenu is rebuilt by `rebuildRecentMenu()` after each open: it shows a disabled "Left panel" / "Right panel" header above each panel's entries, and selecting an entry calls `openArchive(panel, file)` to reopen it into that panel. `openArchive()` is the single open path shared by the file chooser and the recent menu; if a recent file no longer exists it is pruned from the store.
+
+### New extension & Save As
+
+**File → New Extension (right)** (`MainWindow.newExtension`) requires a module in the left panel and calls `VassalArchive.createExtension(module)` to build a new, empty extension in the right panel. The created archive:
+- has a `ModuleExtension` root referencing the module's `name`/`version`/`VassalVersion`, with `version="0.0"`, `anyModule="false"`, `nextPieceSlotId="0"`, and an `extensionId` generated like VASSAL does (last 3 chars of a random UUID);
+- carries a freshly built `extensiondata` and a **copy of the module's `moduledata`** (VASSAL stores the parent module's moduledata inside the extension), queued as pending files;
+- has **no backing file** (`getFile() == null`) and is marked modified — it must be saved with Save As.
+
+**File → Save Extension As… (right)** (`saveArchiveAs(rightPanel)`) prompts for a destination, defaulting to `moduleExtensionDir()` — the conventional sibling directory named like the module file with `.vmod` replaced by `_ext` (e.g. `EuropaNewMapV090.vmod` → `EuropaNewMapV090_ext/`) — **creating that directory** if absent. It forces a `.vmdx` extension and confirms overwrite.
+
+Saving is unified in `VassalArchive.writeArchive(source, target)`: it copies surviving entries from `source` (the current file, or **null** for a brand-new archive — then nothing is copied), then writes pending images, pending files, and the rewritten `buildFile.xml`, and atomically moves the temp file into place. `save()` writes back to the existing file (throws if there is none); `saveAs(target)` writes to a new file (creating parent dirs) and adopts it. `saveAll()` routes any modified archive with no file through Save As.
 
 ### Tree state preservation
 

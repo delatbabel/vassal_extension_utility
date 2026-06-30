@@ -10,12 +10,13 @@ VASSAL's built-in module editor lets you edit a module or extension in isolation
 
 **Current capabilities:**
 
-1. Open a VASSAL module (`.vmod`) and one or more of its extensions (`.vmdx`) simultaneously.
+1. Open a VASSAL module (`.vmod`) and one or more of its extensions (`.vmdx`) simultaneously, or create a brand-new empty extension for the loaded module.
 2. View the component hierarchy of each file as a tree, labelled like the VASSAL module editor — `configure name [Component Type]` (e.g. `World Maps [Map Window]`), so components of the same type can be told apart.
 3. Select one or more components using click, Shift-click (range), or Ctrl-click (discontiguous); or right-click to search by name.
 4. Move all selected components from one file's hierarchy into another, automatically copying any image assets they reference — and the saved-game (`.vsav`) file of any Pre-defined setup that is moved.
 5. Copy selected components into another file's hierarchy, creating duplicates without removing the originals. A copy duplicates only the selected components themselves — not their child components.
 6. Reopen recent files from **File → Open Recent …** — the 5 most-recently-opened files for each panel are remembered between sessions.
+7. Create a new empty extension for the loaded module (**File → New Extension**) and save it with **File → Save Extension As…**, which defaults to the module's `_ext` directory (creating it if needed).
 
 ## Building
 
@@ -42,6 +43,8 @@ java -jar target/extension-utility-1.0-jar-with-dependencies.jar
 1. **File → Open Module** — open a `.vmod` file (appears in the left panel).
 2. **File → Open Extension** — open a `.vmdx` file (appears in the right panel).
    - **File → Open Recent …** lists the 5 most-recently-opened files for each panel (grouped under "Left panel" / "Right panel"); selecting one reopens it into that panel. The lists persist between sessions in `~/.vassal-extension-utility/recent-files.properties`.
+   - **File → New Extension (right)** — with a module open in the left panel, creates a new empty extension for it in the right panel. The extension references the module's name and version automatically. It is unsaved until you use **Save Extension As…**.
+   - **File → Save Extension As… (right)** — writes the right-panel extension to disk. The dialog opens in the module's extension directory — the module file name with `.vmod` replaced by `_ext` (e.g. `EuropaNewMapV090.vmod` → `EuropaNewMapV090_ext/`) — and creates that directory if it does not exist. (`Save All` also prompts for a location the first time a new extension is saved.)
 3. **Select source components** in one panel using any combination of:
    - Click — select a single component.
    - **Shift-click** — extend the selection as a contiguous range.

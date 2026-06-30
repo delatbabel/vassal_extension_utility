@@ -91,7 +91,7 @@ The root element is `VASSAL.build.module.ModuleExtension`. Rather than replicati
 |---|---|
 | `anyModule` | `true` if the extension is universal (works with any module) |
 | `description` | Human-readable extension description |
-| `extensionId` | Short hex string, unique identifier for this extension |
+| `extensionId` | Short identifier for this extension. VASSAL generates it as the last three characters of a random UUID when the extension is first saved (the Extension Utility does the same when creating a new extension). |
 | `module` | Name of the parent module (must match `moduledata/name`) |
 | `moduleVersion` | Version of the parent module this extension targets |
 | `nextPieceSlotId` | Counter for assigning unique IDs to new PieceSlot elements added by this extension |

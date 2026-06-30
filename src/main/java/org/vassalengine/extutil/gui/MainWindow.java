@@ -118,9 +118,17 @@ public class MainWindow extends JFrame {
         JMenuItem openRight = new JMenuItem("Open any file (right)…");
         openRight.addActionListener(e -> openFile(rightPanel, null));
 
+        JMenuItem newExt = new JMenuItem("New Extension (right)");
+        newExt.setAccelerator(KeyStroke.getKeyStroke("ctrl N"));
+        newExt.addActionListener(e -> newExtension());
+
         JMenuItem saveAll = new JMenuItem("Save All");
         saveAll.setAccelerator(KeyStroke.getKeyStroke("ctrl S"));
         saveAll.addActionListener(e -> saveAll());
+
+        JMenuItem saveAsExt = new JMenuItem("Save Extension As… (right)");
+        saveAsExt.setAccelerator(KeyStroke.getKeyStroke("ctrl shift S"));
+        saveAsExt.addActionListener(e -> saveArchiveAs(rightPanel));
 
         JMenuItem quit = new JMenuItem("Quit");
         quit.setAccelerator(KeyStroke.getKeyStroke("ctrl Q"));
@@ -132,9 +140,12 @@ public class MainWindow extends JFrame {
         fileMenu.add(openLeft);
         fileMenu.add(openRight);
         fileMenu.add(recentMenu);
+        fileMenu.addSeparator();
+        fileMenu.add(newExt);
         rebuildRecentMenu();
         fileMenu.addSeparator();
         fileMenu.add(saveAll);
+        fileMenu.add(saveAsExt);
         fileMenu.addSeparator();
         fileMenu.add(quit);
 
@@ -255,6 +266,121 @@ public class MainWindow extends JFrame {
             recentFiles.addRight(file);
         }
         rebuildRecentMenu();
+    }
+
+    // -----------------------------------------------------------------------
+    // New extension + Save As
+    // -----------------------------------------------------------------------
+
+    /**
+     * Creates a new, empty extension for the module loaded in the left panel and
+     * places it in the right panel.  The extension is unsaved — File &gt; Save
+     * Extension As… writes it to disk.
+     */
+    private void newExtension() {
+        VassalArchive module = leftPanel.getArchive();
+        if (module == null || module.isExtension()) {
+            status("Load a module in the LEFT panel before creating an extension.");
+            return;
+        }
+        if (rightPanel.getArchive() != null && rightPanel.getArchive().isModified()) {
+            int r = JOptionPane.showConfirmDialog(this,
+                    "The right panel has unsaved changes that will be discarded.\nContinue?",
+                    "New Extension", JOptionPane.OK_CANCEL_OPTION);
+            if (r != JOptionPane.OK_OPTION) return;
+        }
+        try {
+            VassalArchive ext = VassalArchive.createExtension(module);
+            rightPanel.setArchive(ext);
+            updateRoleBorders();
+            status("New extension created for \"" + module.getRootElement().getAttribute("name")
+                    + "\". Use File > Save Extension As… to save it.");
+        } catch (Exception ex) {
+            log.error("Failed to create extension", ex);
+            JOptionPane.showMessageDialog(this,
+                    "Could not create extension:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /**
+     * Prompts for a destination file and writes {@code panel}'s archive there.
+     * The chooser defaults to the parent module's extension directory (the module
+     * file name with ".vmod" replaced by "_ext"), creating it if necessary.
+     */
+    private void saveArchiveAs(ArchivePanel panel) {
+        VassalArchive archive = panel.getArchive();
+        if (archive == null) {
+            status("Nothing to save in the " + (panel == leftPanel ? "left" : "right") + " panel.");
+            return;
+        }
+
+        JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Save Extension As");
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+                "VASSAL Extensions (*.vmdx)", "vmdx"));
+
+        File extDir = moduleExtensionDir();
+        if (extDir != null) {
+            extDir.mkdirs();                       // create the _ext directory if absent
+            fc.setCurrentDirectory(extDir);
+            fc.setSelectedFile(new File(extDir, suggestedExtensionName()));
+        } else if (archive.getFile() != null) {
+            fc.setSelectedFile(archive.getFile());
+        }
+
+        if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+
+        File chosen = fc.getSelectedFile();
+        if (!chosen.getName().toLowerCase().endsWith(".vmdx")) {
+            chosen = new File(chosen.getParentFile(), chosen.getName() + ".vmdx");
+        }
+        if (chosen.exists()) {
+            int r = JOptionPane.showConfirmDialog(this,
+                    chosen.getName() + " already exists.\nOverwrite it?",
+                    "Save Extension As", JOptionPane.OK_CANCEL_OPTION);
+            if (r != JOptionPane.OK_OPTION) return;
+        }
+
+        try {
+            archive.saveAs(chosen);
+            panel.refresh();
+            recordRecent(panel, chosen);
+            updateRoleBorders();
+            status("Saved extension as " + chosen.getName());
+        } catch (Exception ex) {
+            log.error("Save As failed for {}", chosen, ex);
+            JOptionPane.showMessageDialog(this,
+                    "Could not save extension:\n" + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /**
+     * The conventional extension directory for the module loaded in the left
+     * panel: a sibling directory named like the module file with ".vmod" replaced
+     * by "_ext" (e.g. {@code EuropaNewMapV090.vmod} → {@code EuropaNewMapV090_ext/}).
+     * Returns null when no module file is available.
+     */
+    private File moduleExtensionDir() {
+        VassalArchive module = leftPanel.getArchive();
+        if (module == null || module.isExtension() || module.getFile() == null) {
+            return null;
+        }
+        File moduleFile = module.getFile();
+        String name = moduleFile.getName();
+        String base = name.toLowerCase().endsWith(".vmod")
+                ? name.substring(0, name.length() - ".vmod".length())
+                : name;
+        return new File(moduleFile.getAbsoluteFile().getParentFile(), base + "_ext");
+    }
+
+    private String suggestedExtensionName() {
+        VassalArchive ext = rightPanel.getArchive();
+        if (ext != null && ext.getFile() != null) {
+            return ext.getFile().getName();
+        }
+        return "NewExtension.vmdx";
     }
 
     /**
@@ -791,16 +917,21 @@ public class MainWindow extends JFrame {
 
         for (ArchivePanel panel : new ArchivePanel[]{leftPanel, rightPanel}) {
             VassalArchive va = panel.getArchive();
-            if (va != null && va.isModified()) {
-                try {
-                    va.save();
-                    panel.refresh();
-                    saved++;
-                } catch (Exception ex) {
-                    log.error("Save failed for {}", va.getFile(), ex);
-                    errors.append(va.getFile().getName())
-                          .append(": ").append(ex.getMessage()).append("\n");
-                }
+            if (va == null || !va.isModified()) continue;
+            if (va.getFile() == null) {
+                // A new, never-saved extension — route through the Save As dialog.
+                saveArchiveAs(panel);
+                if (va.getFile() != null && !va.isModified()) saved++;
+                continue;
+            }
+            try {
+                va.save();
+                panel.refresh();
+                saved++;
+            } catch (Exception ex) {
+                log.error("Save failed for {}", va.getFile(), ex);
+                errors.append(va.getFile().getName())
+                      .append(": ").append(ex.getMessage()).append("\n");
             }
         }
 
