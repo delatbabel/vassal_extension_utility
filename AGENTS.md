@@ -58,21 +58,25 @@ Both the Move and Copy toolbar buttons share `MainWindow.performTransfer(src, ds
 3. The destination parent is resolved:
    - If a node **is** selected in the target panel (`dst.getSelectedNode() != null`), every source component is transferred into it.
    - If **nothing** is selected, an OK/Cancel dialog offers to recreate parent paths. On OK, `ensureAncestorPath()` shallow-clones each source component's ancestor chain (every parent from just below the source root down to the immediate parent) under the destination root, and the component is transferred into the recreated parent. `findMatchingChild()`/`sameElement()` (tag name + identical attributes) reuse equivalent existing destination elements so shared paths are consolidated and the source root maps onto the destination root. Cancel aborts.
-4. `ComponentNode.collectImageReferences(imageNames, recurse)` is called on each source node in one pass; results are unioned. `recurse` is `!copy` — Move scans the full subtree it carries, Copy scans only the element's own attributes. When recreating parents, each recreated ancestor's own-attribute image refs are added too.
-5. Missing images are queued with `VassalArchive.addPendingImage()` (in-memory; written on save).
+4. Two kinds of referenced assets are gathered from each source node in one pass and unioned, with `recurse = !copy` (Move scans the full subtree it carries; Copy scans only the element itself):
+   - `ComponentNode.collectImageReferences(imageNames, recurse)` — image filenames (attribute values found in the source's image set).
+   - `ComponentNode.collectSetupFileReferences(recurse)` — the save-file entry named by each `PredefinedSetup`'s `file` attribute when `useFile="true"` (a `.vsav` entry at the archive root). Menu-only setups (`useFile="false"`) contribute nothing.
+   When recreating parents, the recreated ancestors' own image refs and setup files are added too.
+5. Missing images are queued with `VassalArchive.addPendingImage()`; missing setup files (checked via `VassalArchive.hasEntry()`) are queued with `VassalArchive.addPendingFile()`, which writes the entry under its exact root-level name. Both are in-memory until save.
 6. For each source element: `Document.importNode(srcElem, !copy)` clones it into the destination document (deep for Move so children are carried; **shallow for Copy so child components are excluded**) and appends to its resolved destination parent. For Move only, the original is then removed; for Copy the original is retained (creating a duplicate).
 7. The destination archive is marked modified (and the source too on a Move); the destination tree is rebuilt via `ArchivePanel.refresh()` (the source tree too on a Move — Copy leaves the source unchanged).
 8. File > Save All / Ctrl+S calls `VassalArchive.save()` which rewrites the ZIP atomically via a temp file.
 
 Recreated ancestors are always shallow clones (no children), regardless of Move vs Copy — only the selected components carry children (and only on a Move).
 
-Images are **always copied, never deleted** from the source archive (same image may be shared).
+Images and Pre-defined setup files are **always copied, never deleted** from the source archive — the same asset may be referenced by other components that remain (and this mirrors the long-standing image behaviour). A moved `PredefinedSetup`'s `.vsav` therefore appears in the destination while a now-unreferenced copy is left behind in the source.
 
 ### File Format
 
 - `.vmod`: ZIP with `buildFile.xml` (root `VASSAL.build.GameModule`) + `moduledata` + `images/`
 - `.vmdx`: ZIP with `buildFile.xml` (root `VASSAL.build.module.ModuleExtension`) + `moduledata` + `extensiondata` + `images/`
 - Extension elements use `<VASSAL.build.module.ExtensionElement target="ClassName:name/...">` to graft components into the parent module's tree.
+- `PredefinedSetup` components (`useFile="true"`) store a saved game as a root-level entry named by their `file` attribute, usually with a `.vsav` extension (but not required to — the attribute value is the literal entry name).
 - Full format docs: [docs/vmod-format.md](docs/vmod-format.md), [docs/vmdx-format.md](docs/vmdx-format.md)
 
 ## Sample Data

@@ -304,6 +304,43 @@ public class ComponentNode {
         }
     }
 
+    /** VASSAL class whose {@code file} attribute names a bundled {@code .vsav} save file. */
+    private static final String PREDEFINED_SETUP = "VASSAL.build.module.PredefinedSetup";
+
+    /**
+     * Collects the archive entry names of the Pre-defined setup save files referenced
+     * by this element (and, when {@code recurse} is true, its subtree).
+     *
+     * A {@code PredefinedSetup} names its save file in the {@code file} attribute, but
+     * only when {@code useFile} is true — menu-only setups (useFile="false") have no
+     * file.  The attribute value is the literal ZIP entry name (it usually ends in
+     * {@code .vsav} but is not required to).  Move passes {@code recurse=true} to carry
+     * nested setups' files; Copy passes false (children are not copied).
+     */
+    public Set<String> collectSetupFileReferences(boolean recurse) {
+        Set<String> refs = new HashSet<>();
+        collectSetupFiles(element, refs, recurse);
+        return refs;
+    }
+
+    private void collectSetupFiles(Element el, Set<String> refs, boolean recurse) {
+        if (PREDEFINED_SETUP.equals(el.getTagName())
+                && Boolean.parseBoolean(el.getAttribute("useFile"))) {
+            String file = el.getAttribute("file");
+            if (file != null && !file.isEmpty()) {
+                refs.add(file);
+            }
+        }
+        if (!recurse) return;
+        NodeList children = el.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() == Node.ELEMENT_NODE) {
+                collectSetupFiles((Element) child, refs, true);
+            }
+        }
+    }
+
     private static String shortClassName(String fqn) {
         int dot = fqn.lastIndexOf('.');
         return dot >= 0 ? fqn.substring(dot + 1) : fqn;

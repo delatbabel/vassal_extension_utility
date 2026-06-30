@@ -52,7 +52,9 @@ public class VassalArchive {
     private File file;
     private Document buildDocument;
     private Set<String> imageNames;           // bare names without "images/" prefix
+    private Set<String> entryNames;           // all non-directory ZIP entry names (full paths)
     private Map<String, byte[]> pendingImages; // images to be added on next save
+    private Map<String, byte[]> pendingFiles;  // non-image entries to add on next save (full names)
     private boolean modified;
 
     // -----------------------------------------------------------------------
@@ -63,6 +65,7 @@ public class VassalArchive {
         VassalArchive va = new VassalArchive();
         va.file = f;
         va.pendingImages = new HashMap<>();
+        va.pendingFiles = new HashMap<>();
         va.modified = false;
         va.load();
         return va;
@@ -70,12 +73,15 @@ public class VassalArchive {
 
     private void load() throws Exception {
         imageNames = new HashSet<>();
+        entryNames = new HashSet<>();
         try (ZipFile zf = new ZipFile(file)) {
-            // Collect image names
+            // Collect entry names (and the subset under images/)
             Enumeration<? extends ZipEntry> entries = zf.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry e = entries.nextElement();
-                if (e.getName().startsWith(IMAGE_DIR) && !e.getName().equals(IMAGE_DIR)) {
+                if (e.isDirectory()) continue;
+                entryNames.add(e.getName());
+                if (e.getName().startsWith(IMAGE_DIR)) {
                     imageNames.add(e.getName().substring(IMAGE_DIR.length()));
                 }
             }
@@ -152,6 +158,22 @@ public class VassalArchive {
         modified = true;
     }
 
+    /** True if the archive contains (or has queued) a ZIP entry with this exact name. */
+    public boolean hasEntry(String entryName) {
+        return entryNames.contains(entryName);
+    }
+
+    /**
+     * Queues a non-image entry (e.g. a Pre-defined setup's {@code .vsav} save file)
+     * to be written to this archive on the next save, under its exact entry name.
+     * If the entry already exists it is still queued (overwrite on save).
+     */
+    public void addPendingFile(String entryName, byte[] data) {
+        pendingFiles.put(entryName, data);
+        entryNames.add(entryName);
+        modified = true;
+    }
+
     // -----------------------------------------------------------------------
     // Saving
     // -----------------------------------------------------------------------
@@ -180,6 +202,7 @@ public class VassalArchive {
                         String bare = name.substring(IMAGE_DIR.length());
                         if (pendingImages.containsKey(bare)) continue; // will be written below
                     }
+                    if (pendingFiles.containsKey(name)) continue;      // will be written below
                     ZipEntry newEntry = new ZipEntry(name);
                     out.putNextEntry(newEntry);
                     try (InputStream is = source.getInputStream(entry)) {
@@ -196,6 +219,14 @@ public class VassalArchive {
                     out.closeEntry();
                 }
 
+                // Write pending non-image entries (e.g. .vsav save files) under their exact names
+                for (Map.Entry<String, byte[]> entry : pendingFiles.entrySet()) {
+                    ZipEntry ze = new ZipEntry(entry.getKey());
+                    out.putNextEntry(ze);
+                    out.write(entry.getValue());
+                    out.closeEntry();
+                }
+
                 // Write updated buildFile.xml
                 ZipEntry buildEntry = new ZipEntry(BUILD_FILE);
                 out.putNextEntry(buildEntry);
@@ -206,6 +237,7 @@ public class VassalArchive {
             // Atomically replace original
             Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
             pendingImages.clear();
+            pendingFiles.clear();
             modified = false;
             log.info("Saved {}", file.getName());
 

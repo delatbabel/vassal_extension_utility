@@ -314,9 +314,11 @@ public class MainWindow extends JFrame {
      *      selected nodes (transferring a parent already carries its children
      *      on a Move; on a Copy a descendant of another selected node would be
      *      redundant since the parent's own copy keeps it grouped).
-     *   2. Gather all image references across every node to be transferred (and,
-     *      when recreating parents, the images referenced by those parents).
-     *   3. Copy any missing images to the destination archive.
+     *   2. Gather all image references and Pre-defined setup save files (the
+     *      {@code .vsav} entry named by each {@code PredefinedSetup}) across every
+     *      node to be transferred (and, when recreating parents, those referenced
+     *      by the recreated parents).
+     *   3. Copy any missing images and setup files to the destination archive.
      *   4. For each source element: clone into the destination document
      *      (deep for Move, shallow for Copy), append to its destination parent,
      *      and — for Move only — remove from the source document.
@@ -325,8 +327,9 @@ public class MainWindow extends JFrame {
      * On a Move the whole subtree is carried; on a Copy only the selected
      * elements themselves are duplicated (their child components are not copied).
      *
-     * Images are copied but never deleted from the source — the same image may
-     * be referenced by other components that remain in the source archive.
+     * Images and setup files are copied but never deleted from the source — the
+     * same asset may be referenced by other components that remain in the source
+     * archive.
      *
      * @param copy {@code true} to copy (source retained, children excluded);
      *             {@code false} to move (source removed, children carried).
@@ -386,7 +389,8 @@ public class MainWindow extends JFrame {
                     + "up to the root, without their other children — into the target panel,\n"
                     + "then " + verb.toLowerCase() + " " + srcSummary
                     + " into the recreated location?\n\n"
-                    + "Referenced images will be copied to the destination archive.",
+                    + "Referenced images and Pre-defined setup files will be copied "
+                    + "to the destination archive.",
                     "Recreate Parent Path", JOptionPane.OK_CANCEL_OPTION);
             if (confirm != JOptionPane.OK_OPTION) return;
         } else {
@@ -396,7 +400,8 @@ public class MainWindow extends JFrame {
             int confirm = JOptionPane.showConfirmDialog(this,
                     verb + " " + srcSummary + "\n  into  \""
                     + ((ComponentNode) dstNode.getUserObject()).getDisplayName() + "\"?\n\n"
-                    + "Referenced images will be copied to the destination archive."
+                    + "Referenced images and Pre-defined setup files will be copied "
+                    + "to the destination archive."
                     + childNote,
                     "Confirm " + verb, JOptionPane.OK_CANCEL_OPTION);
             if (confirm != JOptionPane.OK_OPTION) return;
@@ -408,24 +413,27 @@ public class MainWindow extends JFrame {
             Document dstDoc = dstArchive.getBuildDocument();
             Set<String> srcImageNames = srcArchive.getImageNames();
 
-            // 1. Collect image references from all source components in one pass.
-            //    Move carries the full subtree (recurse); Copy duplicates only the
-            //    element itself, so only its own attributes are scanned.
+            // 1. Collect image references and Pre-defined setup save files from all
+            //    source components in one pass.  Move carries the full subtree
+            //    (recurse); Copy duplicates only the element itself, so only its own
+            //    attributes/file are scanned.
             Set<String> allImageRefs = new HashSet<>();
+            Set<String> allSetupFiles = new HashSet<>();
             for (ComponentNode comp : srcComps) {
                 allImageRefs.addAll(comp.collectImageReferences(srcImageNames, !copy));
+                allSetupFiles.addAll(comp.collectSetupFileReferences(!copy));
             }
 
             // 1b. Resolve each source component's destination parent.  When
             //     recreating parents, the ancestor chain is shallow-cloned into
             //     the destination up front (reusing equivalent existing elements),
-            //     and any images those ancestors reference are queued too.
+            //     and any images / setup files those ancestors reference are queued too.
             List<Element> dstParents = new ArrayList<>(srcComps.size());
             if (recreateParents) {
                 Element dstRoot = dstArchive.getRootElement();
                 for (ComponentNode comp : srcComps) {
-                    dstParents.add(ensureAncestorPath(
-                            comp.getElement(), dstDoc, dstRoot, allImageRefs, srcImageNames));
+                    dstParents.add(ensureAncestorPath(comp.getElement(), dstDoc, dstRoot,
+                            allImageRefs, allSetupFiles, srcImageNames));
                 }
             } else {
                 for (int i = 0; i < srcComps.size(); i++) {
@@ -441,6 +449,21 @@ public class MainWindow extends JFrame {
                     if (data != null) {
                         dstArchive.addPendingImage(imgName, data);
                         imagesCopied++;
+                    }
+                }
+            }
+
+            // 2b. Copy Pre-defined setup save files (e.g. .vsav), stored at the
+            //     archive root, that are not already present in the destination.
+            int setupFilesCopied = 0;
+            for (String setupFile : allSetupFiles) {
+                if (!dstArchive.hasEntry(setupFile)) {
+                    byte[] data = srcArchive.readEntry(setupFile);
+                    if (data != null) {
+                        dstArchive.addPendingFile(setupFile, data);
+                        setupFilesCopied++;
+                    } else {
+                        log.warn("Pre-defined setup file not found in source archive: {}", setupFile);
                     }
                 }
             }
@@ -479,8 +502,13 @@ public class MainWindow extends JFrame {
             dst.refresh();
             updateRoleBorders();
 
-            status(String.format("%s %d component(s) — %d image(s) copied.",
-                    verbPast, transferred, imagesCopied));
+            String summary = String.format("%s %d component(s) — %d image(s) copied.",
+                    verbPast, transferred, imagesCopied);
+            if (setupFilesCopied > 0) {
+                summary = String.format("%s %d component(s) — %d image(s), %d setup file(s) copied.",
+                        verbPast, transferred, imagesCopied, setupFilesCopied);
+            }
+            status(summary);
         } catch (Exception ex) {
             log.error("{} failed", verb, ex);
             JOptionPane.showMessageDialog(this,
@@ -529,14 +557,16 @@ public class MainWindow extends JFrame {
      * attributes) at that level — this consolidates shared paths across multiple
      * selected components and avoids duplicating pre-existing destination nodes.
      *
-     * Images referenced by the recreated ancestors' own attributes are added to
-     * {@code imageRefsOut} so they can be copied alongside the components.
+     * Images and Pre-defined setup save files referenced by the recreated
+     * ancestors themselves are added to {@code imageRefsOut} / {@code setupFilesOut}
+     * so they can be copied alongside the components.
      *
      * The source root maps onto {@code dstRoot}; if the component is already a
      * direct child of the source root, {@code dstRoot} itself is returned.
      */
     private static Element ensureAncestorPath(Element srcElem, Document dstDoc, Element dstRoot,
-                                              Set<String> imageRefsOut, Set<String> srcImageNames) {
+                                              Set<String> imageRefsOut, Set<String> setupFilesOut,
+                                              Set<String> srcImageNames) {
         Element srcRoot = srcElem.getOwnerDocument().getDocumentElement();
 
         // Walk up from the immediate parent, collecting ancestors below the root.
@@ -555,8 +585,9 @@ public class MainWindow extends JFrame {
                 match = (Element) dstDoc.importNode(anc, false);   // shallow: no children
                 cursor.appendChild(match);
             }
-            imageRefsOut.addAll(
-                    new ComponentNode(anc).collectImageReferences(srcImageNames, false));
+            ComponentNode ancNode = new ComponentNode(anc);
+            imageRefsOut.addAll(ancNode.collectImageReferences(srcImageNames, false));
+            setupFilesOut.addAll(ancNode.collectSetupFileReferences(false));
             cursor = match;
         }
         return cursor;

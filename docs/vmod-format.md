@@ -111,6 +111,19 @@ Image files are stored under the `images/` prefix inside the ZIP. The XML refere
 
 Absolute paths beginning with `/images/` reference bundled VASSAL engine images rather than module images.
 
+## Pre-defined Setup Files
+
+A `PredefinedSetup` component with `useFile="true"` references a bundled saved game via its `file` attribute, e.g.:
+
+```xml
+<VASSAL.build.module.PredefinedSetup file="Barbarossa Classic.vsav" isMenu="false"
+    name="Barbarossa: One Kick (Classic)" useFile="true"/>
+```
+
+The `file` value is the **literal ZIP entry name** of the saved game, stored at the archive root (not under `images/`). It usually ends in `.vsav` but is not required to. Setups with `useFile="false"` are menu containers only and reference no file.
+
+Because the saved game lives in the same archive as the component, moving or copying a `PredefinedSetup` between a module and an extension must carry its `.vsav` entry along with it; the Extension Utility copies the referenced entry into the destination archive automatically.
+
 ## nextPieceSlotId
 
 The `GameModule` root element carries a `nextPieceSlotId` integer. This is a monotonically increasing counter used to assign unique IDs to `PieceSlot` elements. When adding new piece slots to a module, this counter must be incremented and the new slot must receive the old counter value as its `gpid` attribute.

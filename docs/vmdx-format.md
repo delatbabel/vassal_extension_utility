@@ -126,6 +126,10 @@ Image files are stored under `images/` inside the vmdx ZIP, exactly as in a vmod
 
 Because the same image may be referenced by both the parent module and one or more extensions, images are **never automatically removed** from a source archive when moving a component. They should always be **copied** to the destination archive.
 
+## Pre-defined Setup Files
+
+As in a `.vmod`, a `PredefinedSetup` with `useFile="true"` names a bundled saved game in its `file` attribute (a root-level ZIP entry, usually `*.vsav`). When a Pre-defined setup is moved or copied between an extension and its module, this saved-game entry must travel with it — the Extension Utility copies the referenced entry into the destination archive. Like images, it is **copied, never removed** from the source.
+
 ## Differences from .vmod at a Glance
 
 | Aspect | .vmod | .vmdx |
