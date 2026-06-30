@@ -46,7 +46,7 @@ Also: `make jar` / `make run` / `make clean` (see Makefile). No test suite yet. 
 
 `ArchivePanel` uses `DISCONTIGUOUS_TREE_SELECTION`:
 - Click / Shift-click / Ctrl-click work as standard multi-select.
-- Right-click → "Search and select…" opens an input dialog; `ArchivePanel.selectMatching()` walks the full tree with `depthFirstEnumeration()` and calls `tree.setSelectionPaths()` with all case-insensitive partial matches.
+- Right-click → "Search and select…" opens an input dialog; `ArchivePanel.selectMatching()` walks the subtree of the **currently selected node** (falling back to the root when nothing is selected) with `depthFirstEnumeration()`, skips the scope node itself, and calls `tree.setSelectionPaths()` with all **case-sensitive** partial matches. Scoping means a search under "Counters" never selects matches under another branch such as "Game Maps", and "HW" does not match "hw".
 - `getSelectedNodes()` → `List<DefaultMutableTreeNode>` (all selected; for source).
 - `getSelectedNode()` → first selected path (for destination parent).
 

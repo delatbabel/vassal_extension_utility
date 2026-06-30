@@ -46,7 +46,7 @@ java -jar target/extension-utility-1.0-jar-with-dependencies.jar
    - Click — select a single component.
    - **Shift-click** — extend the selection as a contiguous range.
    - **Ctrl-click** — add or remove individual components from the selection.
-   - **Right-click → Search and select…** — type a string; all components whose name contains that string (case-insensitive) are selected automatically.
+   - **Right-click → Search and select…** — type a string; all components **under the currently selected component** whose name contains that string are selected automatically. The match is **case-sensitive** ("HW" does not match "hw"), and is confined to the selected branch (searching under "Counters" never selects matches under "Game Maps"). With nothing selected, the whole tree is searched.
 4. **Single-click one component** in the other panel to mark it as the **destination parent**.
    - If you leave the target panel with **nothing selected**, transferring will instead ask whether to **recreate the parent path**: every ancestor of each selected component — all the way up to the root — is copied into the target panel (without their other children), and the components are then transferred into that recreated location. Choose **Cancel** to abort.
 5. Transfer the selection into the destination parent:

@@ -138,49 +138,67 @@ public class ArchivePanel extends JPanel {
     // -----------------------------------------------------------------------
 
     /**
-     * Opens an input dialog and selects all tree nodes whose display name contains
-     * the entered string (case-insensitive).  Scrolls to the first match.
-     * Replaces any existing selection.
+     * Opens an input dialog and selects all tree nodes <em>under the currently
+     * selected component</em> whose display name contains the entered string.
+     * The match is <strong>case-sensitive</strong> ("HW" does not match "hw").
+     * Scrolls to the first match and replaces the existing selection.
+     *
+     * The search is scoped to the subtree of the first selected node; when
+     * nothing is selected it falls back to the whole tree (the root).
      */
     public void showSearchDialog() {
+        DefaultMutableTreeNode scope = getSelectedNode();
+        if (scope == null) {
+            scope = (DefaultMutableTreeNode) treeModel.getRoot();
+        }
+
         String query = (String) JOptionPane.showInputDialog(
                 this,
-                "Select all components whose name contains:",
+                "Select components under \"" + scopeLabel(scope) + "\"\n"
+                        + "whose name contains (case-sensitive):",
                 "Search and Select",
                 JOptionPane.PLAIN_MESSAGE,
                 null, null, "");
         if (query == null) return;   // cancelled
-        selectMatching(query.trim());
+        selectMatching(query.trim(), scope);
     }
 
-    private void selectMatching(String query) {
+    private void selectMatching(String query, DefaultMutableTreeNode scope) {
         if (query.isEmpty()) return;
-        String lower = query.toLowerCase();
 
         List<TreePath> matches = new ArrayList<>();
-        DefaultMutableTreeNode root = (DefaultMutableTreeNode) treeModel.getRoot();
-        Enumeration<TreeNode> all = root.depthFirstEnumeration();
+        Enumeration<TreeNode> all = scope.depthFirstEnumeration();
         while (all.hasMoreElements()) {
             TreeNode tn = all.nextElement();
             if (!(tn instanceof DefaultMutableTreeNode)) continue;
             DefaultMutableTreeNode dmtn = (DefaultMutableTreeNode) tn;
+            if (dmtn == scope) continue;   // search strictly under the scope node
             Object uo = dmtn.getUserObject();
             if (!(uo instanceof ComponentNode)) continue;
-            String display = ((ComponentNode) uo).getDisplayName().toLowerCase();
-            if (display.contains(lower)) {
+            String display = ((ComponentNode) uo).getDisplayName();
+            if (display.contains(query)) {   // case-sensitive substring match
                 matches.add(new TreePath(dmtn.getPath()));
             }
         }
 
         if (matches.isEmpty()) {
             JOptionPane.showMessageDialog(this,
-                    "No components matched \"" + query + "\".",
+                    "No components under \"" + scopeLabel(scope)
+                            + "\" matched \"" + query + "\".",
                     "Search", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
 
         tree.setSelectionPaths(matches.toArray(new TreePath[0]));
         tree.scrollPathToVisible(matches.get(0));
+    }
+
+    /** Display label of a tree node, used to name the search scope in dialogs. */
+    private static String scopeLabel(DefaultMutableTreeNode node) {
+        Object uo = node.getUserObject();
+        return (uo instanceof ComponentNode)
+                ? ((ComponentNode) uo).getDisplayName()
+                : String.valueOf(uo);
     }
 
     // -----------------------------------------------------------------------
