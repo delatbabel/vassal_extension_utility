@@ -26,7 +26,7 @@ Also: `make jar` / `make run` / `make clean` (see Makefile). No test suite yet. 
 | `model/VassalArchive` | Opens/saves a `.vmod` or `.vmdx` (ZIP + DOM). Tracks pending images. |
 | `model/RecentFilesStore` | Persists the 5 most-recently-opened files per panel to `~/.vassal-extension-utility/recent-files.properties` (see [Recent files](#recent-files)) |
 | `model/ComponentNode` | Wraps a `org.w3c.dom.Element`; computes the editor-style display label (see [Display names](#display-names)) and collects image references from subtree |
-| `gui/ArchivePanel` | `JPanel` containing a `JTree` built from `VassalArchive.getRootElement()` |
+| `gui/ArchivePanel` | `JPanel` containing a `JTree` built from `VassalArchive.getRootElement()`; `refresh()` preserves expansion/selection/scroll across rebuilds (see [Tree state preservation](#tree-state-preservation)) |
 | `gui/MainWindow` | Top-level `JFrame` — split pane of two `ArchivePanel`s, toolbar, status bar |
 
 ### Display names
@@ -41,6 +41,17 @@ Also: `make jar` / `make run` / `make clean` (see Makefile). No test suite yet. 
 `RecentFilesStore` keeps a separate most-recent-first list (capped at `MAX_RECENT` = 5) for the left and right panels, persisted as a Java properties file at `~/.vassal-extension-utility/recent-files.properties` (keys `left.0..left.4`, `right.0..right.4`). All disk I/O fails soft — a missing/unreadable store yields empty lists and save errors are only logged, so recent-file bookkeeping never blocks opening or saving.
 
 `MainWindow` owns one store and records every successful open via `recordRecent(panel, file)` (which dispatches to `addLeft`/`addRight` by identity comparison against `leftPanel`/`rightPanel`). The **File → Open Recent …** submenu is rebuilt by `rebuildRecentMenu()` after each open: it shows a disabled "Left panel" / "Right panel" header above each panel's entries, and selecting an entry calls `openArchive(panel, file)` to reopen it into that panel. `openArchive()` is the single open path shared by the file chooser and the recent menu; if a recent file no longer exists it is pruned from the store.
+
+### Tree state preservation
+
+`ArchivePanel.refresh()` rebuilds the `JTree` from the (mutated) DOM, but first captures and then re-applies the user's view state so a Move/Copy doesn't reset the panel:
+
+- **Identity key** — state is keyed by the DOM `Element` object, which is stable across a rebuild of the *same* archive (`buildTreeNode` makes fresh `DefaultMutableTreeNode`/`ComponentNode` wrappers but reuses the underlying elements). After rebuild, the new tree is indexed `Element → node` to translate captured state onto the new nodes.
+- **Captured** — expanded elements (`tree.getExpandedDescendants`), selected elements (`getSelectionPaths`), and the element of the row nearest the viewport top (`getClosestRowForLocation`).
+- **Restored** — `expandPath` for each previously-expanded element (also re-expands ancestors, so order is irrelevant); collapsed nodes stay collapsed; selection is re-applied (entries whose element is gone — e.g. moved-away nodes — are dropped); the captured top row is scrolled back to the top via `scrollRectToVisible`, falling back to revealing the selection.
+- **First load vs edit** — `setArchive()` calls the private `refresh(false)` so a newly opened archive opens at the default depth (`expandToDepth(..., 1)`); the public `refresh()` calls `refresh(true)` to preserve state. Cross-archive carry-over can't happen because a different document's elements won't be found in the index.
+
+Newly added subtrees (e.g. just-moved components) have no prior state and therefore appear collapsed under their (preserved-open) destination parent.
 
 ### Selection model
 
@@ -65,7 +76,7 @@ Both the Move and Copy toolbar buttons share `MainWindow.performTransfer(src, ds
 5. Missing images are queued with `VassalArchive.addPendingImage()`; missing setup files (checked via `VassalArchive.hasEntry()`) are queued with `VassalArchive.addPendingFile()`, which writes the entry under its exact root-level name. Both are in-memory until save.
 6. For each source element: `Document.importNode(srcElem, !copy)` clones it into the destination document (deep for Move so children are carried; **shallow for Copy so child components are excluded**) and appends to its resolved destination parent. For Move only, the original is then removed; for Copy the original is retained (creating a duplicate).
 7. **Move only:** setup files now orphaned in the source are pruned. The candidate set is the *moved* components' setup files (captured before recreated-ancestor files are added); each is removed via `VassalArchive.removeEntry()` only when a fresh scan of the post-removal source tree (`new ComponentNode(srcRoot).collectSetupFileReferences(true)`) shows no remaining `PredefinedSetup` references it.
-8. The destination archive is marked modified (and the source too on a Move); the destination tree is rebuilt via `ArchivePanel.refresh()` (the source tree too on a Move — Copy leaves the source unchanged).
+8. The destination archive is marked modified (and the source too on a Move); the destination tree is rebuilt via `ArchivePanel.refresh()`, which preserves expansion/selection/scroll (see [Tree state preservation](#tree-state-preservation)) — the source tree too on a Move; Copy leaves the source unchanged.
 9. File > Save All / Ctrl+S calls `VassalArchive.save()` which rewrites the ZIP atomically via a temp file (dropping any `pendingDeletions`).
 
 Recreated ancestors are always shallow clones (no children), regardless of Move vs Copy — only the selected components carry children (and only on a Move).

@@ -26,7 +26,11 @@ import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Panel showing the component hierarchy of one VassalArchive as a JTree.
@@ -71,19 +75,157 @@ public class ArchivePanel extends JPanel {
 
     public void setArchive(VassalArchive va) {
         this.archive = va;
-        refresh();
+        // Loading a different archive: start from the default expansion, do not
+        // try to carry over state from the previously displayed archive.
+        refresh(false);
     }
 
+    /**
+     * Rebuilds the tree from the (possibly mutated) DOM, preserving the user's
+     * expansion state, selection, and approximate scroll position.  Call this
+     * after components have been added to or removed from the archive.
+     */
     public void refresh() {
+        refresh(true);
+    }
+
+    /**
+     * @param preserveState when true, the existing tree's expanded/collapsed
+     *     state, selection, and scroll position are captured and re-applied to
+     *     the rebuilt tree (matched by DOM {@link Element} identity, which is
+     *     stable across a rebuild of the same archive).  When false, the tree
+     *     opens at its default depth (used when first loading an archive).
+     */
+    private void refresh(boolean preserveState) {
         if (archive == null) {
             treeModel.setRoot(new DefaultMutableTreeNode("(no file open)"));
             updateTitle();
             return;
         }
+
+        Object oldRoot = treeModel.getRoot();
+        boolean canPreserve = preserveState
+                && oldRoot instanceof DefaultMutableTreeNode
+                && elementOf((DefaultMutableTreeNode) oldRoot) != null;
+
+        Set<Element> expanded = null;
+        List<Element> selection = null;
+        Element topElement = null;
+        if (canPreserve) {
+            expanded   = captureExpandedElements();
+            selection  = captureSelectedElements();
+            topElement = captureTopElement();
+        }
+
         DefaultMutableTreeNode root = buildTreeNode(archive.getRootElement());
         treeModel.setRoot(root);
-        expandToDepth(tree, new TreePath(root), 1);
+
+        if (canPreserve) {
+            restoreState(root, expanded, selection, topElement);
+        } else {
+            expandToDepth(tree, new TreePath(root), 1);
+        }
         updateTitle();
+    }
+
+    // -----------------------------------------------------------------------
+    // Expansion / selection / scroll preservation across rebuilds
+    // -----------------------------------------------------------------------
+
+    private static Element elementOf(DefaultMutableTreeNode node) {
+        Object uo = node.getUserObject();
+        return (uo instanceof ComponentNode) ? ((ComponentNode) uo).getElement() : null;
+    }
+
+    /** Elements whose tree node is currently expanded (children visible). */
+    private Set<Element> captureExpandedElements() {
+        Set<Element> result = new HashSet<>();
+        DefaultMutableTreeNode root = (DefaultMutableTreeNode) treeModel.getRoot();
+        Enumeration<TreePath> expanded = tree.getExpandedDescendants(new TreePath(root));
+        if (expanded != null) {
+            while (expanded.hasMoreElements()) {
+                Element el = elementOf(
+                        (DefaultMutableTreeNode) expanded.nextElement().getLastPathComponent());
+                if (el != null) result.add(el);
+            }
+        }
+        return result;
+    }
+
+    /** Elements of the currently selected nodes, in selection order. */
+    private List<Element> captureSelectedElements() {
+        List<Element> result = new ArrayList<>();
+        TreePath[] paths = tree.getSelectionPaths();
+        if (paths != null) {
+            for (TreePath p : paths) {
+                Element el = elementOf((DefaultMutableTreeNode) p.getLastPathComponent());
+                if (el != null) result.add(el);
+            }
+        }
+        return result;
+    }
+
+    /** Element of the row currently nearest the top of the viewport (for scroll restore). */
+    private Element captureTopElement() {
+        Rectangle visible = tree.getVisibleRect();
+        int row = tree.getClosestRowForLocation(visible.x, visible.y);
+        if (row < 0) return null;
+        TreePath p = tree.getPathForRow(row);
+        return (p == null) ? null
+                : elementOf((DefaultMutableTreeNode) p.getLastPathComponent());
+    }
+
+    private void restoreState(DefaultMutableTreeNode root, Set<Element> expanded,
+                              List<Element> selection, Element topElement) {
+        // Index the rebuilt tree by DOM element identity.
+        Map<Element, DefaultMutableTreeNode> byElement = new HashMap<>();
+        Enumeration<TreeNode> all = root.breadthFirstEnumeration();
+        while (all.hasMoreElements()) {
+            DefaultMutableTreeNode n = (DefaultMutableTreeNode) all.nextElement();
+            Element el = elementOf(n);
+            if (el != null) byElement.put(el, n);
+        }
+
+        // Root is always shown expanded; then re-expand previously expanded nodes.
+        // expandPath also expands ancestors, so order does not matter.
+        tree.expandPath(new TreePath(root));
+        for (Element el : expanded) {
+            DefaultMutableTreeNode n = byElement.get(el);
+            if (n != null && !n.isLeaf()) {
+                tree.expandPath(new TreePath(n.getPath()));
+            }
+        }
+
+        // Restore selection (nodes that no longer exist are simply dropped).
+        List<TreePath> selectionPaths = new ArrayList<>();
+        for (Element el : selection) {
+            DefaultMutableTreeNode n = byElement.get(el);
+            if (n != null) selectionPaths.add(new TreePath(n.getPath()));
+        }
+        if (!selectionPaths.isEmpty()) {
+            tree.setSelectionPaths(selectionPaths.toArray(new TreePath[0]));
+        }
+
+        // Restore approximate scroll position: put the previously-top row back at
+        // the top.  If that node is gone, fall back to revealing the selection.
+        DefaultMutableTreeNode topNode = (topElement != null) ? byElement.get(topElement) : null;
+        if (topNode != null) {
+            scrollRowToTop(new TreePath(topNode.getPath()));
+        } else if (!selectionPaths.isEmpty()) {
+            tree.scrollPathToVisible(selectionPaths.get(0));
+        }
+    }
+
+    /** Scrolls so the given path's row sits at (approximately) the top of the viewport. */
+    private void scrollRowToTop(TreePath path) {
+        int row = tree.getRowForPath(path);
+        if (row < 0) return;
+        Rectangle rowBounds = tree.getRowBounds(row);
+        if (rowBounds == null) return;
+        // Request a viewport-height region starting at this row so it lands at the top.
+        Rectangle target = new Rectangle(
+                rowBounds.x, rowBounds.y, rowBounds.width, tree.getVisibleRect().height);
+        tree.scrollRectToVisible(target);
     }
 
     private void updateTitle() {

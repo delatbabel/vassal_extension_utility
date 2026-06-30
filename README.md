@@ -54,7 +54,8 @@ java -jar target/extension-utility-1.0-jar-with-dependencies.jar
    - Click **Copy →** (or **← Copy**) to duplicate the selected components into the destination parent. Only the components themselves are copied — **their child components are not** — and the originals are retained.
 6. Images referenced by any transferred component are automatically copied to the destination archive, and are **never** removed from the source (the same image may be used by other components that remain). The saved-game file (`.vsav`) of any **Pre-defined setup** is also copied — and on a **Move** it is genuinely moved: removed from the source once no remaining Pre-defined setup there still references it (so a `.vsav` shared by another setup is kept).
 7. If both a parent and its child are selected, only the parent is transferred (on a move the child is carried with it automatically; on a copy the child is excluded along with all other children).
-8. **File → Save All** (or Ctrl+S) writes all modified archives back to disk.
+8. After each transfer the trees are redrawn, but your view is kept: branches you had expanded stay expanded, collapsed ones stay collapsed, your selection is retained, and the scroll position stays in approximately the same place.
+9. **File → Save All** (or Ctrl+S) writes all modified archives back to disk.
 
 ## File Format Documentation
 
