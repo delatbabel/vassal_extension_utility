@@ -122,7 +122,7 @@ A `PredefinedSetup` component with `useFile="true"` references a bundled saved g
 
 The `file` value is the **literal ZIP entry name** of the saved game, stored at the archive root (not under `images/`). It usually ends in `.vsav` but is not required to. Setups with `useFile="false"` are menu containers only and reference no file.
 
-Because the saved game lives in the same archive as the component, moving or copying a `PredefinedSetup` between a module and an extension must carry its `.vsav` entry along with it; the Extension Utility copies the referenced entry into the destination archive automatically.
+Because the saved game lives in the same archive as the component, moving or copying a `PredefinedSetup` between a module and an extension must carry its `.vsav` entry along with it. The Extension Utility copies the referenced entry into the destination archive automatically. On a **Move** it also removes the entry from the source — but only when no other `PredefinedSetup` remaining in the source still references that file, so a save file shared between setups is never lost.
 
 ## nextPieceSlotId
 

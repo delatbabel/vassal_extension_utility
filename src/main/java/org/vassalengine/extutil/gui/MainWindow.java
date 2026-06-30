@@ -322,14 +322,18 @@ public class MainWindow extends JFrame {
      *   4. For each source element: clone into the destination document
      *      (deep for Move, shallow for Copy), append to its destination parent,
      *      and — for Move only — remove from the source document.
-     *   5. Rebuild the affected trees.
+     *   5. On a Move, prune setup files now orphaned in the source (removed only
+     *      when no remaining PredefinedSetup still references them).
+     *   6. Rebuild the affected trees.
      *
      * On a Move the whole subtree is carried; on a Copy only the selected
      * elements themselves are duplicated (their child components are not copied).
      *
-     * Images and setup files are copied but never deleted from the source — the
-     * same asset may be referenced by other components that remain in the source
-     * archive.
+     * Images are copied but never deleted from the source — the same image may be
+     * referenced by components that remain.  A Pre-defined setup's {@code .vsav}
+     * save file, by contrast, is genuinely moved: copied to the destination and
+     * then removed from the source if (and only if) no remaining setup references
+     * it (it may be shared with components that were not moved).
      *
      * @param copy {@code true} to copy (source retained, children excluded);
      *             {@code false} to move (source removed, children carried).
@@ -423,6 +427,10 @@ public class MainWindow extends JFrame {
                 allImageRefs.addAll(comp.collectImageReferences(srcImageNames, !copy));
                 allSetupFiles.addAll(comp.collectSetupFileReferences(!copy));
             }
+            // Setup files referenced by the components actually being transferred
+            // (before any recreated-ancestor files are added below) — only these
+            // are candidates for pruning from the source on a Move.
+            Set<String> movedSetupFiles = new HashSet<>(allSetupFiles);
 
             // 1b. Resolve each source component's destination parent.  When
             //     recreating parents, the ancestor chain is shallow-cloned into
@@ -488,6 +496,22 @@ public class MainWindow extends JFrame {
                 transferred++;
             }
 
+            // 3b. On a Move, prune setup files now orphaned in the source.  A file
+            //     is removed only when no PredefinedSetup remaining in the source
+            //     tree still references it (it may be shared with components that
+            //     were not moved).
+            int setupFilesPruned = 0;
+            if (!copy && !movedSetupFiles.isEmpty()) {
+                Set<String> stillReferenced = new ComponentNode(srcArchive.getRootElement())
+                        .collectSetupFileReferences(true);
+                for (String setupFile : movedSetupFiles) {
+                    if (!stillReferenced.contains(setupFile) && srcArchive.hasEntry(setupFile)) {
+                        srcArchive.removeEntry(setupFile);
+                        setupFilesPruned++;
+                    }
+                }
+            }
+
             if (transferred > 0) {
                 if (!copy) {
                     srcArchive.setModified(true);
@@ -502,11 +526,12 @@ public class MainWindow extends JFrame {
             dst.refresh();
             updateRoleBorders();
 
-            String summary = String.format("%s %d component(s) — %d image(s) copied.",
-                    verbPast, transferred, imagesCopied);
-            if (setupFilesCopied > 0) {
-                summary = String.format("%s %d component(s) — %d image(s), %d setup file(s) copied.",
-                        verbPast, transferred, imagesCopied, setupFilesCopied);
+            String summary = String.format("%s %d component(s) — %d image(s)%s copied.",
+                    verbPast, transferred, imagesCopied,
+                    setupFilesCopied > 0 ? String.format(", %d setup file(s)", setupFilesCopied) : "");
+            if (setupFilesPruned > 0) {
+                summary += String.format(" %d orphaned setup file(s) removed from source.",
+                        setupFilesPruned);
             }
             status(summary);
         } catch (Exception ex) {

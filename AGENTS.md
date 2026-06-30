@@ -64,12 +64,13 @@ Both the Move and Copy toolbar buttons share `MainWindow.performTransfer(src, ds
    When recreating parents, the recreated ancestors' own image refs and setup files are added too.
 5. Missing images are queued with `VassalArchive.addPendingImage()`; missing setup files (checked via `VassalArchive.hasEntry()`) are queued with `VassalArchive.addPendingFile()`, which writes the entry under its exact root-level name. Both are in-memory until save.
 6. For each source element: `Document.importNode(srcElem, !copy)` clones it into the destination document (deep for Move so children are carried; **shallow for Copy so child components are excluded**) and appends to its resolved destination parent. For Move only, the original is then removed; for Copy the original is retained (creating a duplicate).
-7. The destination archive is marked modified (and the source too on a Move); the destination tree is rebuilt via `ArchivePanel.refresh()` (the source tree too on a Move — Copy leaves the source unchanged).
-8. File > Save All / Ctrl+S calls `VassalArchive.save()` which rewrites the ZIP atomically via a temp file.
+7. **Move only:** setup files now orphaned in the source are pruned. The candidate set is the *moved* components' setup files (captured before recreated-ancestor files are added); each is removed via `VassalArchive.removeEntry()` only when a fresh scan of the post-removal source tree (`new ComponentNode(srcRoot).collectSetupFileReferences(true)`) shows no remaining `PredefinedSetup` references it.
+8. The destination archive is marked modified (and the source too on a Move); the destination tree is rebuilt via `ArchivePanel.refresh()` (the source tree too on a Move — Copy leaves the source unchanged).
+9. File > Save All / Ctrl+S calls `VassalArchive.save()` which rewrites the ZIP atomically via a temp file (dropping any `pendingDeletions`).
 
 Recreated ancestors are always shallow clones (no children), regardless of Move vs Copy — only the selected components carry children (and only on a Move).
 
-Images and Pre-defined setup files are **always copied, never deleted** from the source archive — the same asset may be referenced by other components that remain (and this mirrors the long-standing image behaviour). A moved `PredefinedSetup`'s `.vsav` therefore appears in the destination while a now-unreferenced copy is left behind in the source.
+**Images** are **always copied, never deleted** from the source — the same image may be referenced by components that remain. A **Pre-defined setup's `.vsav`**, by contrast, is a *true move*: copied to the destination, then removed from the source when (and only when) no remaining `PredefinedSetup` still references it (it may be shared with components that were not moved). `VassalArchive.removeEntry()` queues the drop in `pendingDeletions`, applied on the next `save()`.
 
 ### File Format
 

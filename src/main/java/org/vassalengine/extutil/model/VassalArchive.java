@@ -55,6 +55,7 @@ public class VassalArchive {
     private Set<String> entryNames;           // all non-directory ZIP entry names (full paths)
     private Map<String, byte[]> pendingImages; // images to be added on next save
     private Map<String, byte[]> pendingFiles;  // non-image entries to add on next save (full names)
+    private Set<String> pendingDeletions;      // entry names to drop on next save (full names)
     private boolean modified;
 
     // -----------------------------------------------------------------------
@@ -66,6 +67,7 @@ public class VassalArchive {
         va.file = f;
         va.pendingImages = new HashMap<>();
         va.pendingFiles = new HashMap<>();
+        va.pendingDeletions = new HashSet<>();
         va.modified = false;
         va.load();
         return va;
@@ -170,7 +172,20 @@ public class VassalArchive {
      */
     public void addPendingFile(String entryName, byte[] data) {
         pendingFiles.put(entryName, data);
+        pendingDeletions.remove(entryName);
         entryNames.add(entryName);
+        modified = true;
+    }
+
+    /**
+     * Marks an entry to be dropped from this archive on the next save (e.g. a
+     * Pre-defined setup's {@code .vsav} save file orphaned by a Move).  No effect
+     * if the entry is not present.
+     */
+    public void removeEntry(String entryName) {
+        if (!entryNames.remove(entryName)) return;
+        pendingFiles.remove(entryName);
+        pendingDeletions.add(entryName);
         modified = true;
     }
 
@@ -198,6 +213,7 @@ public class VassalArchive {
                     ZipEntry entry = entries.nextElement();
                     String name = entry.getName();
                     if (name.equals(BUILD_FILE)) continue;
+                    if (pendingDeletions.contains(name)) continue;     // dropped from this archive
                     if (name.startsWith(IMAGE_DIR)) {
                         String bare = name.substring(IMAGE_DIR.length());
                         if (pendingImages.containsKey(bare)) continue; // will be written below
@@ -238,6 +254,7 @@ public class VassalArchive {
             Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
             pendingImages.clear();
             pendingFiles.clear();
+            pendingDeletions.clear();
             modified = false;
             log.info("Saved {}", file.getName());
 

@@ -52,7 +52,7 @@ java -jar target/extension-utility-1.0-jar-with-dependencies.jar
 5. Transfer the selection into the destination parent:
    - Click **Move →** (or **← Move**) to move all selected source components, together with their children. The originals are removed from the source.
    - Click **Copy →** (or **← Copy**) to duplicate the selected components into the destination parent. Only the components themselves are copied — **their child components are not** — and the originals are retained.
-6. Images referenced by any transferred component are automatically copied to the destination archive. So are the saved-game files (`.vsav`) of any **Pre-defined setup** that is transferred. Copied assets are **not** removed from the source — the same image may be used by other components that remain, and a moved setup's `.vsav` is left behind as an (now unused) copy.
+6. Images referenced by any transferred component are automatically copied to the destination archive, and are **never** removed from the source (the same image may be used by other components that remain). The saved-game file (`.vsav`) of any **Pre-defined setup** is also copied — and on a **Move** it is genuinely moved: removed from the source once no remaining Pre-defined setup there still references it (so a `.vsav` shared by another setup is kept).
 7. If both a parent and its child are selected, only the parent is transferred (on a move the child is carried with it automatically; on a copy the child is excluded along with all other children).
 8. **File → Save All** (or Ctrl+S) writes all modified archives back to disk.
 
