@@ -36,15 +36,15 @@ Also: `make jar` / `make run` / `make clean` (see Makefile). No test suite yet. 
 - `getSelectedNodes()` → `List<DefaultMutableTreeNode>` (all selected; for source).
 - `getSelectedNode()` → first selected path (for destination parent).
 
-### Move Operation (the core feature)
+### Move / Copy Operation (the core feature)
 
-In `MainWindow.performMove(src, dst)`:
+Both the Move and Copy toolbar buttons share `MainWindow.performTransfer(src, dst, copy)`. `copy == false` is a Move; `copy == true` is a Copy:
 1. All selected source nodes are collected via `src.getSelectedNodes()`.
-2. `filterDescendants()` removes any node whose tree ancestor is also selected (moving the ancestor already carries descendants).
-3. `ComponentNode.collectImageReferences()` is called on each source node in one pass; results are unioned.
+2. `filterDescendants()` removes any node whose tree ancestor is also selected (transferring the ancestor already accounts for the descendant).
+3. `ComponentNode.collectImageReferences(imageNames, recurse)` is called on each source node in one pass; results are unioned. `recurse` is `!copy` — Move scans the full subtree it carries, Copy scans only the element's own attributes.
 4. Missing images are queued with `VassalArchive.addPendingImage()` (in-memory; written on save).
-5. For each source element: `Document.importNode(srcElem, true)` deep-clones it into the destination document, appends to the destination parent, then removes the original.
-6. Both archives are marked modified; both `ArchivePanel.refresh()` rebuild the JTree from the updated DOM.
+5. For each source element: `Document.importNode(srcElem, !copy)` clones it into the destination document (deep for Move so children are carried; **shallow for Copy so child components are excluded**) and appends to the destination parent. For Move only, the original is then removed; for Copy the original is retained (creating a duplicate).
+6. The destination archive is marked modified (and the source too on a Move); the destination tree is rebuilt via `ArchivePanel.refresh()` (the source tree too on a Move — Copy leaves the source unchanged).
 7. File > Save All / Ctrl+S calls `VassalArchive.save()` which rewrites the ZIP atomically via a temp file.
 
 Images are **always copied, never deleted** from the source archive (same image may be shared).

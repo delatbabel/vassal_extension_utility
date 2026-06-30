@@ -30,7 +30,7 @@ import java.util.Set;
  *
  * Layout:
  *   - Split pane: left panel (module or any archive), right panel (extension or any archive)
- *   - Toolbar: open buttons, move buttons, save button
+ *   - Toolbar: open buttons, move buttons, copy buttons, save button
  *   - Status bar
  *
  * Multi-selection workflow:
@@ -41,8 +41,14 @@ import java.util.Set;
  *      - Ctrl-click to add or remove individual items.
  *      - Right-click → "Search and select…" to select by partial name match.
  *   3. Single-click one component in the other panel as the destination parent.
- *   4. Click "Move →" or "← Move" to move all selected source components into
- *      the destination parent.  All images referenced by any moved component are
+ *   4. Either:
+ *      - Click "Move →" or "← Move" to move all selected source components
+ *        (with their children) into the destination parent.  The originals are
+ *        removed from the source.
+ *      - Click "Copy →" or "← Copy" to duplicate the selected components into
+ *        the destination parent.  Only the components themselves are copied —
+ *        their child components are not — and the originals are retained.
+ *      In both cases all images referenced by the transferred components are
  *      copied to the destination archive.
  *   5. File > Save All (Ctrl+S) to write changes to disk.
  */
@@ -143,14 +149,30 @@ public class MainWindow extends JFrame {
         JButton moveRight = new JButton("Move →");
         moveRight.setToolTipText(
                 "Move all selected components from LEFT panel into selected parent in RIGHT panel");
-        moveRight.addActionListener(e -> performMove(leftPanel, rightPanel));
+        moveRight.addActionListener(e -> performTransfer(leftPanel, rightPanel, false));
         toolbar.add(moveRight);
 
         JButton moveLeft = new JButton("← Move");
         moveLeft.setToolTipText(
                 "Move all selected components from RIGHT panel into selected parent in LEFT panel");
-        moveLeft.addActionListener(e -> performMove(rightPanel, leftPanel));
+        moveLeft.addActionListener(e -> performTransfer(rightPanel, leftPanel, false));
         toolbar.add(moveLeft);
+
+        toolbar.add(new JSeparator(SwingConstants.VERTICAL));
+
+        JButton copyRight = new JButton("Copy →");
+        copyRight.setToolTipText(
+                "Copy all selected components from LEFT panel into selected parent in RIGHT panel "
+                + "(child components are not copied)");
+        copyRight.addActionListener(e -> performTransfer(leftPanel, rightPanel, true));
+        toolbar.add(copyRight);
+
+        JButton copyLeft = new JButton("← Copy");
+        copyLeft.setToolTipText(
+                "Copy all selected components from RIGHT panel into selected parent in LEFT panel "
+                + "(child components are not copied)");
+        copyLeft.addActionListener(e -> performTransfer(rightPanel, leftPanel, true));
+        toolbar.add(copyLeft);
 
         toolbar.add(new JSeparator(SwingConstants.VERTICAL));
 
@@ -201,27 +223,40 @@ public class MainWindow extends JFrame {
     }
 
     // -----------------------------------------------------------------------
-    // Move operation
+    // Move / Copy operation
     // -----------------------------------------------------------------------
 
     /**
-     * Moves all selected components from src into the selected parent in dst.
+     * Moves or copies all selected components from src into the selected parent
+     * in dst.
      *
      * Steps:
      *   1. Collect all selected source nodes; filter out descendants of other
-     *      selected nodes (moving a parent already moves its children).
-     *   2. Gather all image references across every node to be moved.
+     *      selected nodes (transferring a parent already carries its children
+     *      on a Move; on a Copy a descendant of another selected node would be
+     *      redundant since the parent's own copy keeps it grouped).
+     *   2. Gather all image references across every node to be transferred.
      *   3. Copy any missing images to the destination archive.
-     *   4. For each source element: deep-clone into the destination document,
-     *      append to the destination parent, remove from the source document.
-     *   5. Rebuild both trees.
+     *   4. For each source element: clone into the destination document
+     *      (deep for Move, shallow for Copy), append to the destination parent,
+     *      and — for Move only — remove from the source document.
+     *   5. Rebuild the affected trees.
+     *
+     * On a Move the whole subtree is carried; on a Copy only the selected
+     * elements themselves are duplicated (their child components are not copied).
      *
      * Images are copied but never deleted from the source — the same image may
      * be referenced by other components that remain in the source archive.
+     *
+     * @param copy {@code true} to copy (source retained, children excluded);
+     *             {@code false} to move (source removed, children carried).
      */
-    private void performMove(ArchivePanel src, ArchivePanel dst) {
+    private void performTransfer(ArchivePanel src, ArchivePanel dst, boolean copy) {
+        String verb = copy ? "Copy" : "Move";
+        String verbPast = copy ? "Copied" : "Moved";
+
         if (src.getArchive() == null || dst.getArchive() == null) {
-            status("Open files in both panels before moving.");
+            status("Open files in both panels before " + (copy ? "copying." : "moving."));
             return;
         }
 
@@ -241,8 +276,8 @@ public class MainWindow extends JFrame {
             return;
         }
 
-        // Remove nodes whose ancestor is also in the selection — moving the
-        // ancestor already carries the descendant.
+        // Remove nodes whose ancestor is also in the selection — transferring the
+        // ancestor already accounts for the descendant.
         List<DefaultMutableTreeNode> srcNodes = filterDescendants(rawSrcNodes);
 
         // Validate all source nodes have ComponentNode user objects
@@ -262,11 +297,15 @@ public class MainWindow extends JFrame {
         String srcSummary = srcNodes.size() == 1
                 ? "\"" + srcComps.get(0).getDisplayName() + "\""
                 : srcNodes.size() + " components";
+        String childNote = copy
+                ? "\n\nOnly the selected component(s) will be copied — their child components will not."
+                : "";
         int confirm = JOptionPane.showConfirmDialog(this,
-                "Move " + srcSummary + "\n  into  \""
+                verb + " " + srcSummary + "\n  into  \""
                 + dstComp.getDisplayName() + "\"?\n\n"
-                + "Referenced images will be copied to the destination archive.",
-                "Confirm Move", JOptionPane.OK_CANCEL_OPTION);
+                + "Referenced images will be copied to the destination archive."
+                + childNote,
+                "Confirm " + verb, JOptionPane.OK_CANCEL_OPTION);
         if (confirm != JOptionPane.OK_OPTION) return;
 
         try {
@@ -274,10 +313,12 @@ public class MainWindow extends JFrame {
             VassalArchive dstArchive = dst.getArchive();
             Document dstDoc = dstArchive.getBuildDocument();
 
-            // 1. Collect all image references from all source components in one pass
+            // 1. Collect image references from all source components in one pass.
+            //    Move carries the full subtree (recurse); Copy duplicates only the
+            //    element itself, so only its own attributes are scanned.
             Set<String> allImageRefs = new HashSet<>();
             for (ComponentNode comp : srcComps) {
-                allImageRefs.addAll(comp.collectImageReferences(srcArchive.getImageNames()));
+                allImageRefs.addAll(comp.collectImageReferences(srcArchive.getImageNames(), !copy));
             }
 
             // 2. Copy images not already present in the destination
@@ -292,8 +333,8 @@ public class MainWindow extends JFrame {
                 }
             }
 
-            // 3. Move each source element
-            int moved = 0;
+            // 3. Transfer each source element
+            int transferred = 0;
             for (int i = 0; i < srcNodes.size(); i++) {
                 Element srcElem = srcComps.get(i).getElement();
                 Node srcParent = srcElem.getParentNode();
@@ -303,26 +344,35 @@ public class MainWindow extends JFrame {
                             srcComps.get(i).getDisplayName());
                     continue;
                 }
-                Node imported = dstDoc.importNode(srcElem, true);
+                // Deep import for Move (carry children); shallow for Copy (element only).
+                Node imported = dstDoc.importNode(srcElem, !copy);
                 dstElem.appendChild(imported);
-                srcParent.removeChild(srcElem);
-                moved++;
+                if (!copy) {
+                    srcParent.removeChild(srcElem);
+                }
+                transferred++;
             }
 
-            if (moved > 0) {
-                srcArchive.setModified(true);
+            if (transferred > 0) {
+                if (!copy) {
+                    srcArchive.setModified(true);
+                }
                 dstArchive.setModified(true);
             }
 
-            src.refresh();
+            // The source tree only changes on a Move.
+            if (!copy) {
+                src.refresh();
+            }
             dst.refresh();
             updateRoleBorders();
 
-            status(String.format("Moved %d component(s) — %d image(s) copied.", moved, imagesCopied));
+            status(String.format("%s %d component(s) — %d image(s) copied.",
+                    verbPast, transferred, imagesCopied));
         } catch (Exception ex) {
-            log.error("Move failed", ex);
+            log.error("{} failed", verb, ex);
             JOptionPane.showMessageDialog(this,
-                    "Move failed:\n" + ex.getMessage(),
+                    verb + " failed:\n" + ex.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
         }
     }

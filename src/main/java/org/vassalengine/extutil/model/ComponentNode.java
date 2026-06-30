@@ -214,12 +214,23 @@ public class ComponentNode {
      * Image references are attribute values that appear in the given archive's image set.
      */
     public Set<String> collectImageReferences(Set<String> archiveImageNames) {
+        return collectImageReferences(archiveImageNames, true);
+    }
+
+    /**
+     * Collects image filenames referenced by this element.
+     * When {@code recurse} is true the entire subtree is scanned (used by Move,
+     * which carries descendants); when false only this element's own attributes
+     * are scanned (used by Copy, which copies the element without its children).
+     */
+    public Set<String> collectImageReferences(Set<String> archiveImageNames, boolean recurse) {
         Set<String> refs = new HashSet<>();
-        collectImageRefs(element, archiveImageNames, refs);
+        collectImageRefs(element, archiveImageNames, refs, recurse);
         return refs;
     }
 
-    private void collectImageRefs(Element el, Set<String> archiveImageNames, Set<String> refs) {
+    private void collectImageRefs(Element el, Set<String> archiveImageNames, Set<String> refs,
+                                  boolean recurse) {
         NamedNodeMap attrs = el.getAttributes();
         for (int i = 0; i < attrs.getLength(); i++) {
             String value = attrs.item(i).getNodeValue();
@@ -231,11 +242,12 @@ public class ComponentNode {
                 }
             }
         }
+        if (!recurse) return;
         NodeList children = el.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             Node child = children.item(i);
             if (child.getNodeType() == Node.ELEMENT_NODE) {
-                collectImageRefs((Element) child, archiveImageNames, refs);
+                collectImageRefs((Element) child, archiveImageNames, refs, true);
             }
         }
     }
