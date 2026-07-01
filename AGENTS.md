@@ -115,6 +115,8 @@ Therefore `VassalArchive.writeArchive()` **preserves every entry's modification 
 
 Without this, every save reset all image mtimes to the current time, forcing VASSAL to re-tile large images on the next load. For a very large board image (tens of megapixels) that needless re-tile could fail or leave the map unrenderable even though the image bytes are perfectly valid (verified: identical CRC, `ImageIO`-readable, byte-for-byte the same as a VASSAL-authored entry). If an archive edited by an **older** build still misbehaves, deleting VASSAL's `tiles/` cache forces a clean re-tile.
 
+If a moved large image still won't display even though it is byte-identical and correctly referenced (same `Board` element, same `images/<name>` tile key, same cache dir as the module copy), the cause is in VASSAL's **tiler subprocess / tiled render path**, not in the utility's output — a tiled board image has no whole-image fallback, so any gap in tile generation (e.g. an extension that wasn't active when tiling ran, or an image silently skipped by `TilingHandler.findImages`, whose `failed` list is never logged) shows as a blank board. See **[docs/image-display-and-tiling.md](docs/image-display-and-tiling.md)** for the full pipeline analysis and how to diagnose it from VASSAL's `errorLog`.
+
 ### File Format
 
 - `.vmod`: ZIP with `buildFile.xml` (root `VASSAL.build.GameModule`) + `moduledata` + `images/`
