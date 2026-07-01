@@ -53,7 +53,7 @@ make release                 # all of the above
 make release-sha256          # checksums
 ```
 
-Packages are written to `tmp/` and bundle their own Java runtime. Version numbering is managed via `VNUM` in the `Makefile` (`make version-print` / `version-set`). See **[docs/packaging.md](docs/packaging.md)** for prerequisites (including how to install the required tools) and full details.
+Packages are written to `tmp/` and bundle their own Java runtime. Version numbering is managed via `VNUM` in the `Makefile` (`make version-print` / `version-bump` / `version-set`); `make version-bump` bumps the patch version by 0.0.1 (e.g. 1.0.0 → 1.0.1). See **[docs/packaging.md](docs/packaging.md)** for prerequisites (including how to install the required tools) and full details.
 
 ## Usage
 

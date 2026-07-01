@@ -18,7 +18,7 @@ Also: `make jar` / `make run` / `make clean` (see Makefile). No test suite yet. 
 
 ### Packaging & versioning
 
-The `Makefile` also builds installable packages (modelled on `../vassal/Makefile`): Linux `.deb`/`.rpm` via `jpackage`, Windows `.exe` (x86_64/aarch64/x86_32) via Launch4j + `jlink`, and macOS `.dmg` (x86_64/aarch64) via `genisoimage` + libdmg-hfsplus. Version numbering follows VASSAL: `VNUM` is the single source of truth, `MAVEN_VERSION` is the pom version, and a git-derived `VERSION` names the artifacts (`version-set`/`version-print`/`post-release`). Windows/macOS cross-builds need `make bootstrap` first (fetches Launch4j, libdmg-hfsplus, and per-platform JDKs into the git-ignored `dist/tools` and `dist/jdks`). Full instructions and tool prerequisites: **[docs/packaging.md](docs/packaging.md)**.
+The `Makefile` also builds installable packages (modelled on `../vassal/Makefile`): Linux `.deb`/`.rpm` via `jpackage`, Windows `.exe` (x86_64/aarch64/x86_32) via Launch4j + `jlink`, and macOS `.dmg` (x86_64/aarch64) via `genisoimage` + libdmg-hfsplus. Version numbering follows VASSAL: `VNUM` is the single source of truth, `MAVEN_VERSION` is the pom version, and a git-derived `VERSION` names the artifacts (`version-set`/`version-print`/`post-release`; `version-bump` increments the patch component of `VNUM` by 0.0.1 and syncs the pom). Windows/macOS cross-builds need `make bootstrap` first (fetches Launch4j, libdmg-hfsplus, and per-platform JDKs into the git-ignored `dist/tools` and `dist/jdks`). Full instructions and tool prerequisites: **[docs/packaging.md](docs/packaging.md)**.
 
 ## Architecture
 

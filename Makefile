@@ -113,6 +113,7 @@ help:
 	@echo "  Version:"
 	@echo "    version-print     Print the full build version ($(VERSION))"
 	@echo "    version-set       Set the Maven/pom version to $(MAVEN_VERSION)"
+	@echo "    version-bump      Bump the patch version by 0.0.1 (Makefile + pom)"
 	@echo "    post-release      Re-apply the Maven version after a release"
 	@echo ""
 	@echo "  Packages (output in $(TMPDIR)/):"
@@ -163,6 +164,17 @@ version: version-print
 
 version-set:
 	$(MVN) versions:set -DnewVersion=$(MAVEN_VERSION) -DgenerateBackupPoms=false
+
+# Bump the patch component of VNUM (e.g. 1.0.0 -> 1.0.1), rewriting VNUM in this
+# Makefile and setting the pom version to match so the build stays consistent.
+# (The new value is computed in the shell because make expands $(VNUM) once, at
+# parse time — a plain dependency on version-set would use the old value.)
+version-bump:
+	@new=$$(echo "$(VNUM)" | awk -F. 'BEGIN{OFS="."} {$$NF=$$NF+1; print}') ; \
+	echo "Bumping version: $(VNUM) -> $$new" ; \
+	sed -i -E "s/^VNUM:=.*/VNUM:=$$new/" Makefile ; \
+	$(MVN) -q versions:set -DnewVersion=$$new -DgenerateBackupPoms=false ; \
+	echo "Updated Makefile VNUM and pom.xml to $$new"
 
 post-release: version-set
 
@@ -318,7 +330,7 @@ clean: clean-release
 .SECONDARY:
 
 .PHONY: help build compile test jar run javadoc clean clean-release \
-        version version-print version-set post-release bootstrap \
+        version version-print version-set version-bump post-release bootstrap \
         release release-linux release-linux-deb release-linux-rpm \
         release-windows release-windows-x86_64 release-windows-aarch64 release-windows-x86_32 \
         release-macos release-macos-x86_64 release-macos-aarch64 release-sha256

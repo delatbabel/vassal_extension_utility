@@ -105,7 +105,8 @@ This fetches, with **no root required**:
 Versioning mirrors `../vassal/Makefile`.
 
 - **`VNUM`** at the top of the `Makefile` is the numeric version and the single
-  source of truth (e.g. `1.0.0`). Bump it for each release.
+  source of truth (e.g. `1.0.0`). Bump it for each release — either by editing
+  the line directly or with `make version-bump` (see below).
 - **`MAVEN_VERSION`** is the pom version — normally `VNUM`, or `VNUM-SNAPSHOT`
   between releases (uncomment the alternative line).
 - **`VERSION`** is the full, unique build identifier derived from git and used
@@ -118,12 +119,19 @@ Useful targets:
 
 ```bash
 make version-print     # print the full build VERSION
+make version-bump      # bump the patch version by 0.0.1 (e.g. 1.0.0 -> 1.0.1)
 make version-set       # set the pom.xml version to MAVEN_VERSION
 make post-release      # re-apply the pom version after a release (alias of version-set)
 ```
 
-Release flow: bump `VNUM`, run `make version-set`, commit, tag as `MAVEN_VERSION`,
-then `make release`.
+`make version-bump` increments the last (patch) component of `VNUM` — carrying
+correctly, e.g. `1.0.9` → `1.0.10` — rewriting the `VNUM` line in the `Makefile`
+**and** setting the pom version to match in one step, so the build stays
+consistent. For a larger bump (a new minor or major version), edit `VNUM`
+directly and run `make version-set`.
+
+Release flow: run `make version-bump` (or edit `VNUM`), commit, tag as
+`MAVEN_VERSION`, then `make release`.
 
 ---
 
