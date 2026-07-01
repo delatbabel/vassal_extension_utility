@@ -6,7 +6,7 @@
 
     <groupId>org.vassalengine</groupId>
     <artifactId>extension-utility</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <packaging>jar</packaging>
 
     <name>VASSAL Extension Utility</name>
