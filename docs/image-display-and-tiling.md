@@ -94,6 +94,66 @@ Candidate mechanisms in the VASSAL engine, in order of likelihood:
 None of these are caused by the utility: the artifact it produces is a valid,
 correctly-referenced image, indistinguishable from one VASSAL itself would write.
 
+## What the errorLog + tile cache actually showed
+
+For the reported case (VASSAL 3.7.24), the `errorLog` and cache were inspected
+directly, which **narrows the cause to VASSAL's render side and clears both the
+utility and the tiler**:
+
+- The tiler subprocess **succeeded**:
+  `FileArchiveImageTiler - Tiled images/CEMOD AMERICAS Centre.png` (no OOM; the
+  reported tiler heap was 24 GB, and the image is a `TYPE_BYTE_INDEXED` PNG that
+  decodes in ~414 MB anyway).
+- The cache dir `~/.VASSAL/tiles/700ae41c…` **is** `sha1("WiF CE Official Combo_2.0.r")`
+  — the module's name+version, exactly what both the tiler and the renderer key
+  on — and it contains **all 1330 1:1 tiles plus every reduced scale (1:2…1:32)**
+  for `images/CEMOD AMERICAS Centre.png`, all non-empty. (The bare-name key
+  `CEMOD AMERICAS Centre.png` — no `images/` — does *not* exist, confirming the
+  tiler used the full-path key the renderer also uses.)
+
+So the tiles the renderer needs are present and correctly named. The image still
+not drawing is therefore a **render-time bug in the engine**, not missing/mis-keyed
+tiles and not anything in the archive the utility wrote.
+
+## The likely engine bug: the tiled-vs-direct decision is made once, at build time
+
+`Board.setAttribute(IMAGE, …)` decides how the board image will be loaded **at the
+moment the board component is built**:
+
+```java
+// VASSAL/build/module/map/boardPicker/Board.java
+tiled = ts.tileExists("images/" + imageFile, 0, 0, 1.0);
+boardImageOp = tiled ? Op.loadLarge(imageFile)   // tiled render path
+                     : Op.load(imageFile);        // whole-image render path
+```
+
+`tileExists` is just `new File(tilePath).isFile()`. The result is cached on the
+board and **never re-evaluated**. Consequences:
+
+- A board built while its tiles already exist → tiled path → renders fine. This is
+  the normal case for **module** board images (their tiles persist between runs).
+- A board built *before* its tiles exist → whole-image path (`Op.load`). For a
+  huge board image the whole-image path can fail to render (blank), and the board
+  stays on that path for the whole session no matter that tiles appear moments
+  later. This is the fragile case for a board image that was **just moved into an
+  extension** and has never been tiled before.
+
+This build-time, one-shot decision — combined with the tiled path having no
+whole-image fallback and the whole-image path struggling on a ~84-megapixel image
+— is the most likely reason the same image draws from the module but not (yet)
+from the extension. It is an engine issue worth reporting upstream.
+
+### Practical remedy
+
+Because the decision is re-made every launch from whether tiles exist *then*, and
+the tiles now exist, simply **launch the module / load the game again**: on the
+next launch the extension board is built with its tiles already present, so it
+takes the tiled path and should draw. (Do **not** clear the tile cache first —
+that removes the tiles and reintroduces the "built before tiled" race.) If a
+second launch still shows it blank, capture the `errorLog` and report it to the
+VASSAL project with this analysis; there is nothing the utility can change to
+affect it, since the archive and the generated tiles are already correct.
+
 ## Diagnosing it on your machine
 
 The engine records the tiler subprocess output. **Reproduce the problem, then
