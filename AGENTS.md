@@ -95,7 +95,7 @@ Both the Move and Copy toolbar buttons share `MainWindow.performTransfer(src, ds
    - `ComponentNode.collectImageReferences(imageNames, recurse)` — image filenames found in the source's image set. Scans both element **attributes** (e.g. `image`, `icon`, `Board image`) **and element text content**, because game pieces (`PieceSlot`/`CardSlot`) embed their image filenames inside the serialised piece definition held as the element's text, not in attributes. The text is tokenised on the piece-definition delimiters `[;,/\t\r\n\\]` (so comma-separated layer images are split out) and each token is matched against the archive's image set.
    - `ComponentNode.collectSetupFileReferences(recurse)` — the save-file entry named by each `PredefinedSetup`'s `file` attribute when `useFile="true"` (a `.vsav` entry at the archive root). Menu-only setups (`useFile="false"`) contribute nothing.
    When recreating parents, the recreated ancestors' own image refs and setup files are added too.
-5. Missing images are queued with `VassalArchive.addPendingImage()`; missing setup files (checked via `VassalArchive.hasEntry()`) are queued with `VassalArchive.addPendingFile()`, which writes the entry under its exact root-level name. Both are in-memory until save.
+5. Missing images are queued with `VassalArchive.addPendingImage()`; missing setup files (checked via `VassalArchive.hasEntry()`) are queued with `VassalArchive.addPendingFile()`, which writes the entry under its exact root-level name. Both are in-memory until save. Each carries the **source entry's modification time** (`VassalArchive.getEntryTime()`) so the copied asset keeps its original timestamp — see [Image modification times & tiling](#image-modification-times--tiling).
 6. For each source element: `Document.importNode(srcElem, !copy)` clones it into the destination document (deep for Move so children are carried; **shallow for Copy so child components are excluded**) and appends to its resolved destination parent. For Move only, the original is then removed; for Copy the original is retained (creating a duplicate).
 7. **Move only:** setup files now orphaned in the source are pruned. The candidate set is the *moved* components' setup files (captured before recreated-ancestor files are added); each is removed via `VassalArchive.removeEntry()` only when a fresh scan of the post-removal source tree (`new ComponentNode(srcRoot).collectSetupFileReferences(true)`) shows no remaining `PredefinedSetup` references it.
 8. The destination archive is marked modified (and the source too on a Move); the destination tree is rebuilt via `ArchivePanel.refresh()`, which preserves expansion/selection/scroll (see [Tree state preservation](#tree-state-preservation)) — the source tree too on a Move; Copy leaves the source unchanged.
@@ -104,6 +104,16 @@ Both the Move and Copy toolbar buttons share `MainWindow.performTransfer(src, ds
 Recreated ancestors are always shallow clones (no children), regardless of Move vs Copy — only the selected components carry children (and only on a Move).
 
 **Images** are **always copied, never deleted** from the source — the same image may be referenced by components that remain. A **Pre-defined setup's `.vsav`**, by contrast, is a *true move*: copied to the destination, then removed from the source when (and only when) no remaining `PredefinedSetup` still references it (it may be shared with components that were not moved). `VassalArchive.removeEntry()` queues the drop in `pendingDeletions`, applied on the next `save()`.
+
+### Image modification times & tiling
+
+VASSAL renders large board images through a **disk tile cache** (`~/.VASSAL`/cache `tiles/<sha1(moduleName_moduleVersion)>`), and decides whether a cached tile is still valid purely by comparing **modification times**: `TilingHandler.isFresh()` re-tiles an image whenever its ZIP-entry mtime is newer-or-equal to the cached tile. Both the module and its active extensions tile into the same cache (keyed by the *module's* name+version).
+
+Therefore `VassalArchive.writeArchive()` **preserves every entry's modification time**:
+- surviving entries keep the source ZIP entry's `getTime()` (rather than being stamped "now" by `new ZipEntry(name)`);
+- copied images/setup files keep their source entry's time, captured via `getEntryTime()` and passed to `addPendingImage()/addPendingFile()`.
+
+Without this, every save reset all image mtimes to the current time, forcing VASSAL to re-tile large images on the next load. For a very large board image (tens of megapixels) that needless re-tile could fail or leave the map unrenderable even though the image bytes are perfectly valid (verified: identical CRC, `ImageIO`-readable, byte-for-byte the same as a VASSAL-authored entry). If an archive edited by an **older** build still misbehaves, deleting VASSAL's `tiles/` cache forces a clean re-tile.
 
 ### File Format
 

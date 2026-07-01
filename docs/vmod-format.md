@@ -119,6 +119,8 @@ Absolute paths beginning with `/images/` reference bundled VASSAL engine images 
 
 Here `Black _Corps.png`, `Black _CorpsBack.png`, and `USA.png` are images, embedded among `;`-, `,`-, `/`-, tab- and backslash-delimited fields. Any tool moving pieces between archives must scan this text (not just attributes) to find every referenced image — see `ComponentNode.collectImageReferences`.
 
+**Image entry modification times matter.** VASSAL tiles large board images into a disk cache and treats a cached tile as stale when the image ZIP entry's modification time is newer-or-equal to the tile. A tool that copies an image to another archive must therefore preserve the entry's original modification time; stamping it with the current time forces VASSAL to re-tile the image on the next load, which for a very large image can leave it unrenderable even though the bytes are intact. The Extension Utility preserves entry mtimes on every save (`VassalArchive.getEntryTime`/`writeArchive`).
+
 ## Pre-defined Setup Files
 
 A `PredefinedSetup` component with `useFile="true"` references a bundled saved game via its `file` attribute, e.g.:

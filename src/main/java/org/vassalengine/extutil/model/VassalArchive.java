@@ -58,6 +58,8 @@ public class VassalArchive {
     private Set<String> entryNames;           // all non-directory ZIP entry names (full paths)
     private Map<String, byte[]> pendingImages; // images to be added on next save
     private Map<String, byte[]> pendingFiles;  // non-image entries to add on next save (full names)
+    private Map<String, Long> pendingImageTimes; // bareName -> source mod time (epoch ms), if known
+    private Map<String, Long> pendingFileTimes;  // entry name -> source mod time (epoch ms), if known
     private Set<String> pendingDeletions;      // entry names to drop on next save (full names)
     private boolean modified;
 
@@ -70,6 +72,8 @@ public class VassalArchive {
         va.file = f;
         va.pendingImages = new HashMap<>();
         va.pendingFiles = new HashMap<>();
+        va.pendingImageTimes = new HashMap<>();
+        va.pendingFileTimes = new HashMap<>();
         va.pendingDeletions = new HashSet<>();
         va.modified = false;
         va.load();
@@ -100,6 +104,8 @@ public class VassalArchive {
         va.entryNames = new HashSet<>();
         va.pendingImages = new HashMap<>();
         va.pendingFiles = new HashMap<>();
+        va.pendingImageTimes = new HashMap<>();
+        va.pendingFileTimes = new HashMap<>();
         va.pendingDeletions = new HashSet<>();
 
         Element modRoot = module.getRootElement();
@@ -228,16 +234,41 @@ public class VassalArchive {
         }
     }
 
+    /**
+     * Returns the modification time (epoch millis) of a ZIP entry, or -1 if the
+     * entry is absent or this archive has no backing file.  Used to preserve an
+     * asset's timestamp when it is copied to another archive — VASSAL keys its
+     * image-tile cache freshness on entry modification time, so resetting it to
+     * "now" would force large images to be re-tiled on every load.
+     */
+    public long getEntryTime(String entryName) throws IOException {
+        if (file == null) return -1L;
+        try (ZipFile zf = new ZipFile(file)) {
+            ZipEntry entry = zf.getEntry(entryName);
+            return (entry == null) ? -1L : entry.getTime();
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Adding images
     // -----------------------------------------------------------------------
 
-    /**
-     * Queues an image to be written to this archive on the next save.
-     * If the image already exists in the archive it is still queued (overwrite on save).
-     */
+    /** Queues an image to be written on the next save, keeping no source timestamp. */
     public void addPendingImage(String bareName, byte[] data) {
+        addPendingImage(bareName, data, -1L);
+    }
+
+    /**
+     * Queues an image to be written to this archive on the next save, stamped with
+     * {@code timeMillis} (its source modification time; pass a negative value to
+     * use the current time).  If the image already exists it is still queued
+     * (overwrite on save).
+     */
+    public void addPendingImage(String bareName, byte[] data, long timeMillis) {
         pendingImages.put(bareName, data);
+        if (timeMillis >= 0) pendingImageTimes.put(bareName, timeMillis);
+        else pendingImageTimes.remove(bareName);
+        pendingDeletions.remove(IMAGE_DIR + bareName);
         imageNames.add(bareName);
         modified = true;
     }
@@ -247,13 +278,21 @@ public class VassalArchive {
         return entryNames.contains(entryName);
     }
 
+    /** Queues a non-image entry to be written on the next save, keeping no source timestamp. */
+    public void addPendingFile(String entryName, byte[] data) {
+        addPendingFile(entryName, data, -1L);
+    }
+
     /**
      * Queues a non-image entry (e.g. a Pre-defined setup's {@code .vsav} save file)
-     * to be written to this archive on the next save, under its exact entry name.
-     * If the entry already exists it is still queued (overwrite on save).
+     * to be written on the next save, stamped with {@code timeMillis} (its source
+     * modification time; pass a negative value to use the current time).  If the
+     * entry already exists it is still queued (overwrite on save).
      */
-    public void addPendingFile(String entryName, byte[] data) {
+    public void addPendingFile(String entryName, byte[] data, long timeMillis) {
         pendingFiles.put(entryName, data);
+        if (timeMillis >= 0) pendingFileTimes.put(entryName, timeMillis);
+        else pendingFileTimes.remove(entryName);
         pendingDeletions.remove(entryName);
         entryNames.add(entryName);
         modified = true;
@@ -267,6 +306,7 @@ public class VassalArchive {
     public void removeEntry(String entryName) {
         if (!entryNames.remove(entryName)) return;
         pendingFiles.remove(entryName);
+        pendingFileTimes.remove(entryName);
         pendingDeletions.add(entryName);
         modified = true;
     }
@@ -279,6 +319,7 @@ public class VassalArchive {
         removeEntry(IMAGE_DIR + bareName);
         imageNames.remove(bareName);
         pendingImages.remove(bareName);
+        pendingImageTimes.remove(bareName);
     }
 
     // -----------------------------------------------------------------------
@@ -361,7 +402,13 @@ public class VassalArchive {
                                 if (pendingImages.containsKey(bare)) continue;
                             }
                             if (pendingFiles.containsKey(name)) continue;
-                            out.putNextEntry(new ZipEntry(name));
+                            // Preserve the entry's modification time — VASSAL keys
+                            // its image-tile cache freshness on it, so stamping
+                            // "now" would force large images to be re-tiled.
+                            ZipEntry copy = new ZipEntry(name);
+                            long mtime = entry.getTime();
+                            if (mtime >= 0) copy.setTime(mtime);
+                            out.putNextEntry(copy);
                             try (InputStream is = zf.getInputStream(entry)) {
                                 is.transferTo(out);
                             }
@@ -370,16 +417,22 @@ public class VassalArchive {
                     }
                 }
 
-                // Write pending images
+                // Write pending images (preserving their source modification time)
                 for (Map.Entry<String, byte[]> img : pendingImages.entrySet()) {
-                    out.putNextEntry(new ZipEntry(IMAGE_DIR + img.getKey()));
+                    ZipEntry ze = new ZipEntry(IMAGE_DIR + img.getKey());
+                    Long mtime = pendingImageTimes.get(img.getKey());
+                    if (mtime != null) ze.setTime(mtime);
+                    out.putNextEntry(ze);
                     out.write(img.getValue());
                     out.closeEntry();
                 }
 
                 // Write pending non-image entries (moduledata, extensiondata, .vsav, …)
                 for (Map.Entry<String, byte[]> entry : pendingFiles.entrySet()) {
-                    out.putNextEntry(new ZipEntry(entry.getKey()));
+                    ZipEntry ze = new ZipEntry(entry.getKey());
+                    Long mtime = pendingFileTimes.get(entry.getKey());
+                    if (mtime != null) ze.setTime(mtime);
+                    out.putNextEntry(ze);
                     out.write(entry.getValue());
                     out.closeEntry();
                 }
@@ -393,6 +446,8 @@ public class VassalArchive {
             Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
             pendingImages.clear();
             pendingFiles.clear();
+            pendingImageTimes.clear();
+            pendingFileTimes.clear();
             pendingDeletions.clear();
             modified = false;
             log.info("Saved {}", target.getName());

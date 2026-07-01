@@ -670,13 +670,16 @@ public class MainWindow extends JFrame {
                 }
             }
 
-            // 2. Copy images not already present in the destination
+            // 2. Copy images not already present in the destination.  The source
+            //    entry's modification time is carried over so VASSAL's image-tile
+            //    cache treats the moved image as unchanged (see VassalArchive.getEntryTime).
             int imagesCopied = 0;
             for (String imgName : allImageRefs) {
                 if (!dstArchive.getImageNames().contains(imgName)) {
-                    byte[] data = srcArchive.readEntry(VassalArchive.IMAGE_DIR + imgName);
+                    String entry = VassalArchive.IMAGE_DIR + imgName;
+                    byte[] data = srcArchive.readEntry(entry);
                     if (data != null) {
-                        dstArchive.addPendingImage(imgName, data);
+                        dstArchive.addPendingImage(imgName, data, srcArchive.getEntryTime(entry));
                         imagesCopied++;
                     }
                 }
@@ -689,7 +692,7 @@ public class MainWindow extends JFrame {
                 if (!dstArchive.hasEntry(setupFile)) {
                     byte[] data = srcArchive.readEntry(setupFile);
                     if (data != null) {
-                        dstArchive.addPendingFile(setupFile, data);
+                        dstArchive.addPendingFile(setupFile, data, srcArchive.getEntryTime(setupFile));
                         setupFilesCopied++;
                     } else {
                         log.warn("Pre-defined setup file not found in source archive: {}", setupFile);
