@@ -653,11 +653,15 @@ public class MainWindow extends JFrame {
             //     and any images / setup files those ancestors reference are queued too.
             List<Element> dstParents = new ArrayList<>(srcComps.size());
             if (graftIntoExtension) {
-                // Wrap each component in an ExtensionElement targeting its original
-                // module location; reuse one wrapper per distinct target.
+                // Wrap each component in its OWN ExtensionElement targeting its
+                // original module location. A VASSAL ExtensionElement holds exactly
+                // one component (ExtensionElement.build reads only the first child
+                // element), so components must never share a wrapper — even when
+                // they graft to the same target — or VASSAL silently drops all but
+                // the first.
                 for (ComponentNode comp : srcComps) {
                     String target = moduleTargetPath(comp.getElement());
-                    dstParents.add(findOrCreateExtensionElement(dstDoc, dstRoot, target));
+                    dstParents.add(createExtensionElement(dstDoc, dstRoot, target));
                 }
             } else if (recreateParents) {
                 for (ComponentNode comp : srcComps) {
@@ -924,21 +928,16 @@ public class MainWindow extends JFrame {
     }
 
     /**
-     * Finds the {@link #EXTENSION_ELEMENT} child of {@code extRoot} with the given
-     * target, or creates and appends one.  Reusing an existing wrapper keeps
-     * multiple components grafted to the same module location together.
+     * Creates a new {@link #EXTENSION_ELEMENT} with the given target and appends
+     * it to {@code extRoot}.  A separate wrapper is created for every component —
+     * they are never shared, because a VASSAL {@code ExtensionElement} builds only
+     * its first child element ({@code ExtensionElement.build}), so a shared wrapper
+     * would silently discard all but the first grafted component.  This matches
+     * what the VASSAL editor writes: one {@code ExtensionElement} per component,
+     * even when several target the same location.
      */
-    private static Element findOrCreateExtensionElement(Document dstDoc, Element extRoot,
-                                                        String target) {
-        NodeList children = extRoot.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            Node child = children.item(i);
-            if (child.getNodeType() == Node.ELEMENT_NODE
-                    && EXTENSION_ELEMENT.equals(((Element) child).getTagName())
-                    && target.equals(((Element) child).getAttribute("target"))) {
-                return (Element) child;
-            }
-        }
+    private static Element createExtensionElement(Document dstDoc, Element extRoot,
+                                                  String target) {
         Element ee = dstDoc.createElement(EXTENSION_ELEMENT);
         ee.setAttribute("target", target);
         extRoot.appendChild(ee);

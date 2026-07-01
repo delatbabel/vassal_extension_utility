@@ -5,9 +5,33 @@ image (`CEMOD AMERICAS Centre.png`, 9602×8749) displayed correctly when it live
 in a module but not after it was moved into an extension — even though the
 extension shows the image as present and its checksum matches the module's.
 
-**Bottom line:** the image the utility writes into the extension is byte-for-byte
-correct; the problem is in how VASSAL *renders* very large board images (its tile
-cache), not in how the utility copies or references them.
+## Resolution (the actual root cause)
+
+The image never failed to *load* — its **owning `Board` component was silently
+dropped** when VASSAL read the extension, so nothing referenced the image and the
+board simply wasn't there to draw. The utility had packed several boards
+(`Americas AiF Nth Insert`, `… Main Inset`, `… Sth Insert`) into a **single**
+`VASSAL.build.module.ExtensionElement`. But a VASSAL `ExtensionElement` holds
+**exactly one** component — `ExtensionElement.build()` builds only the *first*
+child element and stops — so VASSAL kept the first board and discarded the rest
+(and permanently deleted them if the extension was then re-saved in the editor).
+The `CEMOD AMERICAS Centre.png` board was one of the discarded ones.
+
+**Fix:** the utility now writes **one `ExtensionElement` per grafted component**,
+never sharing a wrapper even when several components target the same location —
+exactly what the VASSAL editor does (see `MainWindow.createExtensionElement` and
+[AGENTS.md → Move / Copy Operation](../AGENTS.md)). An extension already damaged by
+an older build must be re-created (re-do the move with the fixed utility), since
+VASSAL discarded the extra boards on load.
+
+The rest of this note — the tiling analysis below — is retained because it was a
+useful (and now ruled-out) line of inquiry: the image bytes and the generated
+tiles were verified perfect, which is what pointed the investigation away from
+the file and toward the component structure.
+
+**Bottom line:** the image bytes the utility writes are byte-for-byte correct and
+tile perfectly; the defect was that extra grafted components sharing one
+`ExtensionElement` were dropped by VASSAL.
 
 ## What was verified about the moved image
 

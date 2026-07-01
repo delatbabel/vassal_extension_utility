@@ -112,7 +112,9 @@ The path is produced by VASSAL's `ComponentPathBuilder` using a `SequenceEncoder
 
 This means: find the `ChartWindow` whose `name` is `"Charts"`, then find the `TabWidget` whose `entryName` is `"tabs"` inside it. The `ExtensionElement`'s child component will be appended to that `TabWidget`.
 
-> **Critical for moving components into an extension:** a component must be placed *inside* an `ExtensionElement` whose `target` is the module path of its original parent — appending the raw component directly under the `ModuleExtension` root makes VASSAL silently ignore it (it will not appear in the editor at all). When the Extension Utility moves/copies a component to the top level of an extension it builds this wrapper automatically (`MainWindow.moduleTargetPath()` reproduces the `ComponentPathBuilder`/`SequenceEncoder` encoding exactly).
+> **An `ExtensionElement` holds exactly ONE component.** `ExtensionElement.build()` in the engine builds only its *first* child element and stops; `add()` keeps a single component. To graft several components into the same module location you must write **one `ExtensionElement` per component**, each repeating the same `target` — which is exactly what the VASSAL editor does. Putting multiple components inside one `ExtensionElement` makes VASSAL keep only the first and silently discard the rest (and delete them permanently if the extension is re-saved).
+
+> **Critical for moving components into an extension:** a component must be placed *inside* an `ExtensionElement` whose `target` is the module path of its original parent — appending the raw component directly under the `ModuleExtension` root makes VASSAL silently ignore it (it will not appear in the editor at all). When the Extension Utility moves/copies components to the top level of an extension it builds one wrapper per component automatically (`MainWindow.moduleTargetPath()` reproduces the `ComponentPathBuilder`/`SequenceEncoder` encoding exactly; `createExtensionElement()` makes a fresh wrapper each time).
 
 **Common target patterns:**
 
