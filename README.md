@@ -30,14 +30,30 @@ make clean   # remove build artefacts
 make help    # show all targets
 ```
 
-The fat JAR is produced at `target/extension-utility-1.0-jar-with-dependencies.jar`.
+The fat JAR is produced at `target/extension-utility-1.0.0-jar-with-dependencies.jar`.
 
 You can also invoke Maven directly:
 
 ```bash
 ./mvnw package
-java -jar target/extension-utility-1.0-jar-with-dependencies.jar
+java -jar target/extension-utility-1.0.0-jar-with-dependencies.jar
 ```
+
+## Packaging / releases
+
+The `Makefile` builds installable packages for each platform, matching the types on the [VASSAL download page](https://vassalengine.org/download.html):
+
+```bash
+make release-linux-deb       # Linux .deb            (jpackage)
+make release-linux-rpm       # Linux .rpm            (jpackage; needs rpmbuild)
+make bootstrap               # fetch Windows/macOS cross-build tools + JDKs (once)
+make release-windows         # Windows .exe x86_64 / aarch64 / x86_32 (Launch4j)
+make release-macos           # macOS .dmg x86_64 / aarch64 (libdmg-hfsplus)
+make release                 # all of the above
+make release-sha256          # checksums
+```
+
+Packages are written to `tmp/` and bundle their own Java runtime. Version numbering is managed via `VNUM` in the `Makefile` (`make version-print` / `version-set`). See **[docs/packaging.md](docs/packaging.md)** for prerequisites (including how to install the required tools) and full details.
 
 ## Usage
 

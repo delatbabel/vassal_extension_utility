@@ -11,10 +11,14 @@ A Java Swing desktop utility for moving components between VASSAL boardgame modu
 ```bash
 ./mvnw package                       # compile + produce fat JAR in target/
 ./mvnw exec:java                     # run without packaging
-java -jar target/extension-utility-1.0-jar-with-dependencies.jar
+java -jar target/extension-utility-1.0.0-jar-with-dependencies.jar
 ```
 
 Also: `make jar` / `make run` / `make clean` (see Makefile). No test suite yet. Single-module Maven project; no lint plugins configured.
+
+### Packaging & versioning
+
+The `Makefile` also builds installable packages (modelled on `../vassal/Makefile`): Linux `.deb`/`.rpm` via `jpackage`, Windows `.exe` (x86_64/aarch64/x86_32) via Launch4j + `jlink`, and macOS `.dmg` (x86_64/aarch64) via `genisoimage` + libdmg-hfsplus. Version numbering follows VASSAL: `VNUM` is the single source of truth, `MAVEN_VERSION` is the pom version, and a git-derived `VERSION` names the artifacts (`version-set`/`version-print`/`post-release`). Windows/macOS cross-builds need `make bootstrap` first (fetches Launch4j, libdmg-hfsplus, and per-platform JDKs into the git-ignored `dist/tools` and `dist/jdks`). Full instructions and tool prerequisites: **[docs/packaging.md](docs/packaging.md)**.
 
 ## Architecture
 
