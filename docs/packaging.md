@@ -157,6 +157,18 @@ make release-linux         # both
 `jpackage` bundles a minimal Java runtime automatically, so the resulting
 package is self-contained (no separate Java install needed by the end user).
 
+The package installs under `/opt/vassal-extension-utility/`, with the launcher
+at `bin/vassal_extension_utility` (a plain, space-free name so it is easy to run
+and script). To put it on the user's `PATH`, the package's maintainer scripts
+create a symlink `/usr/bin/vassal_extension_utility → the launcher` on install
+and remove it on uninstall (only if it still points at our launcher). These
+scripts are produced by taking jpackage's own template `postinst`/`prerm` (deb)
+and `.spec` (rpm) from the packaging JDK and injecting the symlink at the
+desktop-install/uninstall markers, so they stay correct across JDK versions
+(built into `tmp/jpackage-res` and passed via `--resource-dir`). Note jpackage
+names the rpm `.spec` resource after the **package** name (`--linux-package-name`),
+whereas the deb `postinst`/`prerm` resources use fixed names.
+
 ### Windows `.exe`
 
 ```bash

@@ -57,6 +57,14 @@ PKGNAME:=vassal-extension-utility
 VENDOR:=VASSAL Engine
 DESCRIPTION:=Move and copy components between VASSAL modules and extensions
 
+# Linux launcher/binary name — no spaces, so it is convenient to run and to put
+# on PATH. jpackage's --name sets the launcher executable name (and the .desktop
+# entry); the deb/rpm package + /opt subdir stay $(PKGNAME).
+LAUNCHER:=vassal_extension_utility
+# jpackage installs the app under /opt/<package-name>; the launcher is bin/<name>.
+LINK_SRC:=/opt/$(PKGNAME)/bin/$(LAUNCHER)
+LINK_DST:=/usr/bin/$(LAUNCHER)
+
 MVN:=./mvnw
 DISTJAR:=target/$(JARNAME)-jar-with-dependencies.jar
 
@@ -208,11 +216,12 @@ bootstrap:
 JPACKAGE_COMMON=--input $(TMPDIR)/jpackage-input \
                 --main-jar $(notdir $(DISTJAR)) \
                 --main-class $(MAINCLASS) \
-                --name "$(APPNAME)" \
+                --name $(LAUNCHER) \
                 --app-version $(VNUM) \
                 --vendor "$(VENDOR)" \
                 --description "$(DESCRIPTION)" \
                 --dest $(TMPDIR) \
+                --resource-dir $(TMPDIR)/jpackage-res \
                 --linux-package-name $(PKGNAME) \
                 --linux-app-category utils \
                 --linux-menu-group "Game;Utility"
@@ -222,13 +231,40 @@ $(TMPDIR)/jpackage-input/$(notdir $(DISTJAR)): $(DISTJAR) | $(TMPDIR)
 	mkdir -p $(TMPDIR)/jpackage-input
 	cp $(DISTJAR) $(TMPDIR)/jpackage-input/
 
-release-linux-deb: $(TMPDIR)/jpackage-input/$(notdir $(DISTJAR))
+# Package maintainer scripts that symlink the launcher into /usr/bin so it is on
+# the user's PATH. We take jpackage's OWN templates (from the packaging JDK) and
+# inject the symlink after the desktop-install/uninstall markers, so the result
+# stays correct across JDK versions and keeps jpackage's default behaviour. The
+# symlink is removed on uninstall only if it still points at our launcher.
+$(TMPDIR)/jpackage-res: | $(TMPDIR)
+	@command -v unzip >/dev/null || { echo "unzip is required to build the Linux package scripts"; exit 1; }
+	rm -rf $@ && mkdir -p $@/tpl
+	@# a .jmod has a 4-byte magic prefix before the zip, so unzip extracts fine
+	@# but exits non-zero with a warning — tolerate it, then verify the files.
+	cd $@/tpl && unzip -o -q -j "$(JPACKAGE_JDK)/jmods/jdk.jpackage.jmod" \
+	    'classes/jdk/jpackage/internal/resources/template.postinst' \
+	    'classes/jdk/jpackage/internal/resources/template.prerm' \
+	    'classes/jdk/jpackage/internal/resources/template.spec' >/dev/null 2>&1 || true
+	@for f in template.postinst template.prerm template.spec ; do \
+	    [ -f $@/tpl/$$f ] || { echo "Failed to extract $$f from jdk.jpackage.jmod"; exit 1; }; done
+	sed '/DESKTOP_COMMANDS_INSTALL/a ln -sf "$(LINK_SRC)" "$(LINK_DST)"' \
+	    $@/tpl/template.postinst > $@/postinst
+	sed '/DESKTOP_COMMANDS_UNINSTALL/a [ "$$(readlink "$(LINK_DST)" 2>/dev/null)" = "$(LINK_SRC)" ] && rm -f "$(LINK_DST)" || true' \
+	    $@/tpl/template.prerm > $@/prerm
+	@# jpackage names the .spec resource after the PACKAGE name (--linux-package-name),
+	@# not the launcher/app name.
+	sed -e '/DESKTOP_COMMANDS_INSTALL/a ln -sf "$(LINK_SRC)" "$(LINK_DST)"' \
+	    -e '/DESKTOP_COMMANDS_UNINSTALL/a [ "$$(readlink "$(LINK_DST)" 2>/dev/null)" = "$(LINK_SRC)" ] && rm -f "$(LINK_DST)" || true' \
+	    $@/tpl/template.spec > $@/$(PKGNAME).spec
+	rm -rf $@/tpl
+
+release-linux-deb: $(TMPDIR)/jpackage-input/$(notdir $(DISTJAR)) $(TMPDIR)/jpackage-res
 	@[ -x "$(JPACKAGE)" ] || { echo "jpackage not found (set JPACKAGE_JDK); see docs/packaging.md"; exit 1; }
 	rm -f $(TMPDIR)/$(PKGNAME)_*.deb
 	"$(JPACKAGE)" --type deb $(JPACKAGE_COMMON)
 	@ls -1 $(TMPDIR)/*.deb
 
-release-linux-rpm: $(TMPDIR)/jpackage-input/$(notdir $(DISTJAR))
+release-linux-rpm: $(TMPDIR)/jpackage-input/$(notdir $(DISTJAR)) $(TMPDIR)/jpackage-res
 	@[ -x "$(JPACKAGE)" ] || { echo "jpackage not found (set JPACKAGE_JDK); see docs/packaging.md"; exit 1; }
 	@command -v rpmbuild >/dev/null || { echo "rpmbuild not found — install the 'rpm' package (see docs/packaging.md)"; exit 1; }
 	rm -f $(TMPDIR)/$(PKGNAME)-*.rpm
