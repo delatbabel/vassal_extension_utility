@@ -74,12 +74,25 @@ APP_MODULES:=java.base,java.desktop,java.xml,java.naming,java.logging,java.sql
 JPACKAGE_JDK?=$(shell for d in /usr/lib/jvm/*/ ; do \
   [ -d "$${d}jmods" ] && [ -x "$${d}bin/jpackage" ] && echo "$${d%/}"; done | sort -V | tail -1)
 JPACKAGE:=$(JPACKAGE_JDK)/bin/jpackage
-# jlink for cross-linking Windows/macOS runtimes from the target platform's
-# jmods. Must be at least as new as the bootstrapped JDKs (21), so pick the
-# highest-version host jlink available. Override with `make JLINK_JDK=...`.
-JLINK_JDK?=$(shell for d in /usr/lib/jvm/*/ ; do \
-  [ -x "$${d}bin/jlink" ] && echo "$${d%/}"; done | sort -V | tail -1)
-JLINK:=$(JLINK_JDK)/bin/jlink
+# Cross-linking a Windows/macOS runtime requires a host jlink whose Java feature
+# version EXACTLY matches the target JDK's jmods (jlink refuses a mismatch, e.g.
+# "jlink version 21.0 does not match target java.base version 17.0"). Targets use
+# different versions — Windows 32-bit tops out at Java 17 (no newer 32-bit build)
+# while everything else uses 21 — so we resolve a jlink per version. These must
+# match the versions bootstrap downloads (see JDK_MAIN / JDK_WIN32 in bootstrap.sh).
+JDK_MAIN_VER:=21
+JDK_WIN32_VER:=17
+
+# Resolve a Linux host jlink of a given Java feature version: prefer one
+# bootstrapped under dist/jdks/linux-x86_64-<ver>, else a system JDK of that
+# version. Empty if none is available (the build rule then errors with guidance).
+find_host_jlink=$(or $(wildcard $(JDKDIR)/linux-x86_64-$(1)/bin/jlink),$(shell \
+  for d in /usr/lib/jvm/*/ ; do [ -x "$${d}bin/jlink" ] && \
+    [ "$$($${d}bin/jlink --version 2>/dev/null | cut -d. -f1)" = "$(1)" ] && \
+    { echo "$${d}bin/jlink"; break; }; done))
+
+JLINK_MAIN:=$(call find_host_jlink,$(JDK_MAIN_VER))
+JLINK_WIN32:=$(call find_host_jlink,$(JDK_WIN32_VER))
 
 # Cross-build tools (populated by `make bootstrap`)
 LAUNCH4J_JAR:=$(TOOLDIR)/launch4j/launch4j.jar
@@ -89,8 +102,10 @@ GENISOIMAGE:=genisoimage
 
 # Note: no --strip-debug — when cross-linking, its native-symbol stripping runs
 # the host objcopy against target-platform binaries (e.g. macOS Mach-O), which
-# fails. --compress keeps the runtime small instead.
-JLINK_OPTS:=--no-header-files --no-man-pages --compress=zip-6 \
+# fails. --compress=2 (not zip-6) is used because it is accepted by every jlink
+# version we use as a host: the newer zip-N form is JDK 21+ only, whereas the
+# 32-bit Windows target requires a Java 17 host jlink.
+JLINK_OPTS:=--no-header-files --no-man-pages --compress=2 \
             --add-modules $(APP_MODULES)
 
 # =======================================================================
@@ -228,12 +243,17 @@ release-linux: release-linux-deb release-linux-rpm
 # Each build directory holds the wrapped VASSAL-Extension-Utility.exe plus a
 # jlink runtime (jre/) built from that architecture's Windows JDK, then zipped.
 
-# jlink a Windows runtime for the given arch from its bootstrapped JDK
+# jlink a Windows runtime for the given arch from its bootstrapped JDK, using a
+# host jlink whose version matches that arch's JDK (32-bit = Java 17, else 21).
 $(TMPDIR)/windows-%-build/jre: | $(TMPDIR)
 	@[ -d $(JDKDIR)/windows-$* ] || { echo "Missing $(JDKDIR)/windows-$* — run 'make bootstrap'"; exit 1; }
-	rm -rf $@
-	mkdir -p $(TMPDIR)/windows-$*-build
-	"$(JLINK)" --module-path $(JDKDIR)/windows-$*/jmods $(JLINK_OPTS) --output $@
+	@jlink="$(JLINK_MAIN)"; ver=$(JDK_MAIN_VER); \
+	  [ "$*" = "x86_32" ] && { jlink="$(JLINK_WIN32)"; ver=$(JDK_WIN32_VER); }; \
+	  [ -n "$$jlink" ] && [ -x "$$jlink" ] || { \
+	    echo "No host jlink for Java $$ver (needed to link windows-$*). Run 'make bootstrap'."; exit 1; }; \
+	  rm -rf $@; mkdir -p $(TMPDIR)/windows-$*-build; \
+	  echo "$$jlink --module-path $(JDKDIR)/windows-$*/jmods --add-modules $(APP_MODULES) --output $@"; \
+	  "$$jlink" --module-path $(JDKDIR)/windows-$*/jmods $(JLINK_OPTS) --output $@
 
 # generate the Launch4j config and wrap the JAR into VASSAL-Extension-Utility.exe
 $(TMPDIR)/windows-%-build/VASSAL-Extension-Utility.exe: $(DISTJAR) $(DISTDIR)/windows/launch4j.xml.in
@@ -278,6 +298,8 @@ APPDIRNAME:=VASSAL Extension Utility.app
 $(TMPDIR)/macos-%-build/image: $(DISTJAR) \
 		$(DISTDIR)/macos/Info.plist.in $(DISTDIR)/macos/run.sh.in $(DISTDIR)/macos/PkgInfo
 	@[ -d $(JDKDIR)/macos-$* ] || { echo "Missing $(JDKDIR)/macos-$* — run 'make bootstrap'"; exit 1; }
+	@[ -n "$(JLINK_MAIN)" ] && [ -x "$(JLINK_MAIN)" ] || { \
+	    echo "No host jlink for Java $(JDK_MAIN_VER) (needed to link macos-$*). Run 'make bootstrap'."; exit 1; }
 	rm -rf "$@"
 	mkdir -p "$@/$(APPDIRNAME)/Contents/MacOS" "$@/$(APPDIRNAME)/Contents/Resources/Java"
 	sed -e 's|@NUMVERSION@|$(VNUM)|g' $(DISTDIR)/macos/Info.plist.in \
@@ -287,7 +309,7 @@ $(TMPDIR)/macos-%-build/image: $(DISTJAR) \
 	    > "$@/$(APPDIRNAME)/Contents/MacOS/run.sh"
 	chmod 755 "$@/$(APPDIRNAME)/Contents/MacOS/run.sh"
 	cp $(DISTJAR) "$@/$(APPDIRNAME)/Contents/Resources/Java/"
-	"$(JLINK)" --module-path $(JDKDIR)/macos-$*/jmods $(JLINK_OPTS) \
+	"$(JLINK_MAIN)" --module-path $(JDKDIR)/macos-$*/jmods $(JLINK_OPTS) \
 	    --output "$@/$(APPDIRNAME)/Contents/MacOS/jre"
 	ln -sf /Applications "$@/Applications"
 

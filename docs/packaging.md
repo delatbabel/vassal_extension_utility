@@ -31,6 +31,7 @@ per-project tools (downloaded into `dist/`, needing no root).
 | Needed for | Package(s) | Provides |
 |---|---|---|
 | Everything | `openjdk-21-jdk` | `jpackage`, `jlink`, `jmods` (a JDK that can link a runtime) |
+| Windows **32-bit** `.exe` | `openjdk-17-jdk` *(optional)* | a Java **17** host `jlink` to match the 32-bit Windows JDK; if absent, `make bootstrap` downloads one — no root needed |
 | Building the fat JAR | *(none — uses the bundled `./mvnw`)* | |
 | `.deb` | `fakeroot`, `dpkg` (usually preinstalled) | Debian package assembly |
 | `.rpm` | `rpm` | `rpmbuild` |
@@ -88,6 +89,14 @@ This fetches, with **no root required**:
   x64/aarch64) from [Adoptium](https://adoptium.net/). Their `jmods` feed
   `jlink` to build the bundled runtimes. Windows 32-bit uses a Java 17 JDK (the
   last with a 32-bit Windows build); the rest use Java 21.
+- **Linux host JDK(s) for `jlink`** — cross-linking a runtime requires a host
+  `jlink` whose Java feature version *exactly* matches the target JDK's `jmods`,
+  or `jlink` aborts with e.g. *"jlink version 21.0 does not match target
+  java.base version 17.0"*. Because the 32-bit Windows target is Java 17 while the
+  others are Java 21, `bootstrap` downloads a Linux x64 JDK for **each** version
+  needed (into `dist/jdks/linux-x86_64-<ver>`) — but only when no system JDK
+  already provides a `jlink` of that version (the Makefile prefers a matching
+  system `jlink` and falls back to the bootstrapped one).
 
 `make bootstrap` is idempotent — anything already present is skipped. It is
 **not** needed for the Linux `.deb`/`.rpm` targets.

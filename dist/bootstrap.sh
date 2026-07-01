@@ -93,4 +93,33 @@ install_jdk windows-x86_32  "$JDK_WIN32" windows x86
 install_jdk macos-x86_64    "$JDK_MAIN"  mac     x64
 install_jdk macos-aarch64   "$JDK_MAIN"  mac     aarch64
 
+# --- Host jlink per Java version ------------------------------------------
+# Cross-linking needs a Linux host jlink whose version EXACTLY matches the
+# target JDK's jmods (jlink refuses a mismatch). The 32-bit Windows JDK is a
+# different Java version (17) than the rest (21), so a matching host jlink must
+# exist for each. Download a Linux x64 JDK for any version not already provided
+# by a system JDK's jlink.
+install_host_jdk() { # version
+  local ver=$1 d v
+  for d in /usr/lib/jvm/*/ ; do
+    if [ -x "${d}bin/jlink" ]; then
+      v="$(${d}bin/jlink --version 2>/dev/null | cut -d. -f1)"
+      [ "$v" = "$ver" ] && { echo "  system jlink $ver present"; return; }
+    fi
+  done
+  [ -x "$JDKDIR/linux-x86_64-$ver/bin/jlink" ] && { echo "  have host JDK $ver"; return; }
+  echo "  fetching Linux host JDK $ver (for jlink)"
+  fetch "$(temurin_url "$ver" linux x64)" "$JDKDIR/linux-x86_64-$ver.tar.gz"
+  rm -rf "$JDKDIR/linux-x86_64-$ver.tmp"; mkdir -p "$JDKDIR/linux-x86_64-$ver.tmp"
+  tar xzf "$JDKDIR/linux-x86_64-$ver.tar.gz" -C "$JDKDIR/linux-x86_64-$ver.tmp"
+  local jl; jl="$(find "$JDKDIR/linux-x86_64-$ver.tmp" -type f -name jlink -path '*/bin/jlink' | head -1)"
+  [ -n "$jl" ] || { echo "ERROR: no jlink in Linux JDK $ver"; exit 1; }
+  rm -rf "$JDKDIR/linux-x86_64-$ver"; mv "$(dirname "$(dirname "$jl")")" "$JDKDIR/linux-x86_64-$ver"
+  rm -rf "$JDKDIR/linux-x86_64-$ver.tmp"
+}
+
+echo "Host jlinks"
+install_host_jdk "$JDK_MAIN"
+install_host_jdk "$JDK_WIN32"
+
 echo "Bootstrap complete."
