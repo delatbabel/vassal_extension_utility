@@ -114,6 +114,9 @@ public class VassalArchive {
         String vassalVersion = modRoot.getAttribute("VassalVersion");
         String extensionId   = UUID.randomUUID().toString();
         extensionId = extensionId.substring(extensionId.length() - 3);
+        // Start the extension at the parent module's version, not 0.0.
+        String extVersion = (moduleVersion == null || moduleVersion.isEmpty())
+                ? "0.0" : moduleVersion;
 
         DocumentBuilder db = DocumentBuilderFactory.newInstance().newDocumentBuilder();
         Document doc = db.newDocument();
@@ -125,7 +128,7 @@ public class VassalArchive {
         root.setAttribute("moduleVersion", moduleVersion);
         root.setAttribute("nextPieceSlotId", "0");
         root.setAttribute("vassalVersion", vassalVersion);
-        root.setAttribute("version", "0.0");
+        root.setAttribute("version", extVersion);
         doc.appendChild(root);
         va.buildDocument = doc;
 
@@ -136,16 +139,16 @@ public class VassalArchive {
         } else {
             log.warn("Module {} has no moduledata entry", module.getFile());
         }
-        va.addPendingFile("extensiondata", buildExtensionData(vassalVersion));
+        va.addPendingFile("extensiondata", buildExtensionData(extVersion, vassalVersion));
         va.entryNames.add(BUILD_FILE);
         va.modified = true;
         return va;
     }
 
-    private static byte[] buildExtensionData(String vassalVersion) {
+    private static byte[] buildExtensionData(String extVersion, String vassalVersion) {
         String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
                 + "<data version=\"1\">\n"
-                + "  <version>0.0</version>\n"
+                + "  <version>" + xmlEscape(extVersion) + "</version>\n"
                 + "  <extra1/>\n"
                 + "  <extra2/>\n"
                 + "  <VassalVersion>" + xmlEscape(vassalVersion) + "</VassalVersion>\n"

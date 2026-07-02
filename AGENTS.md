@@ -49,7 +49,7 @@ The `Makefile` also builds installable packages (modelled on `../vassal/Makefile
 ### New extension & Save As
 
 **File → New Extension (right)** (`MainWindow.newExtension`) requires a module in the left panel and calls `VassalArchive.createExtension(module)` to build a new, empty extension in the right panel. The created archive:
-- has a `ModuleExtension` root referencing the module's `name`/`version`/`VassalVersion`, with `version="0.0"`, `anyModule="false"`, `nextPieceSlotId="0"`, and an `extensionId` generated like VASSAL does (last 3 chars of a random UUID);
+- has a `ModuleExtension` root referencing the module's `name`/`version`/`VassalVersion`, with its own `version` seeded from the **parent module's version** (falling back to `0.0` only if the module has none — both the root `version` attribute and `extensiondata`), `anyModule="false"`, `nextPieceSlotId="0"`, and an `extensionId` generated like VASSAL does (last 3 chars of a random UUID);
 - carries a freshly built `extensiondata` and a **copy of the module's `moduledata`** (VASSAL stores the parent module's moduledata inside the extension), queued as pending files;
 - has **no backing file** (`getFile() == null`) and is marked modified — it must be saved with Save As.
 
