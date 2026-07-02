@@ -53,11 +53,11 @@ import java.util.Set;
  *      - Click "Move →" or "← Move" to move all selected source components
  *        (with their children) into the destination parent.  The originals are
  *        removed from the source.
- *      - Click "Copy →" or "← Copy" to duplicate the selected components into
- *        the destination parent.  Only the components themselves are copied —
- *        their child components are not — and the originals are retained.
- *      In both cases all images referenced by the transferred components are
- *      copied to the destination archive.
+ *      - Click "Copy →" or "← Copy" to duplicate the selected components
+ *        (with their children) into the destination parent, leaving the
+ *        originals in place.
+ *      In both cases the whole selected subtree is carried and all images it
+ *      references are copied to the destination archive.
  *   5. File > Save All (Ctrl+S) to write changes to disk.
  */
 public class MainWindow extends JFrame {
@@ -516,15 +516,15 @@ public class MainWindow extends JFrame {
      *      node to be transferred (and, when recreating parents, those referenced
      *      by the recreated parents).
      *   3. Copy any missing images and setup files to the destination archive.
-     *   4. For each source element: clone into the destination document
-     *      (deep for Move, shallow for Copy), append to its destination parent,
-     *      and — for Move only — remove from the source document.
+     *   4. For each source element: deep-clone it (with its whole subtree) into
+     *      the destination document, append to its destination parent, and — for
+     *      Move only — remove it from the source document.
      *   5. On a Move, prune setup files now orphaned in the source (removed only
      *      when no remaining PredefinedSetup still references them).
      *   6. Rebuild the affected trees.
      *
-     * On a Move the whole subtree is carried; on a Copy only the selected
-     * elements themselves are duplicated (their child components are not copied).
+     * Both Move and Copy carry the whole selected subtree; the only difference is
+     * that Move removes the originals from the source and Copy leaves them.
      *
      * Images are copied but never deleted from the source — the same image may be
      * referenced by components that remain.  A Pre-defined setup's {@code .vsav}
@@ -613,15 +613,11 @@ public class MainWindow extends JFrame {
                     "Recreate Parent Path", JOptionPane.OK_CANCEL_OPTION);
             if (confirm != JOptionPane.OK_OPTION) return;
         } else {
-            String childNote = copy
-                    ? "\n\nOnly the selected component(s) will be copied — their child components will not."
-                    : "";
             int confirm = JOptionPane.showConfirmDialog(this,
-                    verb + " " + srcSummary + "\n  into  \""
+                    verb + " " + srcSummary + " (with all child components)\n  into  \""
                     + ((ComponentNode) dstNode.getUserObject()).getDisplayName() + "\"?\n\n"
                     + "Referenced images and Pre-defined setup files will be copied "
-                    + "to the destination archive."
-                    + childNote,
+                    + "to the destination archive.",
                     "Confirm " + verb, JOptionPane.OK_CANCEL_OPTION);
             if (confirm != JOptionPane.OK_OPTION) return;
         }
@@ -633,14 +629,13 @@ public class MainWindow extends JFrame {
             Set<String> srcImageNames = srcArchive.getImageNames();
 
             // 1. Collect image references and Pre-defined setup save files from all
-            //    source components in one pass.  Move carries the full subtree
-            //    (recurse); Copy duplicates only the element itself, so only its own
-            //    attributes/file are scanned.
+            //    source components in one pass.  Both Move and Copy carry the full
+            //    subtree, so the whole tree is scanned (recurse) either way.
             Set<String> allImageRefs = new HashSet<>();
             Set<String> allSetupFiles = new HashSet<>();
             for (ComponentNode comp : srcComps) {
-                allImageRefs.addAll(comp.collectImageReferences(srcImageNames, !copy));
-                allSetupFiles.addAll(comp.collectSetupFileReferences(!copy));
+                allImageRefs.addAll(comp.collectImageReferences(srcImageNames, true));
+                allSetupFiles.addAll(comp.collectSetupFileReferences(true));
             }
             // Setup files referenced by the components actually being transferred
             // (before any recreated-ancestor files are added below) — only these
@@ -715,8 +710,8 @@ public class MainWindow extends JFrame {
                             srcComps.get(i).getDisplayName());
                     continue;
                 }
-                // Deep import for Move (carry children); shallow for Copy (element only).
-                Node imported = dstDoc.importNode(srcElem, !copy);
+                // Deep import (carry the whole subtree) for both Move and Copy.
+                Node imported = dstDoc.importNode(srcElem, true);
                 dstParents.get(i).appendChild(imported);
                 if (!copy) {
                     srcParent.removeChild(srcElem);

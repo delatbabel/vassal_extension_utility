@@ -14,7 +14,7 @@ VASSAL's built-in module editor lets you edit a module or extension in isolation
 2. View the component hierarchy of each file as a tree, labelled like the VASSAL module editor — `configure name [Component Type]` (e.g. `World Maps [Map Window]`), so components of the same type can be told apart.
 3. Select one or more components using click, Shift-click (range), or Ctrl-click (discontiguous); or right-click to search by name.
 4. Move all selected components from one file's hierarchy into another, automatically copying any image assets they reference — and the saved-game (`.vsav`) file of any Pre-defined setup that is moved.
-5. Copy selected components into another file's hierarchy, creating duplicates without removing the originals. A copy duplicates only the selected components themselves — not their child components.
+5. Copy selected components (with all their child components) into another file's hierarchy, creating duplicates without removing the originals.
 6. Reopen recent files from **File → Open Recent …** — the 5 most-recently-opened files for each panel are remembered between sessions.
 7. Create a new empty extension for the loaded module (**File → New Extension**) and save it with **File → Save Extension As…**, which defaults to the module's `_ext` directory (creating it if needed).
 8. Remove unused (unreferenced) images from a module or extension (**Tools → Remove Unused Images**), after reviewing and confirming the list — mirroring the VASSAL editor's tool of the same name.
@@ -72,9 +72,9 @@ Packages are written to `tmp/` and bundle their own Java runtime. The Linux `.de
    - Otherwise, if you leave the target panel with **nothing selected**, transferring asks whether to **recreate the parent path**: every ancestor of each selected component — all the way up to the root — is copied into the target panel (without their other children), and the components are then transferred into that recreated location. Choose **Cancel** to abort.
 5. Transfer the selection into the destination parent:
    - Click **Move →** (or **← Move**) to move all selected source components, together with their children. The originals are removed from the source.
-   - Click **Copy →** (or **← Copy**) to duplicate the selected components into the destination parent. Only the components themselves are copied — **their child components are not** — and the originals are retained.
+   - Click **Copy →** (or **← Copy**) to duplicate the selected components, **together with all their children**, into the destination parent, leaving the originals in place.
 6. Images referenced by any transferred component are automatically copied to the destination archive — including the counter images embedded in game pieces (`PieceSlot`/`CardSlot`), whose filenames live in the piece definition rather than in attributes. Images are **never** removed from the source (the same image may be used by other components that remain). The saved-game file (`.vsav`) of any **Pre-defined setup** is also copied — and on a **Move** it is genuinely moved: removed from the source once no remaining Pre-defined setup there still references it (so a `.vsav` shared by another setup is kept).
-7. If both a parent and its child are selected, only the parent is transferred (on a move the child is carried with it automatically; on a copy the child is excluded along with all other children).
+7. If both a parent and its child are selected, only the parent is transferred — for both Move and Copy the child is carried with it automatically (the whole subtree comes along).
 8. After each transfer the trees are redrawn, but your view is kept: branches you had expanded stay expanded, collapsed ones stay collapsed, your selection is retained, and the scroll position stays in approximately the same place.
 9. **Tools → Remove Unused Images** (left or right panel) lists the images in that archive that no component references. Review the list — deselect any you want to keep (they could be used by custom code) — and confirm to mark the rest for removal. The images are deleted when you save.
 10. **File → Save All** (or Ctrl+S) writes all modified archives back to disk.
