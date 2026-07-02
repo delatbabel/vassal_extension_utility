@@ -6,3 +6,4 @@ tmp/
 # Cross-build tools and per-platform JDKs fetched by `make bootstrap`
 dist/tools/
 dist/jdks/
+last_session.sh
