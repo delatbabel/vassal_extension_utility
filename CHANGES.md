@@ -1,5 +1,22 @@
 # Changes
 
+## 1.0.4
+
+Fixes a crash that a Move out of an extension could bake into the extension file.
+
+### Fixed
+
+- **Moving a component out of an extension no longer leaves an empty `ExtensionElement`.** Each component grafted into an extension lives inside its own `ExtensionElement` wrapper. Moving that component back out to the module removed the component but left the wrapper behind with nothing inside it. VASSAL **crashes on load** when it hits an empty `ExtensionElement` (it reads no component, then dereferences it — `NullPointerException` in `ExtensionElement.addTo`), aborting the entire module load. A Move out of an extension now drops any wrapper it empties, and the status line reports how many were removed.
+
+### Documentation
+
+- Added **`docs/vassal-empty-extensionelement-crash.md`** documenting the VASSAL engine bug (with source line references and a suggested null-guard fix) so it can be addressed upstream.
+- Noted the empty-wrapper cleanup in `AGENTS.md`.
+
+### ⚠️ Upgrade note
+
+An extension edited with an earlier build by **moving a grafted component back out to the module** may contain empty `ExtensionElement`s and will crash VASSAL when enabled. Open such an extension in this build and perform any Move out of it, or otherwise re-save it, to strip the empty wrappers. (The sample `SiF.vmdx` had 24 such wrappers, now repaired.)
+
 ## 1.0.1
 
 A maintenance release that fixes data loss and image-display problems when moving components into extensions, plus a small release-tooling addition.
