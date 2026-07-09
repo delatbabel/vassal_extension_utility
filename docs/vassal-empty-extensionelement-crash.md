@@ -70,6 +70,18 @@ In the case that prompted this note, `SiF.vmdx` had **24** such empty wrappers,
 all targeting `…/BoxWidget:Naval/BoxWidget:SiF`, left behind after components
 were moved from the extension back into the module.
 
+### ⚠️ VASSAL loads *every* file in the `_ext` directory
+
+`ExtensionsManager` activates extensions by presence in the module's `_ext`
+directory — **not** by a `.vmdx` suffix. Any file left there is loaded: a
+backup such as `SiF.vmdx.bak`, a stray temp file, an old renamed copy. So
+repairing a damaged extension in place is not enough — a backup of the *broken*
+version sitting alongside it in the same directory will still be loaded and will
+still crash the module. Backups must be moved **out of the `_ext` directory**
+entirely (the `inactive/` subdirectory is not scanned). This is exactly what
+bit the SiF repair: the fixed `SiF.vmdx` loaded fine, but a `SiF.vmdx.bak-emptyEE`
+backup left beside it was loaded too and reproduced the crash.
+
 ## Suggested engine fix
 
 Make `ExtensionElement` tolerate (and ideally warn about) a missing component
