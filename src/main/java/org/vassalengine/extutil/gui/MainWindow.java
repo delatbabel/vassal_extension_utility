@@ -719,6 +719,16 @@ public class MainWindow extends JFrame {
                 transferred++;
             }
 
+            // 3a. On a Move out of an extension, a grafted component that was the
+            //     only child of its ExtensionElement leaves an EMPTY wrapper. VASSAL
+            //     crashes on an ExtensionElement with no component (its build() reads
+            //     no child, then addTo() dereferences a null), so drop any now-empty
+            //     ExtensionElement from the source extension.
+            int emptyWrappersRemoved = 0;
+            if (!copy && srcArchive.isExtension()) {
+                emptyWrappersRemoved = removeEmptyExtensionElements(srcArchive.getRootElement());
+            }
+
             // 3b. On a Move, prune setup files now orphaned in the source.  A file
             //     is removed only when no PredefinedSetup remaining in the source
             //     tree still references it (it may be shared with components that
@@ -755,6 +765,10 @@ public class MainWindow extends JFrame {
             if (setupFilesPruned > 0) {
                 summary += String.format(" %d orphaned setup file(s) removed from source.",
                         setupFilesPruned);
+            }
+            if (emptyWrappersRemoved > 0) {
+                summary += String.format(" %d empty Extension Element(s) removed from source.",
+                        emptyWrappersRemoved);
             }
             status(summary);
         } catch (Exception ex) {
@@ -937,6 +951,39 @@ public class MainWindow extends JFrame {
         ee.setAttribute("target", target);
         extRoot.appendChild(ee);
         return ee;
+    }
+
+    /**
+     * Removes every {@link #EXTENSION_ELEMENT} child of {@code extRoot} that has
+     * no component (no child element).  Such empty wrappers are invalid — VASSAL
+     * crashes loading them (`ExtensionElement.build` reads no child, leaving its
+     * {@code extension} null, then `addTo` dereferences it) — and are left behind
+     * when the only component grafted through a wrapper is moved back out.
+     * Returns the number removed.
+     */
+    private static int removeEmptyExtensionElements(Element extRoot) {
+        List<Element> empties = new ArrayList<>();
+        NodeList children = extRoot.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() == Node.ELEMENT_NODE
+                    && EXTENSION_ELEMENT.equals(((Element) child).getTagName())
+                    && !hasElementChild((Element) child)) {
+                empties.add((Element) child);
+            }
+        }
+        for (Element ee : empties) {
+            extRoot.removeChild(ee);
+        }
+        return empties.size();
+    }
+
+    private static boolean hasElementChild(Element el) {
+        NodeList kids = el.getChildNodes();
+        for (int i = 0; i < kids.getLength(); i++) {
+            if (kids.item(i).getNodeType() == Node.ELEMENT_NODE) return true;
+        }
+        return false;
     }
 
     // --- Minimal faithful port of VASSAL's SequenceEncoder string encoding ------
