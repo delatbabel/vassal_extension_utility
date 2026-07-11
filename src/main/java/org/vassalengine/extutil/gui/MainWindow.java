@@ -34,7 +34,7 @@ import java.util.Set;
  *
  * Layout:
  *   - Split pane: left panel (module or any archive), right panel (extension or any archive)
- *   - Toolbar: open buttons, move buttons, copy buttons, save button
+ *   - Toolbar: open buttons, move buttons, copy buttons, delete buttons, save button
  *   - Status bar
  *
  * Multi-selection workflow:
@@ -44,6 +44,8 @@ import java.util.Set;
  *      - Shift-click to extend the selection as a range.
  *      - Ctrl-click to add or remove individual items.
  *      - Right-click → "Search and select…" to select by partial name match.
+ *      - Right-click → "Delete" to permanently remove the current selection
+ *        (with its whole subtree) from this panel's archive.
  *   3. Single-click one component in the other panel as the destination parent.
  *      (If nothing is selected there, you will instead be offered the option to
  *      recreate each source component's parent path — every ancestor up to the
@@ -58,7 +60,9 @@ import java.util.Set;
  *        originals in place.
  *      In both cases the whole selected subtree is carried and all images it
  *      references are copied to the destination archive.
- *   5. File > Save All (Ctrl+S) to write changes to disk.
+ *   5. Click "Delete (left)" / "Delete (right)" to permanently remove the
+ *      current selection (with its whole subtree) from that panel's archive.
+ *   6. File > Save All (Ctrl+S) to write changes to disk.
  */
 public class MainWindow extends JFrame {
 
@@ -74,6 +78,8 @@ public class MainWindow extends JFrame {
     public MainWindow() {
         super("VASSAL Extension Utility");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        leftPanel.setDeleteHandler(() -> deleteSelected(leftPanel));
+        rightPanel.setDeleteHandler(() -> deleteSelected(rightPanel));
         setJMenuBar(buildMenuBar());
 
         JSplitPane split = new JSplitPane(
@@ -210,6 +216,20 @@ public class MainWindow extends JFrame {
                 + "(child components are not copied)");
         copyLeft.addActionListener(e -> performTransfer(rightPanel, leftPanel, true));
         toolbar.add(copyLeft);
+
+        toolbar.add(new JSeparator(SwingConstants.VERTICAL));
+
+        JButton deleteLeftBtn = new JButton("Delete (left)");
+        deleteLeftBtn.setToolTipText(
+                "Delete all selected components (with their children) from the LEFT panel");
+        deleteLeftBtn.addActionListener(e -> deleteSelected(leftPanel));
+        toolbar.add(deleteLeftBtn);
+
+        JButton deleteRightBtn = new JButton("Delete (right)");
+        deleteRightBtn.setToolTipText(
+                "Delete all selected components (with their children) from the RIGHT panel");
+        deleteRightBtn.addActionListener(e -> deleteSelected(rightPanel));
+        toolbar.add(deleteRightBtn);
 
         toolbar.add(new JSeparator(SwingConstants.VERTICAL));
 
@@ -886,6 +906,87 @@ public class MainWindow extends JFrame {
             }
         }
         return true;
+    }
+
+    // -----------------------------------------------------------------------
+    // Delete
+    // -----------------------------------------------------------------------
+
+    /**
+     * Permanently removes every currently selected component (with its whole
+     * subtree) from {@code panel}'s archive, after confirmation.
+     *
+     * Selection semantics mirror Move/Copy: {@link #filterDescendants} drops any
+     * node whose ancestor is also selected, since removing the ancestor already
+     * removes it.  Deletion is plain DOM removal ({@code Node.removeChild}), which
+     * works the same whether the target has children or not — an already-empty
+     * container (e.g. an {@code ExtensionElement} left with no child after its
+     * one component was otherwise removed, or any empty Folder/container) is just
+     * as deletable as a component with a full subtree; no special-casing is
+     * needed. The archive root itself cannot be deleted.
+     *
+     * Unlike Move, referenced images and Pre-defined setup save files are left in
+     * the archive untouched, even if the deletion leaves them unreferenced — the
+     * user can run Tools &gt; Remove Unused Images separately if desired.
+     */
+    private void deleteSelected(ArchivePanel panel) {
+        VassalArchive va = panel.getArchive();
+        if (va == null) {
+            status("Open a file in the " + (panel == leftPanel ? "left" : "right")
+                    + " panel first.");
+            return;
+        }
+
+        List<DefaultMutableTreeNode> rawNodes = panel.getSelectedNodes();
+        if (rawNodes.isEmpty()) {
+            status("Select one or more components to delete first.");
+            return;
+        }
+
+        List<DefaultMutableTreeNode> nodes = filterDescendants(rawNodes);
+
+        Element root = va.getRootElement();
+        List<ComponentNode> comps = new ArrayList<>(nodes.size());
+        for (DefaultMutableTreeNode n : nodes) {
+            if (!(n.getUserObject() instanceof ComponentNode)) {
+                status("One or more selected nodes are not valid components.");
+                return;
+            }
+            ComponentNode comp = (ComponentNode) n.getUserObject();
+            if (comp.getElement().isSameNode(root)) {
+                status("The archive root cannot be deleted.");
+                return;
+            }
+            comps.add(comp);
+        }
+
+        String summary = comps.size() == 1
+                ? "\"" + comps.get(0).getDisplayName() + "\""
+                : comps.size() + " components";
+        int confirm = JOptionPane.showConfirmDialog(this,
+                "Permanently delete " + summary + " (with all child components)\nfrom \""
+                + va.getDisplayName() + "\"?\n\n"
+                + "Referenced images and Pre-defined setup files are left in the\n"
+                + "archive even if this leaves them unreferenced.",
+                "Confirm Delete", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (confirm != JOptionPane.OK_OPTION) return;
+
+        int deleted = 0;
+        for (ComponentNode comp : comps) {
+            Element elem = comp.getElement();
+            Node parent = elem.getParentNode();
+            if (parent == null) continue;   // already detached; shouldn't happen post-filter
+            parent.removeChild(elem);
+            deleted++;
+        }
+
+        if (deleted > 0) {
+            va.setModified(true);
+        }
+        panel.refresh();
+        updateRoleBorders();
+        status(String.format("Deleted %d component(s) from \"%s\".", deleted,
+                va.getFile() != null ? va.getFile().getName() : va.getDisplayName()));
     }
 
     // -----------------------------------------------------------------------

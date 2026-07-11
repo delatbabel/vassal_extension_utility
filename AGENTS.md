@@ -30,7 +30,7 @@ The `Makefile` also builds installable packages (modelled on `../vassal/Makefile
 | `model/VassalArchive` | Opens/saves a `.vmod` or `.vmdx` (ZIP + DOM). Tracks pending images/files/deletions. `createExtension(module)` builds a new empty extension; `save()`/`saveAs(file)` write atomically (see [New extension & Save As](#new-extension--save-as)); `findUnusedImages()`/`removeImage(name)` back the unused-image tool (see [Remove unused images](#remove-unused-images)). |
 | `model/RecentFilesStore` | Persists the 5 most-recently-opened files per panel to `~/.vassal-extension-utility/recent-files.properties` (see [Recent files](#recent-files)) |
 | `model/ComponentNode` | Wraps a `org.w3c.dom.Element`; computes the editor-style display label (see [Display names](#display-names)) and collects image references from subtree |
-| `gui/ArchivePanel` | `JPanel` containing a `JTree` built from `VassalArchive.getRootElement()`; `refresh()` preserves expansion/selection/scroll across rebuilds (see [Tree state preservation](#tree-state-preservation)) |
+| `gui/ArchivePanel` | `JPanel` containing a `JTree` built from `VassalArchive.getRootElement()`; `refresh()` preserves expansion/selection/scroll across rebuilds (see [Tree state preservation](#tree-state-preservation)); exposes a `setDeleteHandler()` callback used by the right-click "Delete" menu item (see [Delete](#delete)) |
 | `gui/MainWindow` | Top-level `JFrame` — split pane of two `ArchivePanel`s, toolbar, status bar |
 
 ### Display names
@@ -79,6 +79,7 @@ Newly added subtrees (e.g. just-moved components) have no prior state and theref
 `ArchivePanel` uses `DISCONTIGUOUS_TREE_SELECTION`:
 - Click / Shift-click / Ctrl-click work as standard multi-select.
 - Right-click → "Search and select…" opens an input dialog; `ArchivePanel.selectMatching()` walks the subtree of the **currently selected node** (falling back to the root when nothing is selected) with `depthFirstEnumeration()`, skips the scope node itself, and calls `tree.setSelectionPaths()` with all **case-sensitive** partial matches. Scoping means a search under "Counters" never selects matches under another branch such as "Game Maps", and "HW" does not match "hw". The query is used **verbatim — never trimmed** — so spaces are significant: searching `" T "` matches "CHCOM T MiG7" but not "CHCOM MOT".
+- Right-click → "Delete" removes the current selection (see [Delete](#delete)); disabled when nothing is selected.
 - `getSelectedNodes()` → `List<DefaultMutableTreeNode>` (all selected; for source).
 - `getSelectedNode()` → first selected path (for destination parent).
 
@@ -105,6 +106,16 @@ Both the Move and Copy toolbar buttons share `MainWindow.performTransfer(src, ds
 Recreated ancestors are always shallow clones (no children), regardless of Move vs Copy — only the selected components carry children (and only on a Move).
 
 **Images** are **always copied, never deleted** from the source — the same image may be referenced by components that remain. A **Pre-defined setup's `.vsav`**, by contrast, is a *true move*: copied to the destination, then removed from the source when (and only when) no remaining `PredefinedSetup` still references it (it may be shared with components that were not moved). `VassalArchive.removeEntry()` queues the drop in `pendingDeletions`, applied on the next `save()`.
+
+### Delete
+
+**Tools →** right-click "Delete" (either panel's tree) or the toolbar's **Delete (left)** / **Delete (right)** buttons — all wired to `MainWindow.deleteSelected(panel)` — permanently remove the current selection (with its whole subtree) from a module or extension loaded on either side. `ArchivePanel` itself holds no delete logic; it only exposes `setDeleteHandler(Runnable)`, which `MainWindow` wires at construction so the context-menu item and the toolbar buttons share one implementation:
+
+1. `panel.getSelectedNodes()` is filtered through the same `filterDescendants()` used by Move/Copy, so selecting both a parent and one of its children only deletes the parent once (its subtree already carries the child).
+2. The archive root (`GameModule`/`ModuleExtension`) can never be deleted — attempting it aborts with a status message instead of a confirm dialog.
+3. A confirm dialog names the component (or count, for multiple) and warns that referenced images and Pre-defined setup files are **left in the archive untouched**, even if this leaves them unreferenced — unlike Move, Delete does not prune orphaned setup files; run **Tools → Remove Unused Images** afterward if needed.
+4. On OK, each selected element is removed with plain `Node.removeChild()` — no special-casing for children: an element that already has no children (e.g. an `ExtensionElement` left empty after its one component was otherwise removed, or any empty Folder/container) deletes exactly the same way as one with a full subtree.
+5. The archive is marked modified, `panel.refresh()` rebuilds the tree (preserving expansion/selection/scroll for whatever remains — see [Tree state preservation](#tree-state-preservation)), and the deletion is only written to disk on the next Save.
 
 ### Image modification times & tiling
 

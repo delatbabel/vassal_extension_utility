@@ -46,6 +46,7 @@ public class ArchivePanel extends JPanel {
     private DefaultTreeModel treeModel;
     private TitledBorder titledBorder;
     private Color currentBorderColor = BORDER_DEFAULT;
+    private Runnable deleteHandler;
 
     // Role colours: default, source panel, target panel
     static final Color BORDER_DEFAULT = Color.GRAY;
@@ -275,6 +276,16 @@ public class ArchivePanel extends JPanel {
 
     public VassalArchive getArchive() { return archive; }
 
+    /**
+     * Registers the callback invoked when the user chooses "Delete" from this
+     * panel's right-click context menu.  {@code MainWindow} wires this to its
+     * own delete logic (which needs the archive and the sibling panel context),
+     * keeping this panel's role limited to tree display and selection.
+     */
+    public void setDeleteHandler(Runnable handler) {
+        this.deleteHandler = handler;
+    }
+
     // -----------------------------------------------------------------------
     // Search and select
     // -----------------------------------------------------------------------
@@ -394,6 +405,15 @@ public class ArchivePanel extends JPanel {
         JMenuItem searchItem = new JMenuItem("Search and select…");
         searchItem.addActionListener(ae -> showSearchDialog());
         popup.add(searchItem);
+
+        popup.addSeparator();
+        JMenuItem deleteItem = new JMenuItem("Delete");
+        deleteItem.setEnabled(deleteHandler != null && !getSelectedNodes().isEmpty());
+        deleteItem.addActionListener(ae -> {
+            if (deleteHandler != null) deleteHandler.run();
+        });
+        popup.add(deleteItem);
+
         popup.show(tree, e.getX(), e.getY());
     }
 
