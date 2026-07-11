@@ -169,6 +169,33 @@ desktop-install/uninstall markers, so they stay correct across JDK versions
 names the rpm `.spec` resource after the **package** name (`--linux-package-name`),
 whereas the deb `postinst`/`prerm` resources use fixed names.
 
+The package also registers a **KDE/GNOME menu entry** ("VASSAL Extension
+Utility", under the Games and Utility submenus). This needs two things, both in
+`JPACKAGE_COMMON`:
+- `--linux-shortcut` — without it, jpackage does **not** write a `.desktop` file
+  or menu registration at all (`--linux-app-category`/`--linux-menu-group` alone
+  only set the RPM `Group:` / deb `Section:` field, which package managers show
+  but desktop menus ignore). With it, jpackage generates a `.desktop` file and
+  the maintainer scripts call `xdg-desktop-menu install`/`uninstall` on it.
+- `--linux-menu-group "Game;Utility;"` — becomes the `.desktop` file's
+  `Categories=` field (each entry **must** end in `;` per the
+  [freedesktop.org Desktop Entry spec](https://specifications.freedesktop.org/menu-spec/latest/apa.html));
+  `Game` is the registered top-level category both KDE and GNOME map to their
+  Games submenu.
+
+By default jpackage's `.desktop` `Name=` is the launcher name passed to
+`--name` (`vassal_extension_utility` — deliberately plain/space-free for the
+`/usr/bin` symlink), which would show up verbatim as the menu label. The
+`jpackage-res` Makefile target overrides this: jpackage looks for a resource
+file named `<launcher-name>.desktop` and, if present, uses it as the `.desktop`
+template instead of its built-in one — but still substitutes its own tokens
+(`APPLICATION_DESCRIPTION`, `APPLICATION_LAUNCHER`, `APPLICATION_ICON`,
+`DEPLOY_BUNDLE_CATEGORY`, `DESKTOP_MIMES`) wherever they appear. The Makefile's
+override file keeps all of those tokens but hardcodes `Name=$(APPNAME)`
+("VASSAL Extension Utility"), so the menu shows a friendly name while
+Exec/Icon/Categories/MimeType are still filled in per-build. This mirrors the
+same technique already used for the `postinst`/`prerm`/`.spec` overrides.
+
 ### Windows `.exe`
 
 ```bash

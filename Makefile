@@ -58,8 +58,10 @@ VENDOR:=VASSAL Engine
 DESCRIPTION:=Move and copy components between VASSAL modules and extensions
 
 # Linux launcher/binary name — no spaces, so it is convenient to run and to put
-# on PATH. jpackage's --name sets the launcher executable name (and the .desktop
-# entry); the deb/rpm package + /opt subdir stay $(PKGNAME).
+# on PATH. jpackage's --name sets the launcher executable name AND (by default)
+# the menu entry's display name; we override the latter back to $(APPNAME) via a
+# custom .desktop resource (see $(TMPDIR)/jpackage-res below) so the Games/Utility
+# menu entry reads "VASSAL Extension Utility" rather than the launcher filename.
 LAUNCHER:=vassal_extension_utility
 # jpackage installs the app under /opt/<package-name>; the launcher is bin/<name>.
 LINK_SRC:=/opt/$(PKGNAME)/bin/$(LAUNCHER)
@@ -224,7 +226,8 @@ JPACKAGE_COMMON=--input $(TMPDIR)/jpackage-input \
                 --resource-dir $(TMPDIR)/jpackage-res \
                 --linux-package-name $(PKGNAME) \
                 --linux-app-category utils \
-                --linux-menu-group "Game;Utility"
+                --linux-menu-group "Game;Utility;" \
+                --linux-shortcut
 
 $(TMPDIR)/jpackage-input/$(notdir $(DISTJAR)): $(DISTJAR) | $(TMPDIR)
 	rm -rf $(TMPDIR)/jpackage-input
@@ -232,7 +235,8 @@ $(TMPDIR)/jpackage-input/$(notdir $(DISTJAR)): $(DISTJAR) | $(TMPDIR)
 	cp $(DISTJAR) $(TMPDIR)/jpackage-input/
 
 # Package maintainer scripts that symlink the launcher into /usr/bin so it is on
-# the user's PATH. We take jpackage's OWN templates (from the packaging JDK) and
+# the user's PATH, plus a .desktop override so the KDE/GNOME menu entry shows a
+# friendly name. We take jpackage's OWN templates (from the packaging JDK) and
 # inject the symlink after the desktop-install/uninstall markers, so the result
 # stays correct across JDK versions and keeps jpackage's default behaviour. The
 # symlink is removed on uninstall only if it still points at our launcher.
@@ -257,6 +261,22 @@ $(TMPDIR)/jpackage-res: | $(TMPDIR)
 	    -e '/DESKTOP_COMMANDS_UNINSTALL/a [ "$$(readlink "$(LINK_DST)" 2>/dev/null)" = "$(LINK_SRC)" ] && rm -f "$(LINK_DST)" || true' \
 	    $@/tpl/template.spec > $@/$(PKGNAME).spec
 	rm -rf $@/tpl
+	@# .desktop override, named after the launcher (--name) per jpackage's resource
+	@# lookup convention: everything but Name= keeps jpackage's own substitution
+	@# tokens (APPLICATION_DESCRIPTION/LAUNCHER/ICON, DEPLOY_BUNDLE_CATEGORY,
+	@# DESKTOP_MIMES) so Exec/Icon/Categories/MimeType still fill in per-build;
+	@# only the menu label is fixed to $(APPNAME) instead of $(LAUNCHER).
+	printf '%s\n' \
+	    '[Desktop Entry]' \
+	    'Name=$(APPNAME)' \
+	    'Comment=APPLICATION_DESCRIPTION' \
+	    'Exec=APPLICATION_LAUNCHER' \
+	    'Icon=APPLICATION_ICON' \
+	    'Terminal=false' \
+	    'Type=Application' \
+	    'Categories=DEPLOY_BUNDLE_CATEGORY' \
+	    'DESKTOP_MIMES' \
+	    > $@/$(LAUNCHER).desktop
 
 release-linux-deb: $(TMPDIR)/jpackage-input/$(notdir $(DISTJAR)) $(TMPDIR)/jpackage-res
 	@[ -x "$(JPACKAGE)" ] || { echo "jpackage not found (set JPACKAGE_JDK); see docs/packaging.md"; exit 1; }
