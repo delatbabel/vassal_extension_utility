@@ -94,8 +94,9 @@ public class ArchivePanel extends JPanel {
      * @param preserveState when true, the existing tree's expanded/collapsed
      *     state, selection, and scroll position are captured and re-applied to
      *     the rebuilt tree (matched by DOM {@link Element} identity, which is
-     *     stable across a rebuild of the same archive).  When false, the tree
-     *     opens at its default depth (used when first loading an archive).
+     *     stable across a rebuild of the same archive).  When false, only the
+     *     root is expanded so every folder starts closed (used when first
+     *     loading an archive).
      */
     private void refresh(boolean preserveState) {
         if (archive == null) {
@@ -124,7 +125,7 @@ public class ArchivePanel extends JPanel {
         if (canPreserve) {
             restoreState(root, expanded, selection, topElement);
         } else {
-            expandToDepth(tree, new TreePath(root), 1);
+            expandToDepth(tree, new TreePath(root), 0);
         }
         updateTitle();
     }
