@@ -165,8 +165,16 @@ public class MainWindow extends JFrame {
         JMenuItem unusedRight = new JMenuItem("Remove Unused Images (right)…");
         unusedRight.addActionListener(e -> removeUnusedImages(rightPanel));
 
+        JMenuItem repairLeft = new JMenuItem("Repair Double-Wrapped Extension Elements (left)…");
+        repairLeft.addActionListener(e -> repairDoubleWrappedExtensionElements(leftPanel));
+        JMenuItem repairRight = new JMenuItem("Repair Double-Wrapped Extension Elements (right)…");
+        repairRight.addActionListener(e -> repairDoubleWrappedExtensionElements(rightPanel));
+
         toolsMenu.add(unusedLeft);
         toolsMenu.add(unusedRight);
+        toolsMenu.addSeparator();
+        toolsMenu.add(repairLeft);
+        toolsMenu.add(repairRight);
         bar.add(toolsMenu);
 
         return bar;
@@ -475,6 +483,58 @@ public class MainWindow extends JFrame {
     }
 
     /**
+     * Repairs an extension damaged by the old double-wrapping bug: each spurious
+     * outer {@code <ExtensionElement target="">} that merely wraps another
+     * {@code ExtensionElement} is collapsed, lifting the inner (real) wrapper up to
+     * the extension root in its place.  See the Move / Copy notes in CLAUDE.md.
+     *
+     * A target-less {@code ExtensionElement} whose child is a genuine component
+     * (a legitimate graft at the module root) is left untouched — only wrappers
+     * whose children are themselves {@code ExtensionElement}s are collapsed.  The
+     * edit is in-memory and applied on the next Save.
+     */
+    private void repairDoubleWrappedExtensionElements(ArchivePanel panel) {
+        VassalArchive va = panel.getArchive();
+        if (va == null) {
+            status("Open a file in the " + (panel == leftPanel ? "left" : "right")
+                    + " panel first.");
+            return;
+        }
+
+        int found = countDoubleWrappedExtensionElements(va.getRootElement());
+        if (found == 0) {
+            JOptionPane.showMessageDialog(this,
+                    "No double-wrapped Extension Elements found in \""
+                    + va.getDisplayName() + "\".",
+                    "Repair Double-Wrapped Extension Elements",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        int choice = JOptionPane.showConfirmDialog(this,
+                "<html><b>" + found + "</b> double-wrapped Extension Element(s) found in \""
+                + va.getDisplayName() + "\".<br><br>"
+                + "Each spurious outer <tt>ExtensionElement</tt> (with an empty target) that<br>"
+                + "merely wraps the real one will be collapsed, lifting the inner wrapper<br>"
+                + "to the extension's top level so the VASSAL editor can edit it again.<br><br>"
+                + "The change is applied on the next Save.</html>",
+                "Repair Double-Wrapped Extension Elements",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (choice != JOptionPane.OK_OPTION) return;
+
+        int repaired = collapseDoubleWrappedExtensionElements(va.getRootElement());
+        if (repaired == 0) {
+            status("No double-wrapped Extension Elements collapsed.");
+            return;
+        }
+        va.setModified(true);
+        panel.refresh();
+        updateRoleBorders();
+        status(String.format("Collapsed %d double-wrapped Extension Element(s) in \"%s\" — Save to apply.",
+                repaired, va.getFile() != null ? va.getFile().getName() : va.getDisplayName()));
+    }
+
+    /**
      * Rebuilds the "Open Recent" submenu from the persisted recent-files lists.
      * Each panel gets its own labelled section; selecting an entry reopens that
      * file into the corresponding panel.
@@ -674,9 +734,22 @@ public class MainWindow extends JFrame {
                 // element), so components must never share a wrapper — even when
                 // they graft to the same target — or VASSAL silently drops all but
                 // the first.
+                //
+                // When the selected source is ITSELF an ExtensionElement (copying
+                // between extensions), it is already a valid top-level extension
+                // child: graft it directly onto the destination root. Wrapping it in
+                // a fresh ExtensionElement would double-wrap it — an outer, target-less
+                // wrapper (moduleTargetPath returns "" since the source wrapper's
+                // parent is the extension root) around the real one, which the VASSAL
+                // editor cannot edit.
                 for (ComponentNode comp : srcComps) {
-                    String target = moduleTargetPath(comp.getElement());
-                    dstParents.add(createExtensionElement(dstDoc, dstRoot, target));
+                    Element srcElem = comp.getElement();
+                    if (EXTENSION_ELEMENT.equals(srcElem.getTagName())) {
+                        dstParents.add(dstRoot);
+                    } else {
+                        String target = moduleTargetPath(srcElem);
+                        dstParents.add(createExtensionElement(dstDoc, dstRoot, target));
+                    }
                 }
             } else if (recreateParents) {
                 for (ComponentNode comp : srcComps) {
@@ -1085,6 +1158,63 @@ public class MainWindow extends JFrame {
             if (kids.item(i).getNodeType() == Node.ELEMENT_NODE) return true;
         }
         return false;
+    }
+
+    /** The element children of {@code el}, in document order. */
+    private static List<Element> elementChildren(Element el) {
+        List<Element> kids = new ArrayList<>();
+        NodeList children = el.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() == Node.ELEMENT_NODE) kids.add((Element) child);
+        }
+        return kids;
+    }
+
+    /**
+     * True when {@code el} is a spurious outer wrapper produced by the old
+     * double-wrapping bug: an {@code ExtensionElement} with an empty {@code target}
+     * whose element children are all themselves {@code ExtensionElement}s (the real
+     * wrappers).  A target-less {@code ExtensionElement} wrapping a genuine component
+     * (a legitimate graft at the module root) is NOT double-wrapped and is left alone.
+     */
+    private static boolean isDoubleWrappedExtensionElement(Element el) {
+        if (!EXTENSION_ELEMENT.equals(el.getTagName())) return false;
+        if (!el.getAttribute("target").isEmpty()) return false;
+        List<Element> kids = elementChildren(el);
+        if (kids.isEmpty()) return false;
+        for (Element kid : kids) {
+            if (!EXTENSION_ELEMENT.equals(kid.getTagName())) return false;
+        }
+        return true;
+    }
+
+    /** Counts the double-wrapped {@code ExtensionElement} children of {@code extRoot}. */
+    private static int countDoubleWrappedExtensionElements(Element extRoot) {
+        int count = 0;
+        for (Element child : elementChildren(extRoot)) {
+            if (isDoubleWrappedExtensionElement(child)) count++;
+        }
+        return count;
+    }
+
+    /**
+     * Collapses every double-wrapped {@code ExtensionElement} child of {@code extRoot}
+     * (see {@link #isDoubleWrappedExtensionElement}): the inner {@code ExtensionElement}(s)
+     * are lifted up to replace their empty-target outer wrapper, which is then removed.
+     * Returns the number of outer wrappers collapsed.
+     */
+    private static int collapseDoubleWrappedExtensionElements(Element extRoot) {
+        int collapsed = 0;
+        for (Element outer : elementChildren(extRoot)) {
+            if (!isDoubleWrappedExtensionElement(outer)) continue;
+            for (Element inner : elementChildren(outer)) {
+                extRoot.insertBefore(inner, outer);   // moves inner out of outer
+            }
+            extRoot.removeChild(outer);
+            collapsed++;
+        }
+        return collapsed;
     }
 
     // --- Minimal faithful port of VASSAL's SequenceEncoder string encoding ------
