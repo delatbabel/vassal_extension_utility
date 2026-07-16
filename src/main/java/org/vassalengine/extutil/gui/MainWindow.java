@@ -26,6 +26,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
@@ -643,7 +644,16 @@ public class MainWindow extends JFrame {
                 status("One or more selected source nodes are not valid components.");
                 return;
             }
-            srcComps.add((ComponentNode) n.getUserObject());
+            ComponentNode comp = (ComponentNode) n.getUserObject();
+            if (comp.isInherited()) {
+                // A greyed inherited node stands in for a module component the
+                // extension only grafts into — it is not part of the extension and
+                // has no element to transfer.
+                status("Inherited (grey) module components can't be "
+                        + (copy ? "copied — select an extension component." : "moved — select an extension component."));
+                return;
+            }
+            srcComps.add(comp);
         }
 
         // Determine the destination parent.  With a node selected in the target
@@ -651,27 +661,46 @@ public class MainWindow extends JFrame {
         // to recreate each source component's ancestor path under the target root.
         boolean recreateParents = (dstNode == null);
         Element dstElem = null;
+        boolean dstInherited = false;
         if (!recreateParents) {
             if (!(dstNode.getUserObject() instanceof ComponentNode)) {
                 status("Select a valid destination parent node.");
                 return;
             }
-            dstElem = ((ComponentNode) dstNode.getUserObject()).getElement();
+            ComponentNode dstComp = (ComponentNode) dstNode.getUserObject();
+            dstElem = dstComp.getElement();
+            dstInherited = dstComp.isInherited();
         }
 
-        // Grafting into an extension: when the target is an extension and the
-        // destination would be its top level (nothing selected, or the extension
-        // root selected), each component is wrapped in an ExtensionElement that
-        // targets its original module location, rather than recreated raw.
+        // Grafting into an extension happens in two ways:
+        //   • top level — nothing selected, or the extension root selected: each
+        //     component is grafted at the module location it came from (its original
+        //     parent path), via moduleTargetPath;
+        //   • into a chosen inherited (grey) node — the component is grafted at that
+        //     node's module location instead, via its reconstructed target path.
         Element dstRoot = dst.getArchive().getRootElement();
-        boolean graftIntoExtension = dst.getArchive().isExtension()
+        boolean graftTopLevel = dst.getArchive().isExtension()
                 && (recreateParents || (dstElem != null && dstElem.isSameNode(dstRoot)));
+        boolean graftIntoInherited = dst.getArchive().isExtension() && dstInherited;
+        boolean graftIntoExtension = graftTopLevel || graftIntoInherited;
+        // Explicit target when grafting into a chosen inherited module location.
+        String graftTarget = graftIntoInherited ? syntheticTargetPath(dstNode) : null;
 
         // Confirm
         String srcSummary = srcNodes.size() == 1
                 ? "\"" + srcComps.get(0).getDisplayName() + "\""
                 : srcNodes.size() + " components";
-        if (graftIntoExtension) {
+        if (graftIntoInherited) {
+            int confirm = JOptionPane.showConfirmDialog(this,
+                    verb + " " + srcSummary + " into \""
+                    + ((ComponentNode) dstNode.getUserObject()).getDisplayName() + "\".\n\n"
+                    + "Each will be wrapped in an Extension Element targeting that module\n"
+                    + "location, so VASSAL grafts it in there.\n\n"
+                    + "Referenced images and Pre-defined setup files will be copied "
+                    + "to the destination archive.",
+                    "Graft into Extension", JOptionPane.OK_CANCEL_OPTION);
+            if (confirm != JOptionPane.OK_OPTION) return;
+        } else if (graftIntoExtension) {
             int confirm = JOptionPane.showConfirmDialog(this,
                     verb + " " + srcSummary + " into the extension at the top level.\n\n"
                     + "Each will be wrapped in an Extension Element targeting its original\n"
@@ -747,7 +776,9 @@ public class MainWindow extends JFrame {
                     if (EXTENSION_ELEMENT.equals(srcElem.getTagName())) {
                         dstParents.add(dstRoot);
                     } else {
-                        String target = moduleTargetPath(srcElem);
+                        // Into a chosen inherited node: that node's module path.
+                        // At the top level: the component's own original path.
+                        String target = graftIntoInherited ? graftTarget : moduleTargetPath(srcElem);
                         dstParents.add(createExtensionElement(dstDoc, dstRoot, target));
                     }
                 }
@@ -1026,6 +1057,12 @@ public class MainWindow extends JFrame {
                 return;
             }
             ComponentNode comp = (ComponentNode) n.getUserObject();
+            if (comp.isInherited()) {
+                // A greyed inherited node belongs to the module, not the extension.
+                status("Inherited (grey) module components can't be deleted "
+                        + "— select an extension component.");
+                return;
+            }
             if (comp.getElement().isSameNode(root)) {
                 status("The archive root cannot be deleted.");
                 return;
@@ -1053,13 +1090,25 @@ public class MainWindow extends JFrame {
             deleted++;
         }
 
+        // Deleting a grafted component whose ExtensionElement wrapper is now empty
+        // would leave an invalid wrapper VASSAL crashes on — drop any such wrappers.
+        int emptyWrappersRemoved = 0;
+        if (va.isExtension()) {
+            emptyWrappersRemoved = removeEmptyExtensionElements(va.getRootElement());
+        }
+
         if (deleted > 0) {
             va.setModified(true);
         }
         panel.refresh();
         updateRoleBorders();
-        status(String.format("Deleted %d component(s) from \"%s\".", deleted,
-                va.getFile() != null ? va.getFile().getName() : va.getDisplayName()));
+        String resultMsg = String.format("Deleted %d component(s) from \"%s\".", deleted,
+                va.getFile() != null ? va.getFile().getName() : va.getDisplayName());
+        if (emptyWrappersRemoved > 0) {
+            resultMsg += String.format(" %d empty Extension Element(s) removed.",
+                    emptyWrappersRemoved);
+        }
+        status(resultMsg);
     }
 
     // -----------------------------------------------------------------------
@@ -1108,6 +1157,26 @@ public class MainWindow extends JFrame {
             return path.isEmpty() ? prefix : prefix + "/" + path;
         }
         return path;
+    }
+
+    /**
+     * Builds the {@code target} path for an {@link #EXTENSION_ELEMENT} grafting into a
+     * selected inherited (grey) tree node — the reconstructed module component the
+     * user chose as the destination.  The path is the chain of {@code className:name}
+     * tokens of the node's inherited ancestors and the node itself (which is the
+     * parent to graft into), encoded like {@link #moduleTargetPath}.  Empty means the
+     * module root.
+     */
+    private static String syntheticTargetPath(DefaultMutableTreeNode node) {
+        LinkedList<String> tokens = new LinkedList<>();   // top-most first
+        DefaultMutableTreeNode cur = node;
+        while (cur != null && cur.getUserObject() instanceof ComponentNode) {
+            ComponentNode cn = (ComponentNode) cur.getUserObject();
+            if (!cn.isInherited()) break;   // reached the (real) extension root
+            tokens.addFirst(seqToken(cn.getClassName(), cn.getConfigureName()));
+            cur = (DefaultMutableTreeNode) cur.getParent();
+        }
+        return seqJoin('/', tokens);
     }
 
     /**

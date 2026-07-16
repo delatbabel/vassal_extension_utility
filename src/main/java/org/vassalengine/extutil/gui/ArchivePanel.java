@@ -108,22 +108,26 @@ public class ArchivePanel extends JPanel {
         Object oldRoot = treeModel.getRoot();
         boolean canPreserve = preserveState
                 && oldRoot instanceof DefaultMutableTreeNode
-                && elementOf((DefaultMutableTreeNode) oldRoot) != null;
+                && keyOf((DefaultMutableTreeNode) oldRoot) != null;
 
-        Set<Element> expanded = null;
-        List<Element> selection = null;
-        Element topElement = null;
+        Set<Object> expanded = null;
+        List<Object> selection = null;
+        Object topKey = null;
         if (canPreserve) {
-            expanded   = captureExpandedElements();
-            selection  = captureSelectedElements();
-            topElement = captureTopElement();
+            expanded  = captureExpandedKeys();
+            selection = captureSelectedKeys();
+            topKey    = captureTopKey();
         }
 
-        DefaultMutableTreeNode root = buildTreeNode(archive.getRootElement());
+        // Extensions are shown as the reconstructed module hierarchy (grafted
+        // components under greyed inherited path nodes); modules are shown directly.
+        DefaultMutableTreeNode root = archive.isExtension()
+                ? buildExtensionTree(archive.getRootElement())
+                : buildTreeNode(archive.getRootElement());
         treeModel.setRoot(root);
 
         if (canPreserve) {
-            restoreState(root, expanded, selection, topElement);
+            restoreState(root, expanded, selection, topKey);
         } else {
             expandToDepth(tree, new TreePath(root), 0);
         }
@@ -134,65 +138,91 @@ public class ArchivePanel extends JPanel {
     // Expansion / selection / scroll preservation across rebuilds
     // -----------------------------------------------------------------------
 
-    private static Element elementOf(DefaultMutableTreeNode node) {
+    /**
+     * A stable identity key for a tree node, used to carry expansion/selection/scroll
+     * state across a rebuild.  Real components are keyed by their DOM {@link Element}
+     * (stable across a rebuild of the same archive); synthetic inherited nodes, which
+     * have no element, are keyed by their structural path (which is likewise stable,
+     * since the same ExtensionElement targets rebuild the same synthetic hierarchy).
+     * Returns null for non-component nodes (e.g. the "(no file open)" placeholder).
+     */
+    private static Object keyOf(DefaultMutableTreeNode node) {
         Object uo = node.getUserObject();
-        return (uo instanceof ComponentNode) ? ((ComponentNode) uo).getElement() : null;
+        if (!(uo instanceof ComponentNode)) return null;
+        ComponentNode cn = (ComponentNode) uo;
+        if (cn.getElement() != null) return cn.getElement();
+        return "SYN:" + syntheticPath(node);
     }
 
-    /** Elements whose tree node is currently expanded (children visible). */
-    private Set<Element> captureExpandedElements() {
-        Set<Element> result = new HashSet<>();
+    /** Structural path (className:name/…) of a synthetic node, from just below the root. */
+    private static String syntheticPath(DefaultMutableTreeNode node) {
+        java.util.ArrayDeque<String> segs = new java.util.ArrayDeque<>();
+        DefaultMutableTreeNode cur = node;
+        while (cur != null) {
+            Object uo = cur.getUserObject();
+            if (!(uo instanceof ComponentNode)) break;
+            ComponentNode cn = (ComponentNode) uo;
+            if (cn.getElement() != null) break;   // reached the (real) root
+            segs.addFirst(cn.getClassName() + ":" + cn.getConfigureName());
+            cur = (DefaultMutableTreeNode) cur.getParent();
+        }
+        return String.join("/", segs);
+    }
+
+    /** Keys of the nodes currently expanded (children visible). */
+    private Set<Object> captureExpandedKeys() {
+        Set<Object> result = new HashSet<>();
         DefaultMutableTreeNode root = (DefaultMutableTreeNode) treeModel.getRoot();
         Enumeration<TreePath> expanded = tree.getExpandedDescendants(new TreePath(root));
         if (expanded != null) {
             while (expanded.hasMoreElements()) {
-                Element el = elementOf(
+                Object k = keyOf(
                         (DefaultMutableTreeNode) expanded.nextElement().getLastPathComponent());
-                if (el != null) result.add(el);
+                if (k != null) result.add(k);
             }
         }
         return result;
     }
 
-    /** Elements of the currently selected nodes, in selection order. */
-    private List<Element> captureSelectedElements() {
-        List<Element> result = new ArrayList<>();
+    /** Keys of the currently selected nodes, in selection order. */
+    private List<Object> captureSelectedKeys() {
+        List<Object> result = new ArrayList<>();
         TreePath[] paths = tree.getSelectionPaths();
         if (paths != null) {
             for (TreePath p : paths) {
-                Element el = elementOf((DefaultMutableTreeNode) p.getLastPathComponent());
-                if (el != null) result.add(el);
+                Object k = keyOf((DefaultMutableTreeNode) p.getLastPathComponent());
+                if (k != null) result.add(k);
             }
         }
         return result;
     }
 
-    /** Element of the row currently nearest the top of the viewport (for scroll restore). */
-    private Element captureTopElement() {
+    /** Key of the row currently nearest the top of the viewport (for scroll restore). */
+    private Object captureTopKey() {
         Rectangle visible = tree.getVisibleRect();
         int row = tree.getClosestRowForLocation(visible.x, visible.y);
         if (row < 0) return null;
         TreePath p = tree.getPathForRow(row);
         return (p == null) ? null
-                : elementOf((DefaultMutableTreeNode) p.getLastPathComponent());
+                : keyOf((DefaultMutableTreeNode) p.getLastPathComponent());
     }
 
-    private void restoreState(DefaultMutableTreeNode root, Set<Element> expanded,
-                              List<Element> selection, Element topElement) {
-        // Index the rebuilt tree by DOM element identity.
-        Map<Element, DefaultMutableTreeNode> byElement = new HashMap<>();
+    private void restoreState(DefaultMutableTreeNode root, Set<Object> expanded,
+                              List<Object> selection, Object topKey) {
+        // Index the rebuilt tree by node key (DOM element or synthetic path).
+        Map<Object, DefaultMutableTreeNode> byKey = new HashMap<>();
         Enumeration<TreeNode> all = root.breadthFirstEnumeration();
         while (all.hasMoreElements()) {
             DefaultMutableTreeNode n = (DefaultMutableTreeNode) all.nextElement();
-            Element el = elementOf(n);
-            if (el != null) byElement.put(el, n);
+            Object k = keyOf(n);
+            if (k != null) byKey.put(k, n);
         }
 
         // Root is always shown expanded; then re-expand previously expanded nodes.
         // expandPath also expands ancestors, so order does not matter.
         tree.expandPath(new TreePath(root));
-        for (Element el : expanded) {
-            DefaultMutableTreeNode n = byElement.get(el);
+        for (Object k : expanded) {
+            DefaultMutableTreeNode n = byKey.get(k);
             if (n != null && !n.isLeaf()) {
                 tree.expandPath(new TreePath(n.getPath()));
             }
@@ -200,8 +230,8 @@ public class ArchivePanel extends JPanel {
 
         // Restore selection (nodes that no longer exist are simply dropped).
         List<TreePath> selectionPaths = new ArrayList<>();
-        for (Element el : selection) {
-            DefaultMutableTreeNode n = byElement.get(el);
+        for (Object k : selection) {
+            DefaultMutableTreeNode n = byKey.get(k);
             if (n != null) selectionPaths.add(new TreePath(n.getPath()));
         }
         if (!selectionPaths.isEmpty()) {
@@ -210,7 +240,7 @@ public class ArchivePanel extends JPanel {
 
         // Restore approximate scroll position: put the previously-top row back at
         // the top.  If that node is gone, fall back to revealing the selection.
-        DefaultMutableTreeNode topNode = (topElement != null) ? byElement.get(topElement) : null;
+        DefaultMutableTreeNode topNode = (topKey != null) ? byKey.get(topKey) : null;
         if (topNode != null) {
             scrollRowToTop(new TreePath(topNode.getPath()));
         } else if (!selectionPaths.isEmpty()) {
@@ -385,6 +415,7 @@ public class ArchivePanel extends JPanel {
         t.setRootVisible(true);
         t.setShowsRootHandles(true);
         t.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        t.setCellRenderer(new InheritedAwareRenderer());
 
         t.addMouseListener(new MouseAdapter() {
             @Override
@@ -430,6 +461,189 @@ public class ArchivePanel extends JPanel {
             }
         }
         return node;
+    }
+
+    // -----------------------------------------------------------------------
+    // Extension tree building
+    // -----------------------------------------------------------------------
+    //
+    // An extension does not hold components directly: each grafted component sits
+    // inside a <VASSAL.build.module.ExtensionElement target="…"> whose target names
+    // the path, in the parent module's tree, of the component to graft into.  Rather
+    // than showing those wrappers as flat "Extension Element → …" rows, this
+    // reconstructs the module hierarchy the targets describe: the path segments
+    // become greyed inherited nodes (shared prefixes merged), and each wrapper's
+    // real component subtree hangs beneath its target as normal (black) nodes.
+
+    private static final String EXTENSION_ELEMENT = "VASSAL.build.module.ExtensionElement";
+
+    private DefaultMutableTreeNode buildExtensionTree(Element extRoot) {
+        DefaultMutableTreeNode root = new DefaultMutableTreeNode(new ComponentNode(extRoot));
+        for (Element child : elementChildren(extRoot)) {
+            graftInto(root, child);
+        }
+        return root;
+    }
+
+    /**
+     * Attaches one extension child under {@code root}: an {@code ExtensionElement} is
+     * grafted at the (greyed, shared-prefix-merged) inherited path named by its target,
+     * with its real component(s) hung beneath; anything else is shown as-is.  A nested
+     * {@code ExtensionElement} (as left by the double-wrapping bug) is re-grafted from
+     * the root, since its target is an absolute module path — so even a doubly-wrapped
+     * extension displays as the correct module hierarchy.
+     */
+    private void graftInto(DefaultMutableTreeNode root, Element child) {
+        if (!EXTENSION_ELEMENT.equals(child.getTagName())) {
+            root.add(buildTreeNode(child));
+            return;
+        }
+        DefaultMutableTreeNode parent = root;
+        for (String[] seg : decodeTarget(child.getAttribute("target"))) {
+            parent = findOrCreateInherited(parent, seg[0], seg[1]);
+        }
+        for (Element comp : elementChildren(child)) {
+            if (EXTENSION_ELEMENT.equals(comp.getTagName())) {
+                graftInto(root, comp);           // nested wrapper: absolute target
+            } else {
+                parent.add(buildTreeNode(comp));
+            }
+        }
+    }
+
+    /**
+     * Finds an existing synthetic (inherited) child of {@code parent} matching the
+     * given class/name, or creates and appends one.  Merging on (className, name)
+     * consolidates the shared path prefixes of ExtensionElements targeting nearby
+     * module locations, exactly as they appear in the module's own tree.
+     */
+    private static DefaultMutableTreeNode findOrCreateInherited(
+            DefaultMutableTreeNode parent, String className, String name) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            DefaultMutableTreeNode c = (DefaultMutableTreeNode) parent.getChildAt(i);
+            Object uo = c.getUserObject();
+            if (uo instanceof ComponentNode) {
+                ComponentNode cn = (ComponentNode) uo;
+                if (cn.isInherited()
+                        && className.equals(cn.getClassName())
+                        && java.util.Objects.equals(name, cn.getConfigureName())) {
+                    return c;
+                }
+            }
+        }
+        DefaultMutableTreeNode created =
+                new DefaultMutableTreeNode(new ComponentNode(className, name));
+        parent.add(created);
+        return created;
+    }
+
+    private static List<Element> elementChildren(Element el) {
+        List<Element> kids = new ArrayList<>();
+        NodeList children = el.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() == Node.ELEMENT_NODE) kids.add((Element) child);
+        }
+        return kids;
+    }
+
+    /**
+     * Decodes an ExtensionElement {@code target} into a list of {@code {className, name}}
+     * pairs (name may be null).  The target is a SequenceEncoder string: '/'-joined
+     * tokens, each a ':'-joined {@code className:name} — decoded here exactly as
+     * VASSAL's {@code SequenceEncoder.Decoder} / {@code ComponentPathBuilder} do.
+     * An empty target yields an empty list (graft at the module root).
+     */
+    private static List<String[]> decodeTarget(String target) {
+        List<String[]> segs = new ArrayList<>();
+        if (target == null || target.isEmpty()) return segs;
+        for (String token : seqDecode(target, '/')) {
+            if (token.isEmpty()) continue;
+            List<String> parts = seqDecode(token, ':');
+            String className = parts.isEmpty() ? "" : parts.get(0);
+            String name = parts.size() > 1 ? parts.get(1) : null;
+            segs.add(new String[]{className, name});
+        }
+        return segs;
+    }
+
+    /**
+     * Faithful port of VASSAL's {@code SequenceEncoder.Decoder}: splits {@code val}
+     * on unescaped {@code delim}, honouring {@code \}-escaped delimiters and single-quote
+     * enclosure, so it is the exact inverse of the encoder that produced the target.
+     */
+    private static List<String> seqDecode(String val, char delim) {
+        List<String> out = new ArrayList<>();
+        if (val == null) return out;
+        final int stop = val.length();
+        int start = 0;
+        boolean done = false;
+        while (!done) {
+            if (start == stop) {           // trailing empty token (== "null")
+                out.add("");
+                break;
+            }
+            StringBuilder buf = null;
+            String tok = null;
+            int i = start;
+            for (; i < stop; i++) {
+                if (val.charAt(i) == delim) {
+                    if (i > 0 && val.charAt(i - 1) == '\\') {
+                        if (buf == null) buf = new StringBuilder();
+                        buf.append(val, start, i - 1);
+                        start = i;
+                    } else {
+                        if (buf == null || buf.length() == 0) {
+                            tok = val.substring(start, i);
+                        } else {
+                            buf.append(val, start, i);
+                        }
+                        start = i + 1;
+                        break;
+                    }
+                }
+            }
+            if (start < i) {               // reached the end without a real delimiter
+                if (buf == null || buf.length() == 0) {
+                    tok = val.substring(start);
+                } else {
+                    buf.append(val, start, stop);
+                }
+                done = true;
+            }
+            out.add(unquote(tok != null ? tok : (buf != null ? buf.toString() : "")));
+        }
+        return out;
+    }
+
+    /** Strips a single-quote enclosure, matching {@code SequenceEncoder.Decoder.unquote}. */
+    private static String unquote(String s) {
+        int len = s.length();
+        return (len > 1 && s.charAt(0) == '\'' && s.charAt(len - 1) == '\'')
+                ? s.substring(1, len - 1) : s;
+    }
+
+    /**
+     * Tree renderer that greys nodes representing module components inherited by an
+     * extension (synthetic {@link ComponentNode#isInherited()} nodes), distinguishing
+     * them from the extension's own components, which render in the normal colour.
+     */
+    private static class InheritedAwareRenderer extends javax.swing.tree.DefaultTreeCellRenderer {
+        @Override
+        public Component getTreeCellRendererComponent(JTree tree, Object value,
+                boolean sel, boolean expanded, boolean leaf, int row, boolean hasFocus) {
+            super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus);
+            boolean inherited = false;
+            if (value instanceof DefaultMutableTreeNode) {
+                Object uo = ((DefaultMutableTreeNode) value).getUserObject();
+                inherited = (uo instanceof ComponentNode) && ((ComponentNode) uo).isInherited();
+            }
+            // Grey only when not selected, so the selection highlight stays legible.
+            if (inherited && !sel) {
+                setForeground(Color.GRAY);
+            }
+            return this;
+        }
     }
 
     private static void expandToDepth(JTree tree, TreePath path, int depth) {

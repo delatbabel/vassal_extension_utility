@@ -227,12 +227,49 @@ public class ComponentNode {
 
     private final Element element;
 
+    // For synthetic (inherited) nodes only — a path segment reconstructed from an
+    // ExtensionElement's target that stands in for a module component the extension
+    // grafts into.  Such nodes have no backing DOM element (element == null); these
+    // fields carry the fully-qualified class name and configure name from the target.
+    private final String inheritedClassName;
+    private final String inheritedName;
+
     public ComponentNode(Element element) {
         this.element = element;
+        this.inheritedClassName = null;
+        this.inheritedName = null;
+    }
+
+    /**
+     * Creates a synthetic <em>inherited</em> node representing a module component
+     * that the extension grafts into but does not itself contain.  It has no DOM
+     * element; {@code className} is the fully-qualified VASSAL class name and
+     * {@code configureName} the component's editable name (may be null).  Used to
+     * reconstruct the module hierarchy above an extension's grafted components.
+     */
+    public ComponentNode(String className, String configureName) {
+        this.element = null;
+        this.inheritedClassName = className;
+        this.inheritedName = configureName;
     }
 
     public Element getElement() {
         return element;
+    }
+
+    /**
+     * True for a synthetic node standing in for a module component inherited by the
+     * extension (see {@link #ComponentNode(String, String)}).  Such nodes are shown
+     * greyed and are not themselves part of the extension, so they cannot be moved,
+     * copied, or deleted.
+     */
+    public boolean isInherited() {
+        return element == null;
+    }
+
+    /** The fully-qualified VASSAL class name of this node's component. */
+    public String getClassName() {
+        return element != null ? element.getTagName() : inheritedClassName;
     }
 
     /**
@@ -241,20 +278,19 @@ public class ComponentNode {
      * <code>configureName [Component Type]</code> — the component's editable name
      * first, then its type in brackets (see {@code ConfigureTree.ConfigureTreeNode}).
      * When a component has no configure name only the bracketed type is shown.
-     * For ExtensionElement: "Extension Element → target path".
      */
     public String getDisplayName() {
-        String tagName = element.getTagName();
-
-        if ("VASSAL.build.module.ExtensionElement".equals(tagName)) {
-            String target = element.getAttribute("target");
-            return "Extension Element → " + target;
+        if (element == null) {
+            // Synthetic inherited node — format from the stored class/name.
+            return formatDisplayName(shortClassName(inheritedClassName), inheritedName);
         }
+        return formatDisplayName(shortClassName(element.getTagName()),
+                pickLabel(element, shortClassName(element.getTagName())));
+    }
 
-        String simpleClass = shortClassName(tagName);
+    /** Formats a {@code configureName [Component Type]} label (or just the type when unnamed). */
+    private static String formatDisplayName(String simpleClass, String instanceLabel) {
         String typeName = DISPLAY_NAMES.getOrDefault(simpleClass, simpleClass);
-
-        String instanceLabel = pickLabel(element, simpleClass);
         if (instanceLabel != null && !instanceLabel.isEmpty()) {
             return instanceLabel + " [" + typeName + "]";
         }
@@ -417,6 +453,7 @@ public class ComponentNode {
      * back to a short list of common name attributes.
      */
     public String getConfigureName() {
+        if (element == null) return inheritedName;
         return rawConfigureName(element, shortClassName(element.getTagName()));
     }
 
