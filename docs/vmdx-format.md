@@ -98,6 +98,8 @@ The root element is `VASSAL.build.module.ModuleExtension`. Rather than replicati
 | `vassalVersion` | VASSAL version that last saved this file |
 | `version` | Extension version string |
 
+> **The editable properties are stored twice.** `version`, `description`, and `anyModule` appear both as `ModuleExtension` root attributes here **and** as the `<version>`, `<description>`, and `<universal>` elements of [`extensiondata`](#extensiondata). VASSAL writes both on every save, and so must anything that edits these properties — otherwise the two disagree. The Extension Utility's **Tools → Edit Extension Properties** does exactly this: it updates the root attributes and regenerates `extensiondata`, leaving `extensionId`, `module`/`moduleVersion`, and `vassalVersion` untouched (see the properties editor in **[../AGENTS.md](../AGENTS.md)**).
+
 ## ExtensionElement and Target Paths
 
 `VASSAL.build.module.ExtensionElement` is the key structural element. Its `target` attribute is a `/`-separated path identifying a container in the parent module's component tree.

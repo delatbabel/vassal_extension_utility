@@ -171,11 +171,19 @@ public class MainWindow extends JFrame {
         JMenuItem repairRight = new JMenuItem("Repair Double-Wrapped Extension Elements (right)…");
         repairRight.addActionListener(e -> repairDoubleWrappedExtensionElements(rightPanel));
 
+        JMenuItem propsLeft = new JMenuItem("Edit Extension Properties (left)…");
+        propsLeft.addActionListener(e -> editExtensionProperties(leftPanel));
+        JMenuItem propsRight = new JMenuItem("Edit Extension Properties (right)…");
+        propsRight.addActionListener(e -> editExtensionProperties(rightPanel));
+
         toolsMenu.add(unusedLeft);
         toolsMenu.add(unusedRight);
         toolsMenu.addSeparator();
         toolsMenu.add(repairLeft);
         toolsMenu.add(repairRight);
+        toolsMenu.addSeparator();
+        toolsMenu.add(propsLeft);
+        toolsMenu.add(propsRight);
         bar.add(toolsMenu);
 
         return bar;
@@ -533,6 +541,72 @@ public class MainWindow extends JFrame {
         updateRoleBorders();
         status(String.format("Collapsed %d double-wrapped Extension Element(s) in \"%s\" — Save to apply.",
                 repaired, va.getFile() != null ? va.getFile().getName() : va.getDisplayName()));
+    }
+
+    /**
+     * Opens a modal dialog to edit an extension's properties — mirroring VASSAL's
+     * ModuleExtension editor: Version, Description, a read-only Extension ID, and
+     * an "Allow loading with any module" checkbox.  Enabled only for an extension
+     * (not a module).  On Save the values are written via
+     * {@link VassalArchive#setExtensionProperties}, updating both the buildFile
+     * root and the extensiondata entry; the change reaches disk on the next Save.
+     */
+    private void editExtensionProperties(ArchivePanel panel) {
+        VassalArchive va = panel.getArchive();
+        String side = (panel == leftPanel ? "left" : "right");
+        if (va == null) {
+            status("Open a file in the " + side + " panel first.");
+            return;
+        }
+        if (!va.isExtension()) {
+            JOptionPane.showMessageDialog(this,
+                    "The " + side + " panel holds a module, not an extension.\n"
+                    + "Extension properties can only be edited for an extension (.vmdx).",
+                    "Edit Extension Properties", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        JTextField versionField = new JTextField(va.getExtensionVersion(), 20);
+        JTextField descField = new JTextField(va.getExtensionDescription(), 20);
+        JTextField idField = new JTextField(va.getExtensionId(), 20);
+        idField.setEditable(false);                 // display only, like VASSAL
+        idField.setFocusable(false);
+        JCheckBox anyModuleBox = new JCheckBox("Allow loading with any module",
+                va.getExtensionAnyModule());
+
+        JPanel form = new JPanel(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+        c.insets = new Insets(4, 4, 4, 4);
+        c.anchor = GridBagConstraints.WEST;
+
+        int row = 0;
+        addFormRow(form, c, row++, "Version:", versionField);
+        addFormRow(form, c, row++, "Description:", descField);
+        addFormRow(form, c, row++, "Extension ID:", idField);
+        // Checkbox spans the field column (its own label is on the box).
+        c.gridx = 1; c.gridy = row++; c.fill = GridBagConstraints.NONE;
+        form.add(anyModuleBox, c);
+
+        int choice = JOptionPane.showConfirmDialog(this, form,
+                "Edit Extension Properties — " + va.getDisplayName(),
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (choice != JOptionPane.OK_OPTION) return;
+
+        va.setExtensionProperties(versionField.getText(), descField.getText(),
+                anyModuleBox.isSelected());
+        panel.refresh();            // reflect the modified marker in the title
+        updateRoleBorders();
+        status(String.format("Updated extension properties for \"%s\" — Save to apply.",
+                va.getFile() != null ? va.getFile().getName() : va.getDisplayName()));
+    }
+
+    /** Adds a {@code label:} / field pair as one row of a GridBagLayout form. */
+    private static void addFormRow(JPanel form, GridBagConstraints c, int row,
+                                   String label, JComponent field) {
+        c.gridx = 0; c.gridy = row; c.fill = GridBagConstraints.NONE; c.weightx = 0;
+        form.add(new JLabel(label), c);
+        c.gridx = 1; c.fill = GridBagConstraints.HORIZONTAL; c.weightx = 1;
+        form.add(field, c);
     }
 
     /**

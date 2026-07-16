@@ -27,7 +27,7 @@ The `Makefile` also builds installable packages (modelled on `../vassal/Makefile
 | Class | Role |
 |---|---|
 | `Main` | `SwingUtilities.invokeLater` entry point |
-| `model/VassalArchive` | Opens/saves a `.vmod` or `.vmdx` (ZIP + DOM). Tracks pending images/files/deletions. `createExtension(module)` builds a new empty extension; `save()`/`saveAs(file)` write atomically (see [New extension & Save As](#new-extension--save-as)); `findUnusedImages()`/`removeImage(name)` back the unused-image tool (see [Remove unused images](#remove-unused-images)). |
+| `model/VassalArchive` | Opens/saves a `.vmod` or `.vmdx` (ZIP + DOM). Tracks pending images/files/deletions. `createExtension(module)` builds a new empty extension; `save()`/`saveAs(file)` write atomically (see [New extension & Save As](#new-extension--save-as)); `findUnusedImages()`/`removeImage(name)` back the unused-image tool (see [Remove unused images](#remove-unused-images)); `setExtensionProperties()` and the `getExtension*()` getters back the properties editor (see [Edit extension properties](#edit-extension-properties)). |
 | `model/RecentFilesStore` | Persists the 5 most-recently-opened files per panel to `~/.vassal-extension-utility/recent-files.properties` (see [Recent files](#recent-files)) |
 | `model/ComponentNode` | Wraps a `org.w3c.dom.Element`; computes the editor-style display label (see [Display names](#display-names)) and collects image references from subtree |
 | `gui/ArchivePanel` | `JPanel` containing a `JTree` built from `VassalArchive.getRootElement()` — a direct DOM walk for a module, or the reconstructed module hierarchy for an extension (see [Extension tree display](#extension-tree-display)); `refresh()` preserves expansion/selection/scroll across rebuilds (see [Tree state preservation](#tree-state-preservation)); exposes a `setDeleteHandler()` callback used by the right-click "Delete" menu item (see [Delete](#delete)) |
@@ -75,6 +75,22 @@ Saving is unified in `VassalArchive.writeArchive(source, target)`: it copies sur
 **Tools → Remove Unused Images (left/right)…** (`MainWindow.removeUnusedImages`) duplicates VASSAL's tool of the same name. `VassalArchive.findUnusedImages()` returns the archive's image entries minus everything `ComponentNode.collectReferencedImages()` finds referenced across the whole build tree (attributes **and** piece-definition text — the same scan used by Move/Copy — plus the legacy suffix-less `.gif` fall-back VASSAL applies, which errs toward keeping an image). For an extension this naturally operates on the extension's own images and components.
 
 The dialog lists the unreferenced images in a multi-select `JList`, all pre-selected; the user may deselect any to keep (detection is heuristic — an image could be used by custom code, hence the confirmation). Confirmed images are dropped via `VassalArchive.removeImage(name)`, which queues the `images/<name>` entry in `pendingDeletions` and drops it from the live image set — **applied on the next save**, like every other edit. Nothing is deleted from disk until the user saves.
+
+### Edit extension properties
+
+**Tools → Edit Extension Properties (left/right)…** (`MainWindow.editExtensionProperties`) mirrors VASSAL's `ModuleExtension` editor dialog. It is available **only for an extension** — invoking it on a module panel shows an informational message and does nothing. The modal dialog edits:
+
+- **Version** — the extension's own version;
+- **Description**;
+- **Extension ID** — shown **read-only** (a disabled, non-focusable field); it is never edited here (VASSAL warns that changing it invalidates existing saved games);
+- **Allow loading with any module** — a checkbox for the `anyModule` ("universal") flag.
+
+On Save, `VassalArchive.setExtensionProperties(version, description, anyModule)` writes the values **the way VASSAL does — in both places it stores them**:
+
+1. the `version`/`description`/`anyModule` attributes on the `ModuleExtension` root of `buildFile.xml` (mutated in the live DOM), and
+2. the matching `<version>`/`<description>`/`<universal>` values in the separate `extensiondata` metadata entry, which is **regenerated** (via the same builder `createExtension` uses) and queued as a pending file. The recorded `vassalVersion` (root attribute and `<VassalVersion>`), `extensionId`, and module name/version are preserved unchanged — the utility is not VASSAL, so it does not stamp its own VASSAL version; `<dateSaved>` is refreshed and `<extra1>`/`<extra2>` stay empty, exactly as VASSAL writes them. (Verified: the written `buildFile.xml` root and `extensiondata` are byte-format identical to VASSAL's, with XML special characters escaped in both.)
+
+Like every other edit, the archive is marked modified and nothing reaches disk until the next Save.
 
 ### Repair double-wrapped extension elements
 

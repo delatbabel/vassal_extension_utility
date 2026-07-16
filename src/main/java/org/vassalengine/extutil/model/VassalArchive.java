@@ -139,13 +139,20 @@ public class VassalArchive {
         } else {
             log.warn("Module {} has no moduledata entry", module.getFile());
         }
-        va.addPendingFile("extensiondata", buildExtensionData(extVersion, vassalVersion));
+        va.addPendingFile("extensiondata", buildExtensionData(extVersion, vassalVersion, "", false));
         va.entryNames.add(BUILD_FILE);
         va.modified = true;
         return va;
     }
 
-    private static byte[] buildExtensionData(String extVersion, String vassalVersion) {
+    /**
+     * Builds an {@code extensiondata} metadata entry byte-for-byte the way VASSAL's
+     * {@code ExtensionMetaData}/{@code AbstractMetaData} write it: {@code <version>},
+     * empty {@code <extra1>}/{@code <extra2>}, {@code <VassalVersion>},
+     * {@code <dateSaved>} (now), {@code <description>}, and {@code <universal>}.
+     */
+    private static byte[] buildExtensionData(String extVersion, String vassalVersion,
+                                             String description, boolean universal) {
         String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
                 + "<data version=\"1\">\n"
                 + "  <version>" + xmlEscape(extVersion) + "</version>\n"
@@ -153,8 +160,8 @@ public class VassalArchive {
                 + "  <extra2/>\n"
                 + "  <VassalVersion>" + xmlEscape(vassalVersion) + "</VassalVersion>\n"
                 + "  <dateSaved>" + System.currentTimeMillis() + "</dateSaved>\n"
-                + "  <description></description>\n"
-                + "  <universal>false</universal>\n"
+                + "  <description>" + xmlEscape(description) + "</description>\n"
+                + "  <universal>" + universal + "</universal>\n"
                 + "</data>\n";
         return xml.getBytes(StandardCharsets.UTF_8);
     }
@@ -205,6 +212,56 @@ public class VassalArchive {
 
     public boolean isExtension() {
         return EXT_ROOT.equals(getRootElement().getTagName());
+    }
+
+    // -----------------------------------------------------------------------
+    // Extension properties (version / description / anyModule / extensionId)
+    // -----------------------------------------------------------------------
+    //
+    // These live on the ModuleExtension root element of buildFile.xml, and are
+    // mirrored in the separate `extensiondata` metadata entry.  VASSAL edits and
+    // saves both; setExtensionProperties does the same (see ModuleExtension /
+    // ExtensionMetaData in the VASSAL engine).
+
+    /** The extension's own version (root {@code version} attribute). */
+    public String getExtensionVersion() { return getRootElement().getAttribute("version"); }
+
+    /** The extension's description (root {@code description} attribute). */
+    public String getExtensionDescription() { return getRootElement().getAttribute("description"); }
+
+    /** Whether the extension may load against any module (root {@code anyModule} attribute). */
+    public boolean getExtensionAnyModule() {
+        return Boolean.parseBoolean(getRootElement().getAttribute("anyModule"));
+    }
+
+    /** The extension's id (root {@code extensionId} attribute); never edited here. */
+    public String getExtensionId() { return getRootElement().getAttribute("extensionId"); }
+
+    /**
+     * Updates this extension's editable properties the way VASSAL does: the
+     * {@code version}/{@code description}/{@code anyModule} attributes on the
+     * {@code ModuleExtension} root of {@code buildFile.xml}, and the matching
+     * {@code <version>}/{@code <description>}/{@code <universal>} values in the
+     * {@code extensiondata} metadata entry (regenerated and queued for the next
+     * save).  The {@code extensionId}, module name/version, and VASSAL version are
+     * left untouched.  Marks the archive modified; nothing is written until save.
+     */
+    public void setExtensionProperties(String version, String description, boolean anyModule) {
+        if (!isExtension()) {
+            throw new IllegalStateException("Not an extension: " + getDisplayName());
+        }
+        Element root = getRootElement();
+        root.setAttribute("version", version);
+        root.setAttribute("description", description);
+        root.setAttribute("anyModule", String.valueOf(anyModule));
+
+        // Regenerate the extensiondata metadata to match, preserving the VASSAL
+        // version already recorded on the root (we are not VASSAL, so we do not
+        // stamp our own version).
+        String vassalVersion = root.getAttribute("vassalVersion");
+        addPendingFile("extensiondata",
+                buildExtensionData(version, vassalVersion, description, anyModule));
+        modified = true;
     }
 
     public boolean isModified() { return modified; }
