@@ -38,6 +38,8 @@ A `.vmod` file is a standard ZIP archive containing the complete data for a VASS
 
 The root element is always `VASSAL.build.GameModule`. Every child element corresponds to a Java class in the VASSAL engine (the XML tag is the fully-qualified class name). The hierarchy mirrors the Java object tree built at runtime.
 
+> **Invariant: a module must never contain a `VASSAL.build.module.ExtensionElement`.** That wrapper class belongs only in an extension's `buildFile.xml` (see [vmdx-format.md](vmdx-format.md)). A module carrying one loads and mostly works, but breaks tooling that validates structure — notably VASSAL's *Tools → Refresh Counters*, which fails with a misleading "module was saved with older vassal version" error that editing/re-saving does not clear. The utility enforces this: it refuses any Move/Copy into a module that would introduce an `ExtensionElement` (e.g. recreating the parent path of a component taken from inside an extension), directing the user to select a real parent component in the module instead — see the Move/Copy guard in **[../AGENTS.md](../AGENTS.md)**.
+
 ```xml
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <VASSAL.build.GameModule

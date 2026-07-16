@@ -690,6 +690,31 @@ public class MainWindow extends JFrame {
         String srcSummary = srcNodes.size() == 1
                 ? "\"" + srcComps.get(0).getDisplayName() + "\""
                 : srcNodes.size() + " components";
+
+        // Guard: a module must never contain an ExtensionElement.  When the
+        // destination is a module and no parent is chosen (so the source's ancestor
+        // path would be recreated), a source that lives inside an extension's
+        // ExtensionElement would clone that wrapper into the module — producing an
+        // illegal module that loads but breaks (e.g. VASSAL's Tools > Refresh
+        // Counters rejects it).  Refuse and tell the user to pick a real parent.
+        if (recreateParents && !graftIntoExtension) {
+            for (ComponentNode comp : srcComps) {
+                if (hasExtensionElementAncestor(comp.getElement())) {
+                    JOptionPane.showMessageDialog(this,
+                            "Can't " + verb.toLowerCase() + " " + srcSummary
+                            + " into the module here.\n\n"
+                            + "The selected component sits inside an extension's Extension Element.\n"
+                            + "With no destination parent selected, its parent path would be recreated\n"
+                            + "in the module — adding an Extension Element to the module, which is not\n"
+                            + "allowed (VASSAL loads such a module but Tools → Refresh Counters fails).\n\n"
+                            + "Select the parent component in the module tree to " + verb.toLowerCase()
+                            + " into, then try again.",
+                            verb + " Not Allowed", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+            }
+        }
+
         if (graftIntoInherited) {
             int confirm = JOptionPane.showConfirmDialog(this,
                     verb + " " + srcSummary + " into \""
@@ -1123,6 +1148,21 @@ public class MainWindow extends JFrame {
     // VASSAL silently ignores).
 
     private static final String EXTENSION_ELEMENT = "VASSAL.build.module.ExtensionElement";
+
+    /**
+     * True when any ancestor of {@code srcElem} (up to, but excluding, its document
+     * root) is an {@link #EXTENSION_ELEMENT} — i.e. the element lives inside an
+     * extension's wrapper.  Used to prevent recreating that wrapper inside a module.
+     */
+    private static boolean hasExtensionElementAncestor(Element srcElem) {
+        Element srcRoot = srcElem.getOwnerDocument().getDocumentElement();
+        Node p = srcElem.getParentNode();
+        while (p instanceof Element && !p.isSameNode(srcRoot)) {
+            if (EXTENSION_ELEMENT.equals(((Element) p).getTagName())) return true;
+            p = p.getParentNode();
+        }
+        return false;
+    }
 
     /**
      * Builds the {@code target} path for an {@link #EXTENSION_ELEMENT} that grafts
