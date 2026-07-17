@@ -1,12 +1,57 @@
 # Changes
 
+## 1.0.8
+
+Adds an extension-properties editor and closes the last way a Move/Copy could produce an illegal module.
+
+### Added
+
+- **Tools → Edit Extension Properties (left/right)…** — mirrors VASSAL's `ModuleExtension` editor. Edit an extension's **Version**, **Description**, and **Allow loading with any module** (`anyModule`) flag; the **Extension ID** is shown read-only (changing it would invalidate existing saved games). Available only for an extension. The values are written **the way VASSAL stores them — in both places**: the `version`/`description`/`anyModule` attributes on the `ModuleExtension` root of `buildFile.xml`, and the matching `<version>`/`<description>`/`<universal>` values in the regenerated `extensiondata` metadata entry. The `extensionId`, module name/version, and recorded `vassalVersion` are left untouched. (Verified: the written `buildFile.xml` root and `extensiondata` are byte-format identical to VASSAL's, XML escaping included, and the edited values round-trip on reopen.)
+
+### Fixed
+
+- **Move/Copy now refuses to inject an `ExtensionElement` into a module.** Copying or moving a component that lives inside an extension's `ExtensionElement` into a module *with no destination parent selected* took the recreate-parents path, which shallow-cloned that wrapper into the module root. The result loaded in VASSAL but broke **Tools → Refresh Counters**, failing with a misleading "saved with older VASSAL version" error that re-saving could not clear. The operation is now refused up front with a dialog telling the user to select the intended parent component in the module tree first. The guard is scoped to that path only, so module→module recreate-parents and grafting into an extension are unaffected.
+
+## 1.0.7
+
+Extensions are now displayed as the module hierarchy they graft into, instead of as flat `ExtensionElement` rows.
+
+### Changed
+
+- **An extension panel reconstructs the parent module's tree.** Previously each grafted component appeared as a flat `Extension Element → target/path/…` row. The panel now decodes each `ExtensionElement`'s `target` into a chain of **greyed "inherited" nodes** (shared prefixes merged), with the wrapper's real component subtree hanging beneath its target in the normal colour — matching how the VASSAL module editor shows the extension. Even a doubly-wrapped (damaged) extension re-grafts from the root and displays correctly.
+  - Inherited (grey) nodes are display-only stand-ins for the module's own components: they **cannot be Moved, Copied, or Deleted**, but they *can* be chosen as a Move/Copy **destination** to graft into that specific module location.
+  - Tree-state preservation (expansion/selection/scroll) was generalised to handle the synthetic inherited nodes, which have no DOM element.
+
+## 1.0.6
+
+Fixes double-wrapped `ExtensionElement`s and adds a repair tool for extensions already damaged by the bug.
+
+### Fixed
+
+- **Copying/moving an `ExtensionElement` between extensions no longer double-wraps it.** Selecting an `ExtensionElement` wrapper as the source and grafting it into another extension re-wrapped it in a spurious outer `ExtensionElement` with an empty `target`. VASSAL loaded the result, but the module editor could not edit such a doubly-wrapped component. When the source is itself an `ExtensionElement`, it is now grafted directly onto the destination extension root instead of being re-wrapped.
+
+### Added
+
+- **Tools → Repair Double-Wrapped Extension Elements (left/right)…** — collapses existing empty-`target` outer wrappers into their real inner wrapper so the VASSAL editor can edit them again. (Verified against the damaged `E-TiF.vmdx`: 294 wrappers collapsed, 0 remaining.) Running it on an undamaged archive (or a module) reports nothing to fix and changes nothing.
+
+## 1.0.5
+
+### Changed
+
+- **Trees now open with only the root expanded and every folder closed**, instead of fully expanded, so a newly opened archive is easier to scan and the user can open just the branches they need.
+
 ## 1.0.4
 
-Fixes a crash that a Move out of an extension could bake into the extension file.
+Fixes a crash that a Move out of an extension could bake into the extension file, and adds a Delete command.
+
+### Added
+
+- **Delete** — remove a component (or a whole subtree) from either panel, via the tree's right-click "Delete" menu item or the toolbar's **Delete (left)** / **Delete (right)** buttons. A confirm dialog names the component (or count) and warns that referenced images and Pre-defined setup files are left in the archive untouched. The archive root and inherited (module) nodes cannot be deleted; deleting a grafted component in an extension also drops any `ExtensionElement` wrapper it leaves empty.
 
 ### Fixed
 
 - **Moving a component out of an extension no longer leaves an empty `ExtensionElement`.** Each component grafted into an extension lives inside its own `ExtensionElement` wrapper. Moving that component back out to the module removed the component but left the wrapper behind with nothing inside it. VASSAL **crashes on load** when it hits an empty `ExtensionElement` (it reads no component, then dereferences it — `NullPointerException` in `ExtensionElement.addTo`), aborting the entire module load. A Move out of an extension now drops any wrapper it empties, and the status line reports how many were removed.
+- **Linux `.deb`/`.rpm` packages now appear in the KDE/GNOME application menus.**
 
 ### Documentation
 
@@ -16,6 +61,21 @@ Fixes a crash that a Move out of an extension could bake into the extension file
 ### ⚠️ Upgrade note
 
 An extension edited with an earlier build by **moving a grafted component back out to the module** may contain empty `ExtensionElement`s and will crash VASSAL when enabled. Open such an extension in this build and perform any Move out of it, or otherwise re-save it, to strip the empty wrappers. (The sample `SiF.vmdx` had 24 such wrappers, now repaired.)
+
+## 1.0.3
+
+### Fixed
+
+- **Copy now carries the whole component subtree**, exactly like Move — previously a Copy could omit descendants of the copied component.
+
+### Added
+
+- **A new extension inherits the parent module's version** (both the root `version` attribute and the `extensiondata`), falling back to `0.0` only when the module has none.
+
+### Packaging
+
+- Linux packages now use a **space-free launcher name** and install a `/usr/bin` symlink.
+- Fixed Windows 32-bit packaging by matching the `jlink` version to the target JDK.
 
 ## 1.0.1
 
@@ -54,3 +114,5 @@ Initial release.
 - **Remove Unused Images** tool (mirrors VASSAL's).
 - **Open Recent** — remembers the 5 most-recently-opened files per panel.
 - `Makefile` targets to build installable packages — Linux `.deb`/`.rpm` (jpackage), Windows `.exe` ×3 architectures (Launch4j), macOS `.dmg` (libdmg-hfsplus) — with a VASSAL-style version-numbering system. See [docs/packaging.md](docs/packaging.md).
+</content>
+</invoke>
