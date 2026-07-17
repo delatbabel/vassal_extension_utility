@@ -315,9 +315,10 @@ A `.vsav` is not standalone: loading it requires the module named in its `module
   utility never parses the command log — it treats the `.vsav` as opaque bytes.
 
 - **A standalone save file** (like the sample here), which lives on disk next to the
-  module rather than inside an archive. The utility does not open these; they are
-  documented here for completeness and to explain the format of the bundled scenario
-  files it does move.
+  module. The utility's **Excess Units…** tool reads such a save to find and remove
+  game pieces whose definitions are missing from the module's active extensions —
+  see [vsav-excess-units.md](vsav-excess-units.md) for that feature and the detection
+  algorithm.
 
 ## Quick reference of constants
 

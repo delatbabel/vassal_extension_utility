@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vassalengine.extutil.model.ComponentNode;
 import org.vassalengine.extutil.model.RecentFilesStore;
+import org.vassalengine.extutil.model.SavedGame;
 import org.vassalengine.extutil.model.VassalArchive;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -28,9 +29,11 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -208,6 +211,9 @@ public class MainWindow extends JFrame {
         JMenuItem propsRight = new JMenuItem("Edit Extension Properties (right)…");
         propsRight.addActionListener(e -> editExtensionProperties(rightPanel));
 
+        JMenuItem excessUnits = new JMenuItem("Find Excess Units in Saved Game…");
+        excessUnits.addActionListener(e -> checkExcessUnits());
+
         toolsMenu.add(unusedLeft);
         toolsMenu.add(unusedRight);
         toolsMenu.addSeparator();
@@ -216,6 +222,8 @@ public class MainWindow extends JFrame {
         toolsMenu.addSeparator();
         toolsMenu.add(propsLeft);
         toolsMenu.add(propsRight);
+        toolsMenu.addSeparator();
+        toolsMenu.add(excessUnits);
         bar.add(toolsMenu);
 
         return bar;
@@ -241,6 +249,13 @@ public class MainWindow extends JFrame {
                 "List the extensions (active and inactive) for the module in the LEFT panel");
         showExtBtn.addActionListener(e -> showExtensions());
         toolbar.add(showExtBtn);
+
+        JButton excessBtn = new JButton("Excess Units…");
+        excessBtn.setToolTipText(
+                "Find game pieces in a saved game (.vsav) that are missing from the module's "
+                + "active extensions, and optionally remove them");
+        excessBtn.addActionListener(e -> checkExcessUnits());
+        toolbar.add(excessBtn);
 
         toolbar.add(new JSeparator(SwingConstants.VERTICAL));
 
@@ -836,6 +851,289 @@ public class MainWindow extends JFrame {
                         ? entry.file.getName()
                         : entry.file.getName() + "   (Inactive)");
                 if (!entry.active && !isSelected) {
+                    setForeground(Color.GRAY);
+                }
+            }
+            return this;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Excess units in a saved game
+    // -----------------------------------------------------------------------
+
+    /** Holds the loaded saved game and the excess pieces found in it. */
+    private static final class ExcessAnalysis {
+        final SavedGame game;
+        final List<SavedGame.ExcessPiece> excess;
+        ExcessAnalysis(SavedGame game, List<SavedGame.ExcessPiece> excess) {
+            this.game = game;
+            this.excess = excess;
+        }
+    }
+
+    /**
+     * Loads a user-selected saved game ({@code .vsav}) and reports the game pieces
+     * in it that are missing from the module (left panel) and its <em>active</em>
+     * extensions — the pieces that make VASSAL log "Image not found" on load and
+     * "Unable to match piece … by name" on Refresh Counters. From the report the
+     * user can permanently delete those pieces, saving the tidied game under a new
+     * name (the original file is left untouched).
+     *
+     * <p>A piece is flagged only when its image is absent from every active archive
+     * <em>and</em> its GPID matches no active PieceSlot (see {@link SavedGame}). If
+     * the piece's image or GPID is found in an <em>inactive</em> extension, that
+     * extension's name is shown in braces — activating it (Show Extensions) is the
+     * alternative to deleting the piece.</p>
+     */
+    private void checkExcessUnits() {
+        final VassalArchive module = leftPanel.getArchive();
+        if (module == null || module.isExtension()) {
+            status("Load a module in the LEFT panel before checking a saved game.");
+            return;
+        }
+        final File extDir = moduleExtensionDir();
+
+        JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Open Saved Game to Check");
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+                "VASSAL Saved Games (*.vsav)", "vsav"));
+        File startDir = module.getFile() != null ? module.getFile().getParentFile()
+                : new File(System.getProperty("user.home"));
+        if (startDir != null && startDir.isDirectory()) fc.setCurrentDirectory(startDir);
+        if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        final File vsav = fc.getSelectedFile();
+
+        status("Analyzing " + vsav.getName() + " … (this can take a while for a large game)");
+        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+
+        new SwingWorker<ExcessAnalysis, Void>() {
+            @Override protected ExcessAnalysis doInBackground() throws Exception {
+                // Active definitions: the module plus every .vmdx directly in _ext.
+                // A piece matches the active set by GPID or by (BasicPiece) name.
+                Set<String> activeGpids = new HashSet<>();
+                Set<String> activeNames = new HashSet<>();
+                collectSlots(module, activeGpids, activeNames);
+                for (File f : listVmdx(extDir)) {
+                    collectSlots(VassalArchive.open(f), activeGpids, activeNames);
+                }
+                // Inactive definitions: first extension that could supply each gpid / name.
+                Map<String, String> inactiveGpidExt = new HashMap<>();
+                Map<String, String> inactiveNameExt = new HashMap<>();
+                for (File f : listVmdx(extDir == null ? null : new File(extDir, INACTIVE_DIR))) {
+                    Set<String> g = new HashSet<>(), n = new HashSet<>();
+                    collectSlots(VassalArchive.open(f), g, n);
+                    for (String x : g) inactiveGpidExt.putIfAbsent(x, f.getName());
+                    for (String x : n) inactiveNameExt.putIfAbsent(x, f.getName());
+                }
+
+                SavedGame game = SavedGame.open(vsav);
+                List<SavedGame.ExcessPiece> excess = game.findExcessPieces(
+                        activeGpids, activeNames, inactiveGpidExt, inactiveNameExt);
+                return new ExcessAnalysis(game, excess);
+            }
+
+            @Override protected void done() {
+                setCursor(Cursor.getDefaultCursor());
+                try {
+                    ExcessAnalysis result = get();
+                    showExcessDialog(vsav, result);
+                } catch (Exception ex) {
+                    log.error("Failed to analyze saved game {}", vsav, ex);
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(MainWindow.this,
+                            "Could not analyze saved game:\n" + vsav.getName() + "\n\n"
+                            + cause.getMessage(),
+                            "Excess Units", JOptionPane.ERROR_MESSAGE);
+                    status("Could not analyze " + vsav.getName() + ".");
+                }
+            }
+        }.execute();
+    }
+
+    /**
+     * Shows the excess-pieces report for {@code vsav} and offers to delete them,
+     * saving the result under a new name.
+     */
+    private void showExcessDialog(File vsav, ExcessAnalysis result) {
+        final List<SavedGame.ExcessPiece> excess = result.excess;
+        if (excess.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "No excess units found in \"" + vsav.getName() + "\".\n\n"
+                    + "Every game piece is present in the module or one of its active extensions.",
+                    "Excess Units", JOptionPane.INFORMATION_MESSAGE);
+            status("No excess units found in " + vsav.getName() + ".");
+            return;
+        }
+
+        long recoverable = excess.stream().filter(p -> p.inactiveExtension != null).count();
+
+        JList<SavedGame.ExcessPiece> list = new JList<>(excess.toArray(new SavedGame.ExcessPiece[0]));
+        list.setCellRenderer(new ExcessPieceRenderer());
+        list.setVisibleRowCount(16);
+        JScrollPane scroll = new JScrollPane(list);
+        scroll.setPreferredSize(new Dimension(520, 360));
+
+        StringBuilder head = new StringBuilder("<html><b>").append(excess.size())
+                .append("</b> excess unit(s) in \"").append(vsav.getName())
+                .append("\" are missing from the active extensions.");
+        if (recoverable > 0) {
+            head.append("<br>").append(recoverable)
+                .append(" of them are available in an <i>inactive</i> extension (shown in braces) — ")
+                .append("<br>activating that extension is an alternative to deleting the piece.");
+        }
+        head.append("<br><br>\"Delete Excess Units\" removes <b>all</b> listed pieces and saves the "
+                + "<br>result under a new name; the original file is left unchanged.</html>");
+
+        JPanel content = new JPanel(new BorderLayout(6, 6));
+        content.add(new JLabel(head.toString()), BorderLayout.NORTH);
+        content.add(scroll, BorderLayout.CENTER);
+
+        JButton deleteBtn = new JButton("Delete Excess Units");
+        JButton closeBtn  = new JButton("Close");
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        buttons.add(deleteBtn);
+        buttons.add(closeBtn);
+        content.add(buttons, BorderLayout.SOUTH);
+
+        JDialog dialog = new JDialog(this, "Excess Units — " + vsav.getName(), true);
+        closeBtn.addActionListener(e -> dialog.dispose());
+        deleteBtn.addActionListener(e -> deleteExcessUnits(vsav, result, dialog));
+        dialog.setContentPane(content);
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        status(excess.size() + " excess unit(s) found in " + vsav.getName() + ".");
+        dialog.setVisible(true);
+    }
+
+    /**
+     * Confirms, prompts for a new destination file, and writes the tidied saved
+     * game (all excess pieces removed) there, leaving the original in place.
+     */
+    private void deleteExcessUnits(File vsav, ExcessAnalysis result, JDialog dialog) {
+        final List<SavedGame.ExcessPiece> excess = result.excess;
+        int confirm = JOptionPane.showConfirmDialog(this,
+                "Permanently remove all " + excess.size() + " excess unit(s) from the saved game?\n\n"
+                + "You will be asked for a new file name — the original \"" + vsav.getName()
+                + "\"\nis kept unchanged.",
+                "Delete Excess Units", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (confirm != JOptionPane.OK_OPTION) return;
+
+        JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Save Tidied Saved Game As");
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+                "VASSAL Saved Games (*.vsav)", "vsav"));
+        fc.setCurrentDirectory(vsav.getParentFile());
+        fc.setSelectedFile(new File(vsav.getParentFile(), suggestedTidiedName(vsav)));
+        if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+
+        File target = fc.getSelectedFile();
+        if (!target.getName().toLowerCase().endsWith(".vsav")) {
+            target = new File(target.getParentFile(), target.getName() + ".vsav");
+        }
+        if (target.equals(vsav)) {
+            JOptionPane.showMessageDialog(this,
+                    "Please choose a different file name — the original must be kept in place.",
+                    "Delete Excess Units", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (target.exists()) {
+            int r = JOptionPane.showConfirmDialog(this,
+                    target.getName() + " already exists.\nOverwrite it?",
+                    "Save Tidied Saved Game As", JOptionPane.OK_CANCEL_OPTION);
+            if (r != JOptionPane.OK_OPTION) return;
+        }
+
+        final File dest = target;
+        final Set<Integer> indices = new HashSet<>();
+        for (SavedGame.ExcessPiece p : excess) indices.add(p.commandIndex);
+
+        status("Writing tidied saved game … ");
+        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        new SwingWorker<Void, Void>() {
+            @Override protected Void doInBackground() throws Exception {
+                result.game.saveWithout(indices, dest);
+                return null;
+            }
+            @Override protected void done() {
+                setCursor(Cursor.getDefaultCursor());
+                try {
+                    get();
+                    dialog.dispose();
+                    JOptionPane.showMessageDialog(MainWindow.this,
+                            "Removed " + excess.size() + " excess unit(s).\n\n"
+                            + "Saved as: " + dest.getName() + "\n"
+                            + "Original kept: " + vsav.getName(),
+                            "Delete Excess Units", JOptionPane.INFORMATION_MESSAGE);
+                    status("Saved tidied game as " + dest.getName() + " (" + excess.size()
+                            + " unit(s) removed).");
+                } catch (Exception ex) {
+                    log.error("Failed to write tidied saved game {}", dest, ex);
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(MainWindow.this,
+                            "Could not write tidied saved game:\n" + dest.getName() + "\n\n"
+                            + cause.getMessage(),
+                            "Delete Excess Units", JOptionPane.ERROR_MESSAGE);
+                    status("Could not write " + dest.getName() + ".");
+                }
+            }
+        }.execute();
+    }
+
+    /** Suggests "&lt;base&gt; (tidied).vsav" for the tidied copy of {@code vsav}. */
+    private static String suggestedTidiedName(File vsav) {
+        String name = vsav.getName();
+        String base = name.toLowerCase().endsWith(".vsav")
+                ? name.substring(0, name.length() - ".vsav".length()) : name;
+        return base + " (tidied).vsav";
+    }
+
+    /**
+     * Collects the piece definitions an archive can match a saved piece against:
+     * every element's {@code gpid} attribute into {@code gpids}, and the innermost
+     * BasicPiece name of every {@code PieceSlot} / {@code CardSlot} /
+     * {@code PrototypeDefinition} into {@code names}.
+     */
+    private static void collectSlots(VassalArchive va, Set<String> gpids, Set<String> names) {
+        NodeList all = va.getRootElement().getElementsByTagName("*");
+        for (int i = 0; i < all.getLength(); i++) {
+            Element el = (Element) all.item(i);
+            String g = el.getAttribute("gpid");
+            if (g != null && !g.isEmpty()) gpids.add(g);
+
+            String tag = el.getTagName();
+            if (tag.endsWith("PieceSlot") || tag.endsWith("CardSlot")
+                    || tag.endsWith("PrototypeDefinition")) {
+                String name = SavedGame.basicPieceName(el.getTextContent());
+                if (name != null && !name.isEmpty()) names.add(name);
+            }
+        }
+    }
+
+    /** Lists the {@code *.vmdx} files directly in {@code dir} (empty if null/absent). */
+    private static List<File> listVmdx(File dir) {
+        List<File> out = new ArrayList<>();
+        if (dir == null || !dir.isDirectory()) return out;
+        File[] files = dir.listFiles(
+                (d, n) -> n.toLowerCase().endsWith(".vmdx") && new File(d, n).isFile());
+        if (files != null) Collections.addAll(out, files);
+        return out;
+    }
+
+    /**
+     * Renders an excess piece via its {@link SavedGame.ExcessPiece#displayLabel()};
+     * pieces recoverable from an inactive extension are shown in grey (they can be
+     * restored by activating that extension instead of being deleted).
+     */
+    private static final class ExcessPieceRenderer extends DefaultListCellRenderer {
+        @Override
+        public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                      boolean isSelected, boolean cellHasFocus) {
+            super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+            if (value instanceof SavedGame.ExcessPiece) {
+                SavedGame.ExcessPiece p = (SavedGame.ExcessPiece) value;
+                setText(p.displayLabel());
+                if (p.inactiveExtension != null && !isSelected) {
                     setForeground(Color.GRAY);
                 }
             }

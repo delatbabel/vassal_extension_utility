@@ -18,6 +18,8 @@ VASSAL's built-in module editor lets you edit a module or extension in isolation
 6. Reopen recent files from **File → Open Recent …** — the 5 most-recently-opened files for each panel are remembered between sessions.
 7. Create a new empty extension for the loaded module (**File → New Extension**) and save it with **File → Save Extension As…**, which defaults to the module's `_ext` directory (creating it if needed).
 8. Remove unused (unreferenced) images from a module or extension (**Tools → Remove Unused Images**), after reviewing and confirming the list — mirroring the VASSAL editor's tool of the same name.
+9. List a module's extensions — active and inactive — and activate/deactivate or open them for editing (**Show Extensions**).
+10. Find and remove "excess" game pieces from a saved game (`.vsav`) — pieces missing from the module's active extensions that otherwise cause *"Image not found"* / *"No such map"* on load and *"Unable to match piece … by name"* on Refresh Counters (**Excess Units…**). The tidied game is written to a new file, leaving the original unchanged.
 
 ## Building
 
@@ -84,6 +86,7 @@ Packages are written to `tmp/` and bundle their own Java runtime. The Linux `.de
 - [vmod format](docs/vmod-format.md) — VASSAL module file structure
 - [vmdx format](docs/vmdx-format.md) — VASSAL extension file structure
 - [vsav format](docs/vsav-format.md) — VASSAL saved-game file structure (obfuscated command log + metadata)
+- [vsav excess units](docs/vsav-excess-units.md) — finding and removing pieces missing from a module's active extensions
 
 ## Additional Documentation
 

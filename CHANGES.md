@@ -1,5 +1,14 @@
 # Changes
 
+## 1.0.11
+
+Adds a tool for tidying saved games whose pieces no longer match the module's active extensions.
+
+### Added
+
+- **Excess Units.** A new toolbar button (and **Tools → Find Excess Units in Saved Game…**) loads a VASSAL saved game (`.vsav`) and reports the game pieces in it that are missing from the module (left panel) and its **active** extensions — the pieces that make VASSAL log *"Bad Data in Module … Image not found"* / *"No such map"* on load and *"Unable to match piece … by name"* on Refresh Counters. A piece is flagged only when it matches no active PieceSlot by **either** GPID **or** name (VASSAL's own "unmatchable" condition), so run-time markers and refresh-repairable pieces are never touched. Pieces recoverable from an *inactive* extension are shown greyed with that extension's name in braces (activating it is an alternative to deleting). **Delete Excess Units** removes all listed pieces and saves the tidied game under a **new** name, leaving the original file unchanged. The saved game is rewritten byte-exactly (surviving commands copied verbatim, metadata preserved). See [docs/vsav-excess-units.md](docs/vsav-excess-units.md).
+- **Saved-game format documentation.** [docs/vsav-format.md](docs/vsav-format.md) documents the `.vsav` container, the `!VCSK` obfuscation, and the command-log grammar.
+
 ## 1.0.10
 
 Adds a way to see and manage a module's extensions from within the utility.
