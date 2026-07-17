@@ -23,8 +23,11 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.tree.DefaultMutableTreeNode;
 import java.awt.*;
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -232,6 +235,12 @@ public class MainWindow extends JFrame {
         JButton openExtBtn = new JButton("Open Extension (right)");
         openExtBtn.addActionListener(e -> openFile(rightPanel, true));
         toolbar.add(openExtBtn);
+
+        JButton showExtBtn = new JButton("Show Extensions");
+        showExtBtn.setToolTipText(
+                "List the extensions (active and inactive) for the module in the LEFT panel");
+        showExtBtn.addActionListener(e -> showExtensions());
+        toolbar.add(showExtBtn);
 
         toolbar.add(new JSeparator(SwingConstants.VERTICAL));
 
@@ -636,6 +645,202 @@ public class MainWindow extends JFrame {
         form.add(new JLabel(label), c);
         c.gridx = 1; c.fill = GridBagConstraints.HORIZONTAL; c.weightx = 1;
         form.add(field, c);
+    }
+
+    // -----------------------------------------------------------------------
+    // Show extensions
+    // -----------------------------------------------------------------------
+
+    /** The subdirectory of a module's {@code _ext} dir that holds deactivated extensions. */
+    private static final String INACTIVE_DIR = "inactive";
+
+    /** One extension entry in the Show Extensions dialog: its file and whether it is active. */
+    private static final class ExtEntry {
+        final File file;
+        final boolean active;
+        ExtEntry(File file, boolean active) { this.file = file; this.active = active; }
+    }
+
+    /**
+     * Lists the extensions available for the module loaded in the left panel and
+     * lets the user activate/deactivate each (by moving its {@code .vmdx} file
+     * between the module's {@code _ext} directory and its {@code inactive}
+     * subdirectory) or open it into the right panel for editing.
+     *
+     * Active extensions live directly in {@code <module>_ext/}; deactivated ones in
+     * {@code <module>_ext/inactive/}.  Entries are listed alphabetically; inactive
+     * ones are shown in grey with a trailing "(Inactive)" marker.
+     */
+    private void showExtensions() {
+        VassalArchive module = leftPanel.getArchive();
+        if (module == null || module.isExtension()) {
+            status("Load a module in the LEFT panel before showing its extensions.");
+            return;
+        }
+        File extDir = moduleExtensionDir();
+        if (extDir == null) {
+            status("The left panel's module has no file on disk yet — save it first.");
+            return;
+        }
+
+        JList<ExtEntry> list = new JList<>();
+        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        list.setCellRenderer(new ExtEntryRenderer());
+        list.setVisibleRowCount(14);
+        reloadExtensionList(list, extDir);
+
+        JScrollPane scroll = new JScrollPane(list);
+        scroll.setPreferredSize(new Dimension(420, 320));
+
+        JButton toggleBtn = new JButton("Activate / Deactivate");
+        JButton editBtn   = new JButton("Edit Extension");
+        toggleBtn.setEnabled(false);
+        editBtn.setEnabled(false);
+
+        // Keep the toggle button's label and both buttons' enabled state in sync
+        // with the current selection.
+        list.addListSelectionListener(e -> {
+            ExtEntry sel = list.getSelectedValue();
+            boolean has = sel != null;
+            editBtn.setEnabled(has);
+            toggleBtn.setEnabled(has);
+            toggleBtn.setText(has && !sel.active ? "Activate" : "Deactivate");
+        });
+
+        toggleBtn.addActionListener(e -> {
+            ExtEntry sel = list.getSelectedValue();
+            if (sel == null) return;
+            if (toggleExtensionActive(sel, extDir)) {
+                reloadExtensionList(list, extDir);
+            }
+        });
+
+        editBtn.addActionListener(e -> {
+            ExtEntry sel = list.getSelectedValue();
+            if (sel == null) return;
+            Window dialog = SwingUtilities.getWindowAncestor(list);
+            openArchive(rightPanel, sel.file);
+            if (dialog != null) dialog.dispose();
+        });
+
+        JPanel content = new JPanel(new BorderLayout(6, 6));
+        content.add(new JLabel("<html>Extensions for <b>" + module.getDisplayName()
+                + "</b>:<br>Select one, then Activate/Deactivate it or open it for editing."
+                + "</html>"), BorderLayout.NORTH);
+        content.add(scroll, BorderLayout.CENTER);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        buttons.add(toggleBtn);
+        buttons.add(editBtn);
+        JButton closeBtn = new JButton("Close");
+        buttons.add(closeBtn);
+        content.add(buttons, BorderLayout.SOUTH);
+
+        // Double-click a row to edit that extension.
+        list.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override public void mouseClicked(java.awt.event.MouseEvent me) {
+                if (me.getClickCount() == 2 && list.getSelectedValue() != null) {
+                    editBtn.doClick();
+                }
+            }
+        });
+
+        JDialog dialog = new JDialog(this, "Extensions — " + module.getDisplayName(), true);
+        closeBtn.addActionListener(e -> dialog.dispose());
+        dialog.setContentPane(content);
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
+    /**
+     * Scans {@code extDir} (active) and {@code extDir/inactive} (deactivated) for
+     * {@code .vmdx} files and repopulates {@code list}, sorted alphabetically by
+     * file name (case-insensitive) regardless of active state.
+     */
+    private void reloadExtensionList(JList<ExtEntry> list, File extDir) {
+        List<ExtEntry> entries = new ArrayList<>();
+        collectVmdx(extDir, true, entries);
+        collectVmdx(new File(extDir, INACTIVE_DIR), false, entries);
+        entries.sort(Comparator.comparing(en -> en.file.getName(), String.CASE_INSENSITIVE_ORDER));
+        list.setListData(entries.toArray(new ExtEntry[0]));
+    }
+
+    /** Adds every {@code *.vmdx} file directly in {@code dir} to {@code out} with the given active flag. */
+    private static void collectVmdx(File dir, boolean active, List<ExtEntry> out) {
+        if (dir == null || !dir.isDirectory()) return;
+        File[] files = dir.listFiles(
+                (d, name) -> name.toLowerCase().endsWith(".vmdx") && new File(d, name).isFile());
+        if (files == null) return;
+        for (File f : files) {
+            out.add(new ExtEntry(f, active));
+        }
+    }
+
+    /**
+     * Activates or deactivates {@code entry} by moving its {@code .vmdx} file
+     * between {@code extDir} (active) and {@code extDir/inactive} (deactivated).
+     * Returns true when the move succeeded and the list should be reloaded.
+     */
+    private boolean toggleExtensionActive(ExtEntry entry, File extDir) {
+        File targetDir = entry.active ? new File(extDir, INACTIVE_DIR) : extDir;
+        File target = new File(targetDir, entry.file.getName());
+        String verb = entry.active ? "Deactivate" : "Activate";
+
+        if (target.exists()) {
+            JOptionPane.showMessageDialog(this,
+                    "A file named \"" + entry.file.getName() + "\" already exists in\n"
+                    + targetDir + "\n\nCannot " + verb.toLowerCase() + " the extension.",
+                    verb + " Extension", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            JOptionPane.showMessageDialog(this,
+                    "Could not create the directory:\n" + targetDir,
+                    verb + " Extension", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+
+        try {
+            Files.move(entry.file.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE);
+        } catch (Exception ex) {
+            // Fall back to a non-atomic move if the platform/filesystem rejects it.
+            try {
+                Files.move(entry.file.toPath(), target.toPath());
+            } catch (Exception ex2) {
+                log.error("Failed to {} extension {}", verb.toLowerCase(), entry.file, ex2);
+                JOptionPane.showMessageDialog(this,
+                        "Could not " + verb.toLowerCase() + " extension:\n"
+                        + entry.file.getName() + "\n\n" + ex2.getMessage(),
+                        verb + " Extension", JOptionPane.ERROR_MESSAGE);
+                return false;
+            }
+        }
+        status((entry.active ? "Deactivated " : "Activated ") + entry.file.getName());
+        return true;
+    }
+
+    /**
+     * Renders an {@link ExtEntry}: active extensions in the normal colour, inactive
+     * ones in grey with a trailing "(Inactive)" marker.  Grey is applied only when
+     * the row is not selected, keeping the selection highlight legible.
+     */
+    private static final class ExtEntryRenderer extends DefaultListCellRenderer {
+        @Override
+        public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                      boolean isSelected, boolean cellHasFocus) {
+            super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+            if (value instanceof ExtEntry) {
+                ExtEntry entry = (ExtEntry) value;
+                setText(entry.active
+                        ? entry.file.getName()
+                        : entry.file.getName() + "   (Inactive)");
+                if (!entry.active && !isSelected) {
+                    setForeground(Color.GRAY);
+                }
+            }
+            return this;
+        }
     }
 
     /**

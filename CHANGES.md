@@ -1,5 +1,13 @@
 # Changes
 
+## 1.0.10
+
+Adds a way to see and manage a module's extensions from within the utility.
+
+### Added
+
+- **Show Extensions.** A new toolbar button lists the extensions available for the module in the left panel — both **active** ones (the `*.vmdx` files in the module's `_ext` directory) and **deactivated** ones (those in the `_ext/inactive/` subdirectory, which VASSAL ignores). Entries are listed alphabetically; inactive ones are shown in grey with an "(Inactive)" marker. Selecting an extension lets you either **Activate/Deactivate** it — moving its `.vmdx` file into or out of the `inactive/` subdirectory — or **Edit Extension**, which opens it into the right panel (double-click does the same).
+
 ## 1.0.9
 
 Gives the application a real icon on every platform, and makes desktops actually pick it up.

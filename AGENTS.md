@@ -31,7 +31,7 @@ The `Makefile` also builds installable packages (modelled on `../vassal/Makefile
 | `model/RecentFilesStore` | Persists the 5 most-recently-opened files per panel to `~/.vassal-extension-utility/recent-files.properties` (see [Recent files](#recent-files)) |
 | `model/ComponentNode` | Wraps a `org.w3c.dom.Element`; computes the editor-style display label (see [Display names](#display-names)) and collects image references from subtree |
 | `gui/ArchivePanel` | `JPanel` containing a `JTree` built from `VassalArchive.getRootElement()` — a direct DOM walk for a module, or the reconstructed module hierarchy for an extension (see [Extension tree display](#extension-tree-display)); `refresh()` preserves expansion/selection/scroll across rebuilds (see [Tree state preservation](#tree-state-preservation)); exposes a `setDeleteHandler()` callback used by the right-click "Delete" menu item (see [Delete](#delete)) |
-| `gui/MainWindow` | Top-level `JFrame` — split pane of two `ArchivePanel`s, toolbar, status bar |
+| `gui/MainWindow` | Top-level `JFrame` — split pane of two `ArchivePanel`s, toolbar, status bar; the **Show Extensions** toolbar button lists a module's extensions and activates/deactivates or opens them (see [Show extensions](#show-extensions)) |
 
 ### Display names
 
@@ -91,6 +91,16 @@ On Save, `VassalArchive.setExtensionProperties(version, description, anyModule)`
 2. the matching `<version>`/`<description>`/`<universal>` values in the separate `extensiondata` metadata entry, which is **regenerated** (via the same builder `createExtension` uses) and queued as a pending file. The recorded `vassalVersion` (root attribute and `<VassalVersion>`), `extensionId`, and module name/version are preserved unchanged — the utility is not VASSAL, so it does not stamp its own VASSAL version; `<dateSaved>` is refreshed and `<extra1>`/`<extra2>` stay empty, exactly as VASSAL writes them. (Verified: the written `buildFile.xml` root and `extensiondata` are byte-format identical to VASSAL's, with XML special characters escaped in both.)
 
 Like every other edit, the archive is marked modified and nothing reaches disk until the next Save.
+
+### Show extensions
+
+The **Show Extensions** toolbar button (`MainWindow.showExtensions`) lists the extensions available for the **module loaded in the left panel** and lets the user activate/deactivate or edit each. It requires a module in the left panel (invoking it with a module absent, an extension loaded there, or a module with no file on disk shows a status message and does nothing).
+
+- **Where extensions live** — the module's conventional `_ext` directory (`moduleExtensionDir()`, the module file name with `.vmod` → `_ext`). **Active** extensions are the `*.vmdx` files directly in `<module>_ext/`; **deactivated** ones are the `*.vmdx` files in the `<module>_ext/inactive/` subdirectory (`INACTIVE_DIR`). VASSAL itself ignores extensions under `inactive/`, so moving a file there deactivates it.
+- **The dialog** — a modal `JDialog` with a single-selection `JList<ExtEntry>` (each `ExtEntry` holds the file and an `active` flag). Both directories are scanned (`reloadExtensionList` / `collectVmdx`) and entries are listed **alphabetically by file name (case-insensitive), active and inactive intermixed**. `ExtEntryRenderer` paints inactive entries **grey with a trailing "(Inactive)"** marker (grey only when unselected, keeping the selection highlight legible).
+- **Two actions per selection** —
+  1. **Activate / Deactivate** — one button whose label tracks the selected row's state (`Activate` for an inactive entry, `Deactivate` for an active one). `toggleExtensionActive` **moves the `.vmdx` file** between `<module>_ext/` and `<module>_ext/inactive/` (creating `inactive/` on demand; `Files.move` with `ATOMIC_MOVE`, falling back to a plain move), refuses if a file of the same name already exists at the destination, and reloads the list in place. This is a direct filesystem move — no archive is opened and nothing is queued for save.
+  2. **Edit Extension** — opens the selected extension into the **right panel** via the shared `openArchive(rightPanel, file)` path (recording it in the right panel's recent files) and closes the dialog. Double-clicking a row does the same.
 
 ### Repair double-wrapped extension elements
 
