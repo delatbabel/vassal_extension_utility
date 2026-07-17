@@ -17,7 +17,7 @@ SHELL:=/bin/bash
 # =======================================================================
 
 # The numeric version — the single source of truth. Bump this for a release.
-VNUM:=1.0.8
+VNUM:=1.0.9
 # major.minor part
 V_MAJ_MIN:=$(shell echo "$(VNUM)" | cut -f1,2 -d'.')
 # four-part form required by the Windows .exe version resource
@@ -222,6 +222,7 @@ JPACKAGE_COMMON=--input $(TMPDIR)/jpackage-input \
                 --app-version $(VNUM) \
                 --vendor "$(VENDOR)" \
                 --description "$(DESCRIPTION)" \
+                --icon $(DISTDIR)/linux/VASSAL-gear.png \
                 --dest $(TMPDIR) \
                 --resource-dir $(TMPDIR)/jpackage-res \
                 --linux-package-name $(PKGNAME) \
@@ -312,12 +313,13 @@ $(TMPDIR)/windows-%-build/jre: | $(TMPDIR)
 	  "$$jlink" --module-path $(JDKDIR)/windows-$*/jmods $(JLINK_OPTS) --output $@
 
 # generate the Launch4j config and wrap the JAR into VASSAL-Extension-Utility.exe
-$(TMPDIR)/windows-%-build/VASSAL-Extension-Utility.exe: $(DISTJAR) $(DISTDIR)/windows/launch4j.xml.in
+$(TMPDIR)/windows-%-build/VASSAL-Extension-Utility.exe: $(DISTJAR) $(DISTDIR)/windows/launch4j.xml.in $(DISTDIR)/windows/VASSAL-gear.ico
 	mkdir -p $(TMPDIR)/windows-$*-build
 	cp $(DISTJAR) $(TMPDIR)/windows-$*-build/
 	sed -e 's|@JAR@|$(CURDIR)/$(TMPDIR)/windows-$*-build/$(notdir $(DISTJAR))|g' \
 	    -e 's|@OUTFILE@|$(CURDIR)/$@|g' \
 	    -e 's|@OUTNAME@|VASSAL-Extension-Utility.exe|g' \
+	    -e 's|@ICON@|$(CURDIR)/$(DISTDIR)/windows/VASSAL-gear.ico|g' \
 	    -e 's|@JREPATH@|jre|g' \
 	    -e 's|@NUMVERSION4@|$(NUMVERSION4)|g' \
 	    -e 's|@VERSION@|$(VERSION)|g' \
@@ -352,7 +354,8 @@ release-windows: release-windows-x86_64 release-windows-aarch64 release-windows-
 APPDIRNAME:=VASSAL Extension Utility.app
 
 $(TMPDIR)/macos-%-build/image: $(DISTJAR) \
-		$(DISTDIR)/macos/Info.plist.in $(DISTDIR)/macos/run.sh.in $(DISTDIR)/macos/PkgInfo
+		$(DISTDIR)/macos/Info.plist.in $(DISTDIR)/macos/run.sh.in $(DISTDIR)/macos/PkgInfo \
+		$(DISTDIR)/macos/VASSAL-gear.icns
 	@[ -d $(JDKDIR)/macos-$* ] || { echo "Missing $(JDKDIR)/macos-$* — run 'make bootstrap'"; exit 1; }
 	@[ -n "$(JLINK_MAIN)" ] && [ -x "$(JLINK_MAIN)" ] || { \
 	    echo "No host jlink for Java $(JDK_MAIN_VER) (needed to link macos-$*). Run 'make bootstrap'."; exit 1; }
@@ -361,6 +364,7 @@ $(TMPDIR)/macos-%-build/image: $(DISTJAR) \
 	sed -e 's|@NUMVERSION@|$(VNUM)|g' $(DISTDIR)/macos/Info.plist.in \
 	    > "$@/$(APPDIRNAME)/Contents/Info.plist"
 	cp $(DISTDIR)/macos/PkgInfo "$@/$(APPDIRNAME)/Contents/PkgInfo"
+	cp $(DISTDIR)/macos/VASSAL-gear.icns "$@/$(APPDIRNAME)/Contents/Resources/"
 	sed -e 's|@JARFILE@|$(notdir $(DISTJAR))|g' $(DISTDIR)/macos/run.sh.in \
 	    > "$@/$(APPDIRNAME)/Contents/MacOS/run.sh"
 	chmod 755 "$@/$(APPDIRNAME)/Contents/MacOS/run.sh"

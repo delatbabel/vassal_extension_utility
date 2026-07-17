@@ -144,6 +144,39 @@ Release flow: run `make version-bump` (or edit `VNUM`), commit, tag as
 
 ---
 
+## Application icon
+
+The application icon is the **VASSAL-gear** artwork. Its master is the vector
+source `src/main/resources/icons/scalable/VASSAL-gear.svg`; sized PNGs rendered
+from it live alongside under `src/main/resources/icons/<n>x<n>/VASSAL-gear.png`
+(16, 24, 32, 48, 64, 128, 256). Those PNGs are bundled into the JAR, so the
+running window/taskbar icon is set at startup — `MainWindow.loadAppIcons()`
+feeds every size to `setIconImages()`, and `Main.setTaskbarIcon()` sets the
+Dock/taskbar icon when running unpackaged.
+
+Each platform package points at a pre-generated icon committed under `dist/`:
+
+| Platform | File | Wired via |
+|---|---|---|
+| Linux (`.deb`/`.rpm`) | `dist/linux/VASSAL-gear.png` (256×256) | jpackage `--icon` → the `.desktop` `Icon=` (`APPLICATION_ICON` token) |
+| Windows (`.exe`)      | `dist/windows/VASSAL-gear.ico` (multi-res 16–256) | Launch4j `<icon>` (`@ICON@` in `launch4j.xml.in`) |
+| macOS (`.app`/`.dmg`) | `dist/macos/VASSAL-gear.icns` (16–1024, incl. @2x) | `Contents/Resources/` + `CFBundleIconFile` in `Info.plist` |
+
+To regenerate the derived files after editing the SVG (needs Inkscape +
+ImageMagick; the `.icns` is assembled with a short Python script — see the git
+history of this change for the exact commands):
+
+```bash
+# sized PNGs (repeat per size into src/main/resources/icons/<n>x<n>/ and a
+# 256px copy to dist/linux/VASSAL-gear.png)
+inkscape src/main/resources/icons/scalable/VASSAL-gear.svg \
+    --export-type=png -w 256 -h 256 --export-filename=/tmp/icon-256.png
+# Windows multi-resolution .ico
+magick icon-16.png icon-24.png icon-32.png icon-48.png icon-64.png \
+       icon-128.png icon-256.png dist/windows/VASSAL-gear.ico
+# macOS .icns is a PNG-chunk container (ImageMagick has no ICNS delegate here)
+```
+
 ## Building each package
 
 ### Linux `.deb` / `.rpm`

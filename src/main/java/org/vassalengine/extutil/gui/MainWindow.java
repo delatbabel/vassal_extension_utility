@@ -79,6 +79,7 @@ public class MainWindow extends JFrame {
     public MainWindow() {
         super("VASSAL Extension Utility");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setIconImages(loadAppIcons());
         leftPanel.setDeleteHandler(() -> deleteSelected(leftPanel));
         rightPanel.setDeleteHandler(() -> deleteSelected(rightPanel));
         setJMenuBar(buildMenuBar());
@@ -99,6 +100,34 @@ public class MainWindow extends JFrame {
         pack();
         setLocationRelativeTo(null);
         setMinimumSize(new Dimension(800, 500));
+    }
+
+    // -----------------------------------------------------------------------
+    // Application icon
+    // -----------------------------------------------------------------------
+
+    /** Sizes of the bundled VASSAL-gear PNGs under /icons/&lt;n&gt;x&lt;n&gt;/. */
+    private static final int[] ICON_SIZES = {16, 24, 32, 48, 64, 128, 256};
+
+    /**
+     * Loads the application icon at every bundled size so the window manager,
+     * taskbar, and Alt-Tab switcher each pick the resolution they need
+     * ({@link Window#setIconImages}). Missing/unreadable icons are skipped so a
+     * packaging slip never stops the app from starting.
+     */
+    private List<Image> loadAppIcons() {
+        List<Image> icons = new ArrayList<>();
+        for (int size : ICON_SIZES) {
+            String path = "/icons/" + size + "x" + size + "/VASSAL-gear.png";
+            try (java.io.InputStream in = MainWindow.class.getResourceAsStream(path)) {
+                if (in != null) {
+                    icons.add(javax.imageio.ImageIO.read(in));
+                }
+            } catch (Exception e) {
+                log.warn("Could not load application icon {}", path, e);
+            }
+        }
+        return icons;
     }
 
     // -----------------------------------------------------------------------
