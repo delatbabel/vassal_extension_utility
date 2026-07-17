@@ -238,9 +238,25 @@ $(TMPDIR)/jpackage-input/$(notdir $(DISTJAR)): $(DISTJAR) | $(TMPDIR)
 # Package maintainer scripts that symlink the launcher into /usr/bin so it is on
 # the user's PATH, plus a .desktop override so the KDE/GNOME menu entry shows a
 # friendly name. We take jpackage's OWN templates (from the packaging JDK) and
-# inject the symlink after the desktop-install/uninstall markers, so the result
-# stays correct across JDK versions and keeps jpackage's default behaviour. The
-# symlink is removed on uninstall only if it still points at our launcher.
+# inject our own commands after the desktop-install/uninstall markers, so the
+# result stays correct across JDK versions and keeps jpackage's default
+# behaviour. The symlink is removed on uninstall only if it still points at our
+# launcher.
+#
+# We also register the app icon in the freedesktop hicolor theme via
+# xdg-icon-resource (rather than only leaving jpackage's copy at an absolute
+# path under /opt and pointing Icon= straight at it). This is what proper Linux
+# packages — including the sibling `vassal` package — do, and it matters because
+# xdg-icon-resource runs gtk-update-icon-cache, which is the signal desktops
+# (notably KDE Plasma) use to invalidate their icon caches. Without it, an
+# upgrade over a version that had no icon leaves the desktop's cached "no icon"
+# in place, so the menu entry never picks up the new artwork. The .desktop file
+# therefore references the icon by NAME ($(LAUNCHER)) so it resolves from the
+# theme. jpackage still installs the source PNG at /opt/$(PKGNAME)/lib, which is
+# where the postinst reads it from to register it.
+ICON_SRC:=/opt/$(PKGNAME)/lib/$(LAUNCHER).png
+ICON_INSTALL:=command -v xdg-icon-resource >/dev/null 2>&1 && xdg-icon-resource install --novendor --size 256 "$(ICON_SRC)" "$(LAUNCHER)" || true
+ICON_UNINSTALL:=command -v xdg-icon-resource >/dev/null 2>&1 && xdg-icon-resource uninstall --size 256 "$(LAUNCHER)" || true
 $(TMPDIR)/jpackage-res: | $(TMPDIR)
 	@command -v unzip >/dev/null || { echo "unzip is required to build the Linux package scripts"; exit 1; }
 	rm -rf $@ && mkdir -p $@/tpl
@@ -252,27 +268,33 @@ $(TMPDIR)/jpackage-res: | $(TMPDIR)
 	    'classes/jdk/jpackage/internal/resources/template.spec' >/dev/null 2>&1 || true
 	@for f in template.postinst template.prerm template.spec ; do \
 	    [ -f $@/tpl/$$f ] || { echo "Failed to extract $$f from jdk.jpackage.jmod"; exit 1; }; done
-	sed '/DESKTOP_COMMANDS_INSTALL/a ln -sf "$(LINK_SRC)" "$(LINK_DST)"' \
+	sed -e '/DESKTOP_COMMANDS_INSTALL/a ln -sf "$(LINK_SRC)" "$(LINK_DST)"' \
+	    -e '/DESKTOP_COMMANDS_INSTALL/a $(ICON_INSTALL)' \
 	    $@/tpl/template.postinst > $@/postinst
-	sed '/DESKTOP_COMMANDS_UNINSTALL/a [ "$$(readlink "$(LINK_DST)" 2>/dev/null)" = "$(LINK_SRC)" ] && rm -f "$(LINK_DST)" || true' \
+	sed -e '/DESKTOP_COMMANDS_UNINSTALL/a [ "$$(readlink "$(LINK_DST)" 2>/dev/null)" = "$(LINK_SRC)" ] && rm -f "$(LINK_DST)" || true' \
+	    -e '/DESKTOP_COMMANDS_UNINSTALL/a $(ICON_UNINSTALL)' \
 	    $@/tpl/template.prerm > $@/prerm
 	@# jpackage names the .spec resource after the PACKAGE name (--linux-package-name),
 	@# not the launcher/app name.
 	sed -e '/DESKTOP_COMMANDS_INSTALL/a ln -sf "$(LINK_SRC)" "$(LINK_DST)"' \
+	    -e '/DESKTOP_COMMANDS_INSTALL/a $(ICON_INSTALL)' \
 	    -e '/DESKTOP_COMMANDS_UNINSTALL/a [ "$$(readlink "$(LINK_DST)" 2>/dev/null)" = "$(LINK_SRC)" ] && rm -f "$(LINK_DST)" || true' \
+	    -e '/DESKTOP_COMMANDS_UNINSTALL/a $(ICON_UNINSTALL)' \
 	    $@/tpl/template.spec > $@/$(PKGNAME).spec
 	rm -rf $@/tpl
 	@# .desktop override, named after the launcher (--name) per jpackage's resource
-	@# lookup convention: everything but Name= keeps jpackage's own substitution
-	@# tokens (APPLICATION_DESCRIPTION/LAUNCHER/ICON, DEPLOY_BUNDLE_CATEGORY,
-	@# DESKTOP_MIMES) so Exec/Icon/Categories/MimeType still fill in per-build;
-	@# only the menu label is fixed to $(APPNAME) instead of $(LAUNCHER).
+	@# lookup convention: everything but Name= and Icon= keeps jpackage's own
+	@# substitution tokens (APPLICATION_DESCRIPTION/LAUNCHER, DEPLOY_BUNDLE_CATEGORY,
+	@# DESKTOP_MIMES) so Exec/Categories/MimeType still fill in per-build. Name= is
+	@# fixed to $(APPNAME) instead of $(LAUNCHER); Icon= is the theme icon NAME
+	@# ($(LAUNCHER)) that the postinst registers via xdg-icon-resource, rather than
+	@# jpackage's APPLICATION_ICON absolute path — see the icon-cache note above.
 	printf '%s\n' \
 	    '[Desktop Entry]' \
 	    'Name=$(APPNAME)' \
 	    'Comment=APPLICATION_DESCRIPTION' \
 	    'Exec=APPLICATION_LAUNCHER' \
-	    'Icon=APPLICATION_ICON' \
+	    'Icon=$(LAUNCHER)' \
 	    'Terminal=false' \
 	    'Type=Application' \
 	    'Categories=DEPLOY_BUNDLE_CATEGORY' \
