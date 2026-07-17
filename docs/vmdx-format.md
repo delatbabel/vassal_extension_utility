@@ -136,7 +136,7 @@ Because the same image may be referenced by both the parent module and one or mo
 
 ## Pre-defined Setup Files
 
-As in a `.vmod`, a `PredefinedSetup` with `useFile="true"` names a bundled saved game in its `file` attribute (a root-level ZIP entry, usually `*.vsav`). When a Pre-defined setup is moved or copied between an extension and its module, this saved-game entry must travel with it — the Extension Utility copies the referenced entry into the destination archive. Unlike images (which are only ever copied), on a **Move** the `.vsav` is also removed from the source archive, but only when no remaining `PredefinedSetup` there still references it.
+As in a `.vmod`, a `PredefinedSetup` with `useFile="true"` names a bundled saved game in its `file` attribute (a root-level ZIP entry, usually `*.vsav`; see [vsav format](vsav-format.md) for that file's internal structure). When a Pre-defined setup is moved or copied between an extension and its module, this saved-game entry must travel with it — the Extension Utility copies the referenced entry into the destination archive. Unlike images (which are only ever copied), on a **Move** the `.vsav` is also removed from the source archive, but only when no remaining `PredefinedSetup` there still references it.
 
 ## Differences from .vmod at a Glance
 

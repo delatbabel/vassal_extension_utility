@@ -83,3 +83,4 @@ Packages are written to `tmp/` and bundle their own Java runtime. The Linux `.de
 
 - [vmod format](docs/vmod-format.md) — VASSAL module file structure
 - [vmdx format](docs/vmdx-format.md) — VASSAL extension file structure
+- [vsav format](docs/vsav-format.md) — VASSAL saved-game file structure (obfuscated command log + metadata)
