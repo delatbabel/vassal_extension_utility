@@ -107,6 +107,17 @@ the sample files: the tidied game reopens with exactly *original − removed* co
 re-scans to zero excess, keeps `begin_save … end_save` intact, and has byte-identical
 metadata.)
 
+### Safe, atomic writes
+
+The tidied game is written to a **temporary file first and then moved into place**
+(an atomic rename where the filesystem supports it). The destination therefore only
+ever contains a complete file — if the save is interrupted (for example the
+application is closed mid-write), the target is left untouched rather than truncated.
+This matters because a large saved game takes a few seconds to rewrite; a truncated
+file would fail to open in VASSAL with *"… is not a VASSAL saved game or log."* The
+metadata entries are copied verbatim and the obfuscated stream is written in large
+buffered chunks, so even a several-hundred-megabyte game is rewritten quickly.
+
 ## Using it
 
 1. Open the module in the **left** panel.
@@ -117,5 +128,7 @@ metadata.)
 4. Click **Delete Excess Units**, confirm, and choose a **new** file name (defaults to
    `<name> (tidied).vsav`). The original file is kept unchanged.
 
-Because a saved game can be very large (hundreds of MB uncompressed), loading and
-analysis run on a background thread with a wait cursor; the window stays responsive.
+Because a saved game can be very large (hundreds of MB uncompressed), loading,
+analysis and writing all run on a background thread behind a modal progress dialog;
+the tidied file is written atomically (see above), so closing the window mid-operation
+never leaves a corrupt file.

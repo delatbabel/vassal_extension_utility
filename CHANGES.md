@@ -1,5 +1,13 @@
 # Changes
 
+## 1.0.12
+
+Fixes corrupt output from Delete Excess Units and makes it much faster.
+
+### Fixed
+
+- **Delete Excess Units no longer produces an unreadable saved game.** The tidied `.vsav` was written directly to the destination path, so if the write was interrupted — e.g. the window was closed during the several-second save of a large game — a truncated file was left behind, and VASSAL rejected it with *"… is not a VASSAL saved game or log."* The tidied game is now written to a temporary file and atomically moved into place, so the destination only ever holds a complete file (the original is still never touched). The operation also runs behind a modal progress dialog so it is clearly working and cannot be closed mid-write, and deobfuscation/obfuscation now use bulk/chunked I/O — a ~465 MB game is rewritten in a few seconds instead of ~30.
+
 ## 1.0.11
 
 Adds a tool for tidying saved games whose pieces no longer match the module's active extensions.

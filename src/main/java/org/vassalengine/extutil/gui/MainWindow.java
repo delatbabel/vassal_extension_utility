@@ -862,6 +862,27 @@ public class MainWindow extends JFrame {
     // Excess units in a saved game
     // -----------------------------------------------------------------------
 
+    /**
+     * Builds a small modal, indeterminate progress dialog. Shown while a long
+     * saved-game operation runs on a background worker so the user sees it working
+     * and cannot close the window mid-operation.
+     */
+    private JDialog makeProgressDialog(String htmlMessage) {
+        JDialog d = new JDialog(this, "Working…", true);
+        d.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        JPanel p = new JPanel(new BorderLayout(10, 10));
+        p.setBorder(new EmptyBorder(16, 20, 16, 20));
+        p.add(new JLabel("<html>" + htmlMessage + "</html>"), BorderLayout.NORTH);
+        JProgressBar bar = new JProgressBar();
+        bar.setIndeterminate(true);
+        p.add(bar, BorderLayout.CENTER);
+        d.setContentPane(p);
+        d.pack();
+        d.setMinimumSize(new Dimension(340, d.getHeight()));
+        d.setLocationRelativeTo(this);
+        return d;
+    }
+
     /** Holds the loaded saved game and the excess pieces found in it. */
     private static final class ExcessAnalysis {
         final SavedGame game;
@@ -904,10 +925,12 @@ public class MainWindow extends JFrame {
         if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
         final File vsav = fc.getSelectedFile();
 
-        status("Analyzing " + vsav.getName() + " … (this can take a while for a large game)");
-        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        status("Analyzing " + vsav.getName() + " …");
+        final JDialog progress = makeProgressDialog(
+                "Analyzing <b>" + vsav.getName() + "</b> …<br>"
+                + "This can take a while for a large saved game.");
 
-        new SwingWorker<ExcessAnalysis, Void>() {
+        SwingWorker<ExcessAnalysis, Void> worker = new SwingWorker<ExcessAnalysis, Void>() {
             @Override protected ExcessAnalysis doInBackground() throws Exception {
                 // Active definitions: the module plus every .vmdx directly in _ext.
                 // A piece matches the active set by GPID or by (BasicPiece) name.
@@ -934,7 +957,7 @@ public class MainWindow extends JFrame {
             }
 
             @Override protected void done() {
-                setCursor(Cursor.getDefaultCursor());
+                progress.dispose();
                 try {
                     ExcessAnalysis result = get();
                     showExcessDialog(vsav, result);
@@ -948,7 +971,9 @@ public class MainWindow extends JFrame {
                     status("Could not analyze " + vsav.getName() + ".");
                 }
             }
-        }.execute();
+        };
+        worker.execute();
+        progress.setVisible(true);   // modal; returns when done() disposes it
     }
 
     /**
@@ -1049,14 +1074,15 @@ public class MainWindow extends JFrame {
         for (SavedGame.ExcessPiece p : excess) indices.add(p.commandIndex);
 
         status("Writing tidied saved game … ");
-        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-        new SwingWorker<Void, Void>() {
+        final JDialog progress = makeProgressDialog(
+                "Writing <b>" + dest.getName() + "</b> …<br>Please wait — do not close the window.");
+        SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() throws Exception {
                 result.game.saveWithout(indices, dest);
                 return null;
             }
             @Override protected void done() {
-                setCursor(Cursor.getDefaultCursor());
+                progress.dispose();
                 try {
                     get();
                     dialog.dispose();
@@ -1077,7 +1103,9 @@ public class MainWindow extends JFrame {
                     status("Could not write " + dest.getName() + ".");
                 }
             }
-        }.execute();
+        };
+        worker.execute();
+        progress.setVisible(true);   // modal; returns when done() disposes it
     }
 
     /** Suggests "&lt;base&gt; (tidied).vsav" for the tidied copy of {@code vsav}. */

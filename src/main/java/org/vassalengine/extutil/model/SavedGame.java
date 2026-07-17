@@ -11,12 +11,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.BufferedOutputStream;
-import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -162,43 +162,27 @@ public class SavedGame {
      * each payload byte XOR-ed with the key (see docs/vsav-format.md).
      */
     private static byte[] deobfuscate(ZipFile zf, ZipEntry e, java.io.File f) throws IOException {
-        try (DataInputStream in =
-                     new DataInputStream(new java.io.BufferedInputStream(zf.getInputStream(e), 1 << 16))) {
-            final byte[] hdr = new byte[HEADER.length];
-            in.readFully(hdr);
-            for (int i = 0; i < HEADER.length; i++) {
-                if (hdr[i] != HEADER[i]) {
-                    throw new IOException("Not an obfuscated VASSAL saved game (missing !VCSK header): "
-                            + f.getName());
-                }
-            }
-            final int key = (hexVal(in.readUnsignedByte()) << 4) | hexVal(in.readUnsignedByte());
-
-            // Prefer the known uncompressed size to preallocate exactly; fall back to a growing buffer.
-            final long size = e.getSize();
-            final byte[] out;
-            int n = 0;
-            if (size >= HEADER.length + 2) {
-                out = new byte[(int) ((size - HEADER.length - 2) / 2)];
-                int hi;
-                while ((hi = in.read()) != -1) {
-                    final int lo = in.read();
-                    if (lo == -1) break;
-                    out[n++] = (byte) (((hexVal(hi) << 4) | hexVal(lo)) ^ key);
-                }
-                return n == out.length ? out : java.util.Arrays.copyOf(out, n);
-            }
-            else {
-                final java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-                int hi;
-                while ((hi = in.read()) != -1) {
-                    final int lo = in.read();
-                    if (lo == -1) break;
-                    bos.write(((hexVal(hi) << 4) | hexVal(lo)) ^ key);
-                }
-                return bos.toByteArray();
+        final byte[] raw;
+        try (InputStream in = zf.getInputStream(e)) {
+            raw = in.readAllBytes();   // the whole (hex-ASCII) entry
+        }
+        if (raw.length < HEADER.length + 2) {
+            throw new IOException("Not an obfuscated VASSAL saved game (too short): " + f.getName());
+        }
+        for (int i = 0; i < HEADER.length; i++) {
+            if (raw[i] != HEADER[i]) {
+                throw new IOException("Not an obfuscated VASSAL saved game (missing !VCSK header): "
+                        + f.getName());
             }
         }
+        final int key = (hexVal(raw[HEADER.length]) << 4) | hexVal(raw[HEADER.length + 1]);
+        final int payload = raw.length - HEADER.length - 2;
+        final byte[] out = new byte[payload / 2];
+        int j = HEADER.length + 2;
+        for (int i = 0; i < out.length; i++, j += 2) {
+            out[i] = (byte) (((hexVal(raw[j]) << 4) | hexVal(raw[j + 1])) ^ key);
+        }
+        return out;
     }
 
     private static int hexVal(int c) {
@@ -337,18 +321,33 @@ public class SavedGame {
         final java.io.File parent = target.getParentFile();
         if (parent != null) parent.mkdirs();
 
-        try (ZipOutputStream zos = new ZipOutputStream(
-                new BufferedOutputStream(Files.newOutputStream(target.toPath())))) {
+        // Write to a temporary file first, then move it into place — so an
+        // interrupted or failed write (e.g. the app closed mid-save) never leaves
+        // a truncated file at the target path.
+        final java.io.File tmp = java.io.File.createTempFile(
+                target.getName() + ".", ".tmp", parent);
+        try {
+            try (ZipOutputStream zos = new ZipOutputStream(
+                    new BufferedOutputStream(Files.newOutputStream(tmp.toPath())))) {
 
-            // savedGame (regenerated, obfuscated) — same entry order VASSAL writes.
-            final ZipEntry sg = new ZipEntry(SAVED_GAME_ENTRY);
-            if (savedGameTime >= 0) sg.setTime(savedGameTime);
-            zos.putNextEntry(sg);
-            writeObfuscated(zos, removeIndices);
-            zos.closeEntry();
+                // savedGame (regenerated, obfuscated) — same entry order VASSAL writes.
+                final ZipEntry sg = new ZipEntry(SAVED_GAME_ENTRY);
+                if (savedGameTime >= 0) sg.setTime(savedGameTime);
+                zos.putNextEntry(sg);
+                writeObfuscated(zos, removeIndices);
+                zos.closeEntry();
 
-            writeVerbatim(zos, SAVE_DATA_ENTRY, saveData, saveDataTime);
-            writeVerbatim(zos, MODULE_DATA_ENTRY, moduleData, moduleDataTime);
+                writeVerbatim(zos, SAVE_DATA_ENTRY, saveData, saveDataTime);
+                writeVerbatim(zos, MODULE_DATA_ENTRY, moduleData, moduleDataTime);
+            }
+            try {
+                Files.move(tmp.toPath(), target.toPath(),
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException atomicUnsupported) {
+                Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(tmp.toPath());   // no-op once moved; cleans up on failure
         }
     }
 
@@ -372,11 +371,14 @@ public class SavedGame {
      */
     private void writeObfuscated(OutputStream out, Set<Integer> removeIndices) throws IOException {
         final int key = new Random().nextInt(256);
-        out.write(HEADER);
-        out.write(HEX[(key & 0xF0) >>> 4]);
-        out.write(HEX[key & 0x0F]);
+        // Accumulate hex output in a large buffer so the deflater sees big chunks
+        // rather than 2 bytes at a time (which is dramatically slower).
+        final byte[] buf = new byte[1 << 16];
+        int p = 0;
+        for (byte h : HEADER) buf[p++] = h;
+        buf[p++] = HEX[(key & 0xF0) >>> 4];
+        buf[p++] = HEX[key & 0x0F];
 
-        final byte[] pair = new byte[2];
         boolean firstEmitted = true;
         for (int idx = 0; idx < commandRanges.size(); idx++) {
             if (removeIndices.contains(idx)) continue;
@@ -384,16 +386,13 @@ public class SavedGame {
             final int from = firstEmitted ? r[1] : r[0];   // skip leading delimiter for the first token
             firstEmitted = false;
             for (int i = from; i < r[2]; i++) {
-                writeObfByte(out, state[i], key, pair);
+                if (p >= buf.length - 1) { out.write(buf, 0, p); p = 0; }
+                final int x = (state[i] ^ key) & 0xFF;
+                buf[p++] = HEX[(x & 0xF0) >>> 4];
+                buf[p++] = HEX[x & 0x0F];
             }
         }
-    }
-
-    private static void writeObfByte(OutputStream out, byte b, int key, byte[] pair) throws IOException {
-        final int x = (b ^ key) & 0xFF;
-        pair[0] = HEX[(x & 0xF0) >>> 4];
-        pair[1] = HEX[x & 0x0F];
-        out.write(pair);
+        if (p > 0) out.write(buf, 0, p);
     }
 
     // -----------------------------------------------------------------------
