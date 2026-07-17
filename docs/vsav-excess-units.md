@@ -21,6 +21,11 @@ The Extension Utility's **Excess Units…** tool (toolbar, or **Tools → Find E
 Units in Saved Game…**) finds these orphaned pieces and can permanently remove them,
 writing the tidied game to a **new** file and leaving the original in place.
 
+> For a task-oriented walkthrough — including how to drop unwanted extensions (e.g.
+> Convoys in Flames, Light Cruisers) from a saved game — see the
+> [Excess Units guide](excess-units-guide.md). This document is the reference for how
+> detection and the file rewrite work.
+
 > This is a companion to the file-format reference in
 > [vsav-format.md](vsav-format.md); read that first for the ZIP container, the
 > `!VCSK` obfuscation, and the command-log grammar. The logic below is implemented

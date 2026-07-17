@@ -86,7 +86,8 @@ Packages are written to `tmp/` and bundle their own Java runtime. The Linux `.de
 - [vmod format](docs/vmod-format.md) — VASSAL module file structure
 - [vmdx format](docs/vmdx-format.md) — VASSAL extension file structure
 - [vsav format](docs/vsav-format.md) — VASSAL saved-game file structure (obfuscated command log + metadata)
-- [vsav excess units](docs/vsav-excess-units.md) — finding and removing pieces missing from a module's active extensions
+- [vsav excess units](docs/vsav-excess-units.md) — finding and removing pieces missing from a module's active extensions (detection algorithm & file rewrite)
+- [Excess Units guide](docs/excess-units-guide.md) — step-by-step how-to for the **Excess Units …** tool, e.g. dropping unwanted extensions (Convoys in Flames, Light Cruisers) from a saved game
 
 ## Additional Documentation
 
