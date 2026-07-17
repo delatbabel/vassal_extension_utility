@@ -7,3 +7,4 @@ tmp/
 dist/tools/
 dist/jdks/
 last_session.sh
+data/
