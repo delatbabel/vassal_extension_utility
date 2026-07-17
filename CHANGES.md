@@ -1,5 +1,17 @@
 # Changes
 
+## 1.0.9
+
+Gives the application a real icon on every platform, and makes desktops actually pick it up.
+
+### Added
+
+- **VASSAL-gear application icon across all platforms.** The window/taskbar/Dock icon and the installed launcher previously showed a "no icon" placeholder. A master SVG (with sized 16–256 PNGs bundled into the JAR) now feeds `setIconImages()`/the taskbar, the Linux `.deb`/`.rpm` ship it via `jpackage --icon`, the Windows `.exe` embeds a multi-res `.ico`, and the macOS `.app`/`.dmg` carry an `.icns`.
+
+### Fixed
+
+- **KDE (and other desktops) now pick up the app icon on install/upgrade.** The Linux package shipped the icon only as an absolute-path file under `/opt` referenced directly by the `.desktop` `Icon=` field, and the `postinst` never refreshed any icon cache — so on an upgrade over a version that had no icon, KDE Plasma's cached "no icon" was never invalidated and the menu entry kept showing the placeholder. The package now registers the icon in the freedesktop **hicolor theme** via `xdg-icon-resource` (which runs `gtk-update-icon-cache`, the signal desktops use to invalidate their caches) and references it **by name** in the `.desktop` file, matching how the sibling `vassal` package does it. Icon changes now show up automatically on future installs and upgrades.
+
 ## 1.0.8
 
 Adds an extension-properties editor and closes the last way a Move/Copy could produce an illegal module.
