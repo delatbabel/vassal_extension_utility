@@ -84,3 +84,14 @@ Packages are written to `tmp/` and bundle their own Java runtime. The Linux `.de
 - [vmod format](docs/vmod-format.md) — VASSAL module file structure
 - [vmdx format](docs/vmdx-format.md) — VASSAL extension file structure
 - [vsav format](docs/vsav-format.md) — VASSAL saved-game file structure (obfuscated command log + metadata)
+
+## Additional Documentation
+
+- [packaging.md](docs/packaging.md) — building installable packages (`.deb`/`.rpm`/`.exe`/`.dmg`) and the versioning scheme
+- [image-display-and-tiling.md](docs/image-display-and-tiling.md) — how VASSAL tiles large board images and why moved images must preserve their modification times
+- [vassal-empty-extensionelement-crash.md](docs/vassal-empty-extensionelement-crash.md) — why an empty `ExtensionElement` crashes VASSAL, and how the utility avoids leaving one behind
+- [AGENTS.md](AGENTS.md) — architecture and developer guide (also symlinked as `CLAUDE.md`)
+
+## Changelog
+
+- [CHANGES.md](CHANGES.md) — release-by-release history of changes
