@@ -94,6 +94,9 @@ Packages are written to `tmp/` and bundle their own Java runtime. The Linux `.de
 - [packaging.md](docs/packaging.md) — building installable packages (`.deb`/`.rpm`/`.exe`/`.dmg`) and the versioning scheme
 - [image-display-and-tiling.md](docs/image-display-and-tiling.md) — how VASSAL tiles large board images and why moved images must preserve their modification times
 - [vassal-empty-extensionelement-crash.md](docs/vassal-empty-extensionelement-crash.md) — why an empty `ExtensionElement` crashes VASSAL, and how the utility avoids leaving one behind
+- [wif-save-bloat-analysis.md](docs/wif-save-bloat-analysis.md) — why the WiF module uses so much memory and produces huge `.vsav` saves (measured root causes: baked-in prototype expansion, O(traits²) escaping, embedded Place Marker, obfuscation-before-compression)
+- [wif-module-optimizations.md](docs/wif-module-optimizations.md) — module-side changes to shrink memory/save size with no engine change and no loss of game features
+- [wif-engine-optimizations.md](docs/wif-engine-optimizations.md) — proposed VASSAL engine changes to reduce saved-game memory and disk usage, tiered by effort, with `file:line` citations
 - [AGENTS.md](AGENTS.md) — architecture and developer guide (also symlinked as `CLAUDE.md`)
 
 ## Changelog
