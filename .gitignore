@@ -8,3 +8,6 @@ dist/tools/
 dist/jdks/
 last_session.sh
 data/
+
+# Python bytecode from the tools/ scripts
+__pycache__/
