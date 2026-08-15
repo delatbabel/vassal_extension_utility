@@ -5,7 +5,7 @@ GUI — useful for building a series of pre-setup scenario files from one anothe
 They are **not** part of the Java application and have no dependencies beyond the
 Python standard library.
 
-Both scripts work the way `model/SavedGame` does (see
+All three scripts work the way `model/SavedGame` does (see
 [docs/vsav-format.md](../docs/vsav-format.md) and
 [docs/vsav-excess-units.md](../docs/vsav-excess-units.md)):
 
@@ -21,8 +21,10 @@ Both scripts work the way `model/SavedGame` does (see
   truncated `.vsav` (which is what makes VASSAL report *"… is not a VASSAL saved
   game or log"*).
 
-The scripts always write a **new** file; pass the same path for input and output
-only if you deliberately want to edit in place.
+`swap_maps.py` and `shift_pieces.py` always write a **new** file; pass the same
+path for input and output only if you deliberately want to edit in place.
+`fix_sif_subs.py` takes a list of saves and writes new `… (subs fixed).vsav`
+files unless `--in-place` is given.
 
 ## swap_maps.py — copy a map layout from one save into another
 
@@ -89,6 +91,47 @@ tools/shift_pieces.py \
 Get the board widths/heights from the board images themselves — the `Board`
 elements in the module/extension `buildFile.xml` name them, and the image
 dimensions are the board dimensions.
+
+## fix_sif_subs.py — swap mis-named counters for their correct twins
+
+```
+tools/fix_sif_subs.py [--in-place] [--dry-run] EXTENSION.vmdx SAVE.vsav [SAVE.vsav...]
+```
+
+Written for the WiF `10-SiF.vmdx` extension, which holds two copies of some
+submarine counters: the correct SiF ones named `<nation> S SUB <name>`, and
+incorrect leftovers named `<nation> SUB <name>` (no `" S "`). Saved games built
+before the fix contain the incorrect pieces; this rewrites each into its twin.
+
+The pairs are **derived from the extension**, not hard-coded: every `PieceSlot`
+whose name contains `" SUB "` is matched to the one named with `" S SUB "`, and
+the pair is used only if the two definitions differ in exactly two traits — the
+Embellishment (`emb2;Flip;…`, whose flip image gains the `sif` suffix) and the
+innermost `piece;;;<image>;<name>`. Any other difference means the two are
+different counters, not a duplicate, so the pair is **refused and reported**
+rather than guessed at.
+
+A piece in a save is an `AddPiece` command whose type is the *expanded* trait
+list (prototypes inlined), so it can never be compared to the slot definition as
+a whole. But neither of the two differing traits contains a `/` or a tab, so
+both appear verbatim in the expanded type at any nesting depth and can be
+spliced directly. The innermost `BasicPiece` state's 4th `;`-field (the gpid) is
+repointed at the correct slot — the value VASSAL itself stamps on a piece
+dragged from that palette slot (`PieceSlot.getPiece()` sets `PIECE_ID` from the
+slot's `gpid` **attribute**). The piece id, map, position, layer and properties
+are all copied verbatim, as is every command not being edited.
+
+A piece is only rewritten when **both** its name and its gpid match the
+incorrect slot, so a same-named piece carrying some other gpid is left alone.
+
+```bash
+tools/fix_sif_subs.py --dry-run "…_ext/10-SiF.vmdx" data/scenarios/*.vsav
+tools/fix_sif_subs.py --in-place "…_ext/10-SiF.vmdx" data/scenarios/*.vsav
+```
+
+`--in-place` moves each original to `<name>.vsav.bak` **before** writing, so the
+backup is always the untouched file; it refuses to run if a `.bak` already
+exists.
 
 ## Checking the result
 
