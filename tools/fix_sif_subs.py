@@ -26,7 +26,7 @@ Rewriting follows SavedGame.saveWithout(): tokens copied byte-for-byte with
 their own ESC delimiters, fresh obfuscation key, savedata/moduledata copied
 whole, output via temp file + atomic replace.
 """
-import os, re, sys, zipfile, xml.etree.ElementTree as ET
+import argparse, os, re, sys, zipfile, xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from swap_maps import read_vsav, split_commands, write_vsav
@@ -58,8 +58,14 @@ def command_fields(cmd):
     return cmd[cut[0] + 1:cut[1]], cmd[cut[1] + 1:cut[2]], cmd[cut[2] + 1:]
 
 
-def load_pairs(ext_path):
-    """-> ({incorrect name: pair}, [(incorrect name, why refused)])"""
+def load_pairs(ext_path, overrides=None):
+    """-> ({incorrect name: pair}, [(incorrect name, why refused)])
+
+    `overrides` maps an incorrect name to the twin to use instead of the
+    derived `" S SUB "` one — for a counter whose derived name is taken by an
+    unrelated component. An override is validated exactly like a derived pair.
+    """
+    overrides = overrides or {}
     with zipfile.ZipFile(ext_path) as z:
         root = ET.fromstring(z.read('buildFile.xml'))
 
@@ -68,11 +74,16 @@ def load_pairs(ext_path):
         if el.tag.split('.')[-1] in SLOT_TAGS and el.get('entryName'):
             slots[el.get('entryName')] = (el.get('gpid'), el.text or '')
 
+    unknown = [n for n in overrides if n not in slots]
+    if unknown:
+        raise SystemExit('%s: no such counter: %s'
+                         % (os.path.basename(ext_path), ', '.join(unknown)))
+
     pairs, refused = {}, []
     for name, (gpid, defn) in sorted(slots.items()):
-        if BAD not in name or GOOD in name:
+        if name not in overrides and (BAD not in name or GOOD in name):
             continue
-        good_name = name.replace(BAD, GOOD, 1)
+        good_name = overrides.get(name) or name.replace(BAD, GOOD, 1)
         if good_name not in slots:
             refused.append((name, 'no "%s" twin' % good_name.strip()))
             continue
@@ -155,22 +166,41 @@ def fix(path, pairs):
 
 
 def main(argv):
-    dry_run = '--dry-run' in argv
-    in_place = '--in-place' in argv
-    args = [a for a in argv if not a.startswith('--')]
-    if len(args) < 2:
-        raise SystemExit('usage: fix_sif_subs.py [--in-place] [--dry-run] '
-                         'EXTENSION.vmdx SAVE.vsav [SAVE.vsav...]')
-    ext, saves = args[0], args[1:]
+    ap = argparse.ArgumentParser(
+        description='Replace mis-named counters in a .vsav with their twins.')
+    ap.add_argument('extension', metavar='EXTENSION.vmdx')
+    ap.add_argument('saves', metavar='SAVE.vsav', nargs='+')
+    ap.add_argument('--in-place', action='store_true',
+                    help='overwrite each save, keeping the original as .bak')
+    ap.add_argument('--keep-bak', action='store_true',
+                    help='with --in-place, allow an existing .bak to stand '
+                         '(use on a second pass, so the .bak stays the '
+                         'pristine original rather than the first pass output)')
+    ap.add_argument('--pair', metavar='OLD=NEW', action='append', default=[],
+                    help='use NEW as the twin of OLD instead of the derived '
+                         '" S SUB " name; repeatable')
+    ap.add_argument('--dry-run', action='store_true',
+                    help='report what would change, write nothing')
+    args = ap.parse_args(argv)
 
-    pairs, refused = load_pairs(ext)
-    print('%s: %d correctable counter pair(s)' % (os.path.basename(ext),
-                                                  len(pairs)))
+    overrides = {}
+    for spec in args.pair:
+        old, sep, new = spec.partition('=')
+        if not sep or not old or not new:
+            ap.error('--pair wants OLD=NEW, got %r' % spec)
+        overrides[old] = new
+
+    pairs, refused = load_pairs(args.extension, overrides)
+    print('%s: %d correctable counter pair(s)'
+          % (os.path.basename(args.extension), len(pairs)))
+    for name in sorted(overrides):
+        if name in pairs:
+            print('  pair given — %s -> %s' % (name, pairs[name]['good_name']))
     for name, why in refused:
         print('  NOT correctable — %s: %s' % (name, why))
 
     total = 0
-    for path in saves:
+    for path in args.saves:
         plain, entries, fixed = fix(path, pairs)
         n = sum(fixed.values())
         total += n
@@ -178,28 +208,32 @@ def main(argv):
         for name in sorted(fixed):
             print('  %-22s -> %-24s x%d'
                   % (name, pairs[name]['good_name'], fixed[name]))
-        if dry_run or not n:
+        if args.dry_run or not n:
             continue
 
-        if in_place:
+        if args.in_place:
             # Move the original aside *before* writing, so the .bak is always
             # the untouched file and a failed write cannot destroy both.
             backup = path + '.bak'
             if os.path.exists(backup):
-                raise SystemExit('%s already exists; refusing to overwrite it'
-                                 % backup)
-            os.replace(path, backup)
+                if not args.keep_bak:
+                    raise SystemExit('%s already exists; pass --keep-bak to '
+                                     'leave it as it is' % backup)
+                print('  keeping existing %s' % os.path.basename(backup))
+            else:
+                os.replace(path, backup)
             write_vsav(path, plain, entries)
             print('  wrote %s (original kept as %s)'
                   % (os.path.basename(path), os.path.basename(backup)))
         else:
-            stem, _, ext_ = path.rpartition('.')
-            out = '%s (subs fixed).%s' % (stem, ext_)
+            stem, _, suffix = path.rpartition('.')
+            out = '%s (subs fixed).%s' % (stem, suffix)
             write_vsav(out, plain, entries)
             print('  wrote %s' % os.path.basename(out))
 
     print('\n%d piece(s) rewritten across %d file(s)%s'
-          % (total, len(saves), ' (dry run — nothing written)' if dry_run else ''))
+          % (total, len(args.saves),
+             ' (dry run — nothing written)' if args.dry_run else ''))
 
 
 if __name__ == '__main__':

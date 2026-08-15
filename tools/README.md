@@ -95,7 +95,8 @@ dimensions are the board dimensions.
 ## fix_sif_subs.py — swap mis-named counters for their correct twins
 
 ```
-tools/fix_sif_subs.py [--in-place] [--dry-run] EXTENSION.vmdx SAVE.vsav [SAVE.vsav...]
+tools/fix_sif_subs.py [--in-place] [--keep-bak] [--dry-run]
+                      [--pair OLD=NEW]... EXTENSION.vmdx SAVE.vsav [SAVE.vsav...]
 ```
 
 Written for the WiF `10-SiF.vmdx` extension, which holds two copies of some
@@ -124,14 +125,28 @@ are all copied verbatim, as is every command not being edited.
 A piece is only rewritten when **both** its name and its gpid match the
 incorrect slot, so a same-named piece carrying some other gpid is left alone.
 
+`--pair OLD=NEW` (repeatable) overrides the derived twin for one counter, for
+when the `" S SUB "` name is already taken by an unrelated component. That is
+the case for `GE SUB TypeVIIC`: the existing `GE S SUB TypeVIIC` is an original
+SiF counter with its own trait layout, image and movement factor — refused by
+the trait check above — while the converted twin is named
+`GE S SUB TypeVIIC_S`. An override is validated exactly like a derived pair, so
+naming the wrong counter is still refused rather than applied.
+
 ```bash
 tools/fix_sif_subs.py --dry-run "…_ext/10-SiF.vmdx" data/scenarios/*.vsav
 tools/fix_sif_subs.py --in-place "…_ext/10-SiF.vmdx" data/scenarios/*.vsav
+tools/fix_sif_subs.py --in-place --keep-bak \
+    --pair "GE SUB TypeVIIC=GE S SUB TypeVIIC_S" \
+    "…_ext/10-SiF.vmdx" data/scenarios/*.vsav
 ```
 
 `--in-place` moves each original to `<name>.vsav.bak` **before** writing, so the
 backup is always the untouched file; it refuses to run if a `.bak` already
-exists.
+exists. On a second pass over already-rewritten saves, `--keep-bak` leaves that
+existing `.bak` alone, so it stays the pristine original instead of becoming the
+first pass's output. The tool is idempotent — a counter already rewritten no
+longer matches an incorrect slot — so re-running it only picks up what is new.
 
 ## Checking the result
 
