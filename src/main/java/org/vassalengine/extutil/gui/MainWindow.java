@@ -2397,6 +2397,7 @@ public class MainWindow extends JFrame {
         private final JDialog dialog;
         private final List<RefreshResult> results = new ArrayList<>();
         private final List<String> blocked = new ArrayList<>();
+        private int strippedTotal;
         private Process child;
         private String fatal;
 
@@ -2453,6 +2454,19 @@ public class MainWindow extends JFrame {
                 case "BACKUP":
                     publish("    backed up as " + at(f, 2) + "\n");
                     break;
+                case "PRESERVED": {
+                    final String exts = at(f, 2);
+                    final String stripped = at(f, 3);
+                    if (!"0".equals(exts)) {
+                        publish("    kept this scenario's own list of " + exts + " extension(s)\n");
+                    }
+                    if (!"0".equals(stripped)) {
+                        strippedTotal += parseCount(stripped);
+                        publish("    dropped " + stripped + " surplus board layout(s): "
+                                + at(f, 4) + "\n");
+                    }
+                    break;
+                }
                 case "LOG":
                     publish("    " + at(f, 1) + "\n");
                     break;
@@ -2482,6 +2496,14 @@ public class MainWindow extends JFrame {
 
         private String at(String[] f, int i) { return i < f.length ? f[i] : ""; }
 
+        private int parseCount(String s) {
+            try {
+                return Integer.parseInt(s);
+            } catch (NumberFormatException e) {
+                return 0;
+            }
+        }
+
         @Override protected void process(List<String> chunks) {
             for (String c : chunks) logArea.append(c);
             logArea.setCaretPosition(logArea.getDocument().getLength());
@@ -2496,7 +2518,7 @@ public class MainWindow extends JFrame {
             if (isCancelled()) {
                 status("Refresh Counters stopped after " + results.size() + " scenario(s).");
             }
-            reportRefresh(results, blocked, fatal, saves.size());
+            reportRefresh(results, blocked, fatal, saves.size(), strippedTotal);
         }
     }
 
@@ -2523,7 +2545,7 @@ public class MainWindow extends JFrame {
 
     /** Shows what happened, listing anything that did not refresh cleanly. */
     private void reportRefresh(List<RefreshResult> results, List<String> blocked,
-                               String fatal, int requested) {
+                               String fatal, int requested, int strippedBoardPickers) {
         if (!blocked.isEmpty()) {
             final int shown = Math.min(blocked.size(), 15);
             final StringBuilder sb = new StringBuilder(
@@ -2574,6 +2596,10 @@ public class MainWindow extends JFrame {
                 .append(results.size()).append("</b> of ").append(requested)
                 .append(" scenario(s); ").append(ok).append(" with no warnings.<br>"
                         + "Each original was kept as <tt>&lt;name&gt;-backup.vsav</tt>.");
+        if (strippedBoardPickers > 0) {
+            sb.append("<br>Dropped ").append(strippedBoardPickers)
+              .append(" surplus board layout(s) for maps the scenarios do not use.");
+        }
         if (notes.length() > 0) {
             sb.append("<br><br>Needing a look:<br><table>").append(notes).append("</table>");
         }

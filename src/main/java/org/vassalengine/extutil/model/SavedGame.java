@@ -78,6 +78,8 @@ public class SavedGame {
     private static final String BASIC_PIECE_PREFIX = "piece;";
     /** Prefix of the "this extension was loaded" command, {@code ExtensionsLoader.COMMAND_PREFIX}. */
     private static final String EXT_PREFIX = "EXT\t";
+    /** Suffix identifying a board-layout command, {@code BoardPicker.ID}. */
+    private static final String BOARD_PICKER_ID = "BoardPicker";
 
     private static final byte[] HEX = {
         '0', '1', '2', '3', '4', '5', '6', '7',
@@ -323,7 +325,7 @@ public class SavedGame {
      *                      typically {@link ExcessPiece#commandIndex} values
      */
     // -----------------------------------------------------------------------
-    // Extension registrations
+    // State a refresh must not change
     // -----------------------------------------------------------------------
 
     /**
@@ -331,18 +333,11 @@ public class SavedGame {
      * the contents of its {@code EXT<TAB><name><TAB><version>} commands, in log
      * order. Each {@code name} is an extension's file name without its
      * {@code .vmdx} suffix ({@code ModuleExtension.getName()}).
-     *
-     * <p>VASSAL rebuilds this list from the <em>currently loaded</em> extensions
-     * every time it saves, so a refresh run with every extension active would
-     * otherwise widen each scenario's list to the full set. Capturing it before
-     * the refresh and putting it back with
-     * {@link #restoreExtensionRegistrations} keeps each scenario's own record
-     * exactly as it was.</p>
      */
     public List<String> getExtensionRegistrations() {
         final List<String> out = new ArrayList<>();
         for (int[] r : commandRanges) {
-            final String content = new String(state, r[1], r[2] - r[1], StandardCharsets.UTF_8);
+            final String content = contentOf(r);
             if (content.startsWith(EXT_PREFIX)) out.add(content);
         }
         return out;
@@ -359,41 +354,161 @@ public class SavedGame {
     }
 
     /**
-     * Rewrites {@code file} so that its extension registrations are exactly
-     * {@code originals}, leaving every other command byte-for-byte untouched.
-     *
-     * <p>The file's own {@code EXT} commands are dropped and {@code originals}
-     * emitted in their place — at the position of the first one, so the list
-     * keeps the spot in the log VASSAL puts it in. If the file has no {@code EXT}
-     * commands at all they go directly after the first command
-     * ({@code begin_save}), which is where VASSAL writes them.</p>
-     *
-     * <p>Does nothing when the file's registrations already match. Writes via a
-     * temp file and an atomic move, like {@link #saveWithout}.</p>
-     *
-     * @return {@code true} if the file was rewritten
+     * The map identifiers that have a board layout recorded in this saved game —
+     * one per {@code <mapIdentifier>BoardPicker<TAB><board>[/rev]<TAB>…} command
+     * ({@code BoardPicker.encode}, whose whole layout for a map lives in that one
+     * command).
      */
-    public static boolean restoreExtensionRegistrations(java.io.File file, List<String> originals)
-            throws IOException {
-        final SavedGame game = open(file);
-        if (game.getExtensionRegistrations().equals(originals)) return false;
+    public Set<String> getBoardPickerMaps() {
+        final Set<String> out = new LinkedHashSet<>();
+        for (int[] r : commandRanges) {
+            final String map = boardPickerMap(contentOf(r));
+            if (map != null) out.add(map);
+        }
+        return out;
+    }
 
-        final Set<Integer> drop = new HashSet<>();
-        int insertBefore = -1;
-        for (int i = 0; i < game.commandRanges.size(); i++) {
-            final int[] r = game.commandRanges.get(i);
-            final String content =
-                    new String(game.state, r[1], r[2] - r[1], StandardCharsets.UTF_8);
-            if (content.startsWith(EXT_PREFIX)) {
-                drop.add(i);
-                if (insertBefore < 0) insertBefore = i;
+    /**
+     * The map identifier of a board-layout command, or {@code null} if this is not
+     * one.
+     *
+     * <p>The identifier is the command's first {@code TAB}-delimited token minus
+     * the trailing {@code "BoardPicker"}. It is matched on that token rather than
+     * by searching the whole command, because a map identifier may itself contain
+     * a {@code /} (e.g. {@code "China TRS/AMPH"}) and piece data can mention
+     * "BoardPicker" in passing. Commands beginning with a piece-command prefix are
+     * excluded outright.</p>
+     */
+    private static String boardPickerMap(String content) {
+        if (content.length() < BOARD_PICKER_ID.length()) return null;
+        if (content.startsWith(ADD_PIECE_PREFIX) || content.startsWith("-/")
+                || content.startsWith("D/") || content.startsWith("M/")) {
+            return null;
+        }
+        final int tab = content.indexOf('\t');
+        final String token = tab < 0 ? content : content.substring(0, tab);
+        if (!token.endsWith(BOARD_PICKER_ID)) return null;
+        return token.substring(0, token.length() - BOARD_PICKER_ID.length());
+    }
+
+    private String contentOf(int[] range) {
+        return new String(state, range[1], range[2] - range[1], StandardCharsets.UTF_8);
+    }
+
+    /**
+     * The parts of a saved game that VASSAL rebuilds from whatever is loaded when
+     * it saves, and which a refresh must therefore be made to leave alone.
+     *
+     * <p>Both are consequences of the same thing: a batch refresh has to have
+     * every extension active at once, so the engine sees more of the module than
+     * the scenario was written against, and records the surplus.</p>
+     *
+     * <ul>
+     *   <li><b>Extension registrations</b> ({@code EXT} commands) — rebuilt from
+     *       the currently-loaded extensions, which would widen a scenario's own
+     *       list to the full set. Captured and put back verbatim.</li>
+     *   <li><b>Board layouts</b> ({@code BoardPicker} commands) — one is written
+     *       for every map that exists, including maps belonging to extensions the
+     *       scenario never listed. The surplus ones are dropped; the layouts of
+     *       maps the scenario already had are left exactly as the refresh wrote
+     *       them.</li>
+     * </ul>
+     *
+     * <p>Capture from the original before refreshing, then {@link #restore} the
+     * rewritten file. Both edits are applied in a single pass, so a large saved
+     * game is re-obfuscated once rather than once per fix.</p>
+     */
+    public static final class PreservedState {
+        private final List<String> extensionRegistrations;
+        private final Set<String> boardPickerMaps;
+
+        private PreservedState(List<String> extensionRegistrations, Set<String> boardPickerMaps) {
+            this.extensionRegistrations = extensionRegistrations;
+            this.boardPickerMaps = boardPickerMaps;
+        }
+
+        /** Reads the state to preserve out of an unrefreshed saved game. */
+        public static PreservedState capture(SavedGame game) {
+            return new PreservedState(game.getExtensionRegistrations(), game.getBoardPickerMaps());
+        }
+
+        public List<String> getExtensionRegistrations() { return extensionRegistrations; }
+        public Set<String> getBoardPickerMaps() { return boardPickerMaps; }
+
+        /**
+         * Applies the captured state to {@code file}, rewriting it only if
+         * something actually differs. Every command that is neither an {@code EXT}
+         * nor a surplus {@code BoardPicker} is copied byte-for-byte.
+         *
+         * @return what was changed, for reporting
+         */
+        public Result restore(java.io.File file) throws IOException {
+            final SavedGame game = open(file);
+
+            final Set<Integer> drop = new HashSet<>();
+            final List<String> strippedMaps = new ArrayList<>();
+            int insertBefore = -1;
+            boolean extensionsDiffer = false;
+
+            final List<String> currentExtensions = new ArrayList<>();
+            for (int i = 0; i < game.commandRanges.size(); i++) {
+                final String content = game.contentOf(game.commandRanges.get(i));
+                if (content.startsWith(EXT_PREFIX)) {
+                    currentExtensions.add(content);
+                    drop.add(i);
+                    if (insertBefore < 0) insertBefore = i;
+                    continue;
+                }
+                final String map = boardPickerMap(content);
+                if (map != null && !boardPickerMaps.contains(map)) {
+                    drop.add(i);
+                    strippedMaps.add(map);
+                }
+            }
+            extensionsDiffer = !currentExtensions.equals(extensionRegistrations);
+
+            if (!extensionsDiffer && strippedMaps.isEmpty()) {
+                return new Result(0, Collections.<String>emptyList());
+            }
+            if (!extensionsDiffer) {
+                drop.removeAll(indicesOf(game, EXT_PREFIX));   // leave a matching list alone
+                insertBefore = -1;
+            }
+            // No EXT commands at all: put the list straight after begin_save,
+            // which is where VASSAL writes it.
+            if (extensionsDiffer && insertBefore < 0) {
+                insertBefore = Math.min(1, game.commandRanges.size());
+            }
+
+            game.write(file, drop, insertBefore,
+                    extensionsDiffer ? extensionRegistrations : Collections.<String>emptyList());
+            return new Result(extensionsDiffer ? extensionRegistrations.size() : 0, strippedMaps);
+        }
+
+        private static Set<Integer> indicesOf(SavedGame game, String prefix) {
+            final Set<Integer> out = new HashSet<>();
+            for (int i = 0; i < game.commandRanges.size(); i++) {
+                if (game.contentOf(game.commandRanges.get(i)).startsWith(prefix)) out.add(i);
+            }
+            return out;
+        }
+
+        /** What {@link PreservedState#restore} put back or removed. */
+        public static final class Result {
+            /** Number of extension registrations rewritten (0 if they already matched). */
+            public final int extensionsRestored;
+            /** Map identifiers whose surplus board layout was dropped. */
+            public final List<String> strippedBoardPickerMaps;
+
+            Result(int extensionsRestored, List<String> strippedBoardPickerMaps) {
+                this.extensionsRestored = extensionsRestored;
+                this.strippedBoardPickerMaps = strippedBoardPickerMaps;
+            }
+
+            public boolean changedAnything() {
+                return extensionsRestored > 0 || !strippedBoardPickerMaps.isEmpty();
             }
         }
-        // No EXT commands to replace: put the list straight after begin_save.
-        if (insertBefore < 0) insertBefore = Math.min(1, game.commandRanges.size());
-
-        game.write(file, drop, insertBefore, originals);
-        return true;
     }
 
     public void saveWithout(Set<Integer> removeIndices, java.io.File target) throws IOException {

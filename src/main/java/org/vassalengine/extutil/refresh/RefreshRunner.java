@@ -73,12 +73,12 @@ import java.util.Set;
  *
  * <p><b>Per file:</b> the original is copied to {@code <name>-backup.vsav} (never
  * overwriting an existing backup), refreshed, written to a temp file and moved
- * over the original. The scenario's own record of which extensions were loaded
- * ({@code EXT} commands) is captured beforehand and put back afterwards, because
- * the engine rewrites it from the currently-loaded set — see
- * {@link SavedGame#restoreExtensionRegistrations}. The module name/version
- * recorded in the save is <em>not</em> preserved: the engine stamps the running
- * module's, which is the intended update.</p>
+ * over the original. Two things the engine rebuilds from whatever happens to be
+ * loaded are captured beforehand and reapplied afterwards — the scenario's own
+ * extension list, and the set of maps it has board layouts for; see
+ * {@link SavedGame.PreservedState}. The module name/version recorded in the save
+ * is <em>not</em> preserved: the engine stamps the running module's, which is the
+ * intended update.</p>
  */
 public final class RefreshRunner {
 
@@ -248,8 +248,11 @@ public final class RefreshRunner {
 
         if (!save.isFile()) throw new IOException("not a file: " + save);
 
-        // The scenario's own extension list, captured before the engine rewrites it.
-        final List<String> extensions = SavedGame.open(save).getExtensionRegistrations();
+        // What the engine would otherwise rebuild from the fully-loaded module:
+        // the scenario's own extension list, and the set of maps it has board
+        // layouts for. Captured before the refresh, reapplied after it.
+        final SavedGame.PreservedState preserved =
+                SavedGame.PreservedState.capture(SavedGame.open(save));
 
         final File backup = backupFor(save);
         Files.copy(save.toPath(), backup.toPath());
@@ -276,7 +279,13 @@ public final class RefreshRunner {
             gs.closeGame();
 
             move(tmp, save);
-            SavedGame.restoreExtensionRegistrations(save, extensions);
+
+            final SavedGame.PreservedState.Result restored = preserved.restore(save);
+            if (restored.changedAnything()) {
+                say("PRESERVED", save.getName() + "\t" + restored.extensionsRestored
+                        + "\t" + restored.strippedBoardPickerMaps.size() + "\t"
+                        + String.join(", ", restored.strippedBoardPickerMaps));
+            }
             return refresher.warnings();
         }
         finally {

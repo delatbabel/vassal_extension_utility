@@ -76,13 +76,14 @@ so the runner must `System.exit()`.
 Mirrors `PredefinedSetup.refreshWithStatus()`, but reads and writes an external
 file instead of an entry inside the module:
 
-1. capture the scenario's extension registrations (see below);
+1. capture the state the engine would otherwise rebuild — the extension
+   registrations and the set of maps with board layouts (see below);
 2. copy the original to `<name>-backup.vsav`;
 3. `gs.setup(false)`, `setRefreshingSemaphore(true)`, `gs.setupRefresh()`;
 4. `gs.loadGameInForeground(name, stream)` then `resolvePendingAttachments()`;
 5. `new GameRefresher(mod).execute(options, null)`;
 6. `gs.saveGame(tmp)`, `updateDone()`, `closeGame()`, then move `tmp` over the original;
-7. put the extension registrations back.
+7. reapply the captured state.
 
 The save is written to a temp file beside the original and moved into place, so an
 interrupted write cannot leave a truncated `.vsav` — which is what makes VASSAL
@@ -96,7 +97,7 @@ report *"… is not a VASSAL saved game or log."*
 skipped, so the tool does not refresh its own backups. A backup named explicitly
 as a file is still refreshed — that is taken as deliberate.
 
-## The two things the engine gets wrong for this use
+## The three things the engine gets wrong for this use
 
 ### Module version — wanted, and automatic
 
@@ -120,6 +121,39 @@ the scenario needs, so it is captured before the refresh and restored afterwards
 by `SavedGame.restoreExtensionRegistrations()`, which drops the file's `EXT`
 tokens and re-emits the originals at the same position. Every other command is
 copied byte-for-byte; verified on a real refresh, only the `EXT` tokens differ.
+
+### Surplus board layouts — must be stripped
+
+The same cause, a different symptom. A map's whole layout lives in one
+`<mapIdentifier>BoardPicker<TAB><board>[/rev]<TAB>…` command
+(`BoardPicker.encode()`), and the engine writes one for **every map that exists**
+— including the maps of extensions the scenario never listed. Refreshing the WiF
+scenarios with all 24 extensions active added ten of them apiece: `DOD III PM`,
+`DoD III Status Display`, `USED DODIII`, `ULDivs`, `3D10`, `3D10 Odds Chart`,
+`MajP Chart 1`/`2`, `Allied`/`Axis Prod Circle`.
+
+Harmless while every extension is active, but a scenario listing 11 extensions
+carrying layouts for maps from extensions 12–24 will make VASSAL log "No such
+map" for anyone who loads it with only the extensions it names.
+
+So the set of maps that had a layout is captured beforehand, and afterwards any
+`BoardPicker` command for a map outside that set is dropped. Layouts for maps the
+scenario already had are left exactly as the refresh wrote them — this only
+removes the surplus, it does not restore old layouts.
+
+Detection matches on the command's **first `TAB`-delimited token** ending in
+`BoardPicker`, not on searching the whole command: a map identifier may itself
+contain a `/` (e.g. `China TRS/AMPH`), and piece data can mention "BoardPicker"
+in passing. Commands starting with a piece-command prefix are excluded outright.
+
+### Both are applied in one pass
+
+`SavedGame.PreservedState.capture(game)` reads both before the refresh and
+`restore(file)` reapplies them after, in a **single** rewrite — a 30 MB saved game
+is deobfuscated and re-obfuscated once, not once per fix. It returns how many
+extension registrations were rewritten and which maps' layouts were dropped, both
+of which the runner reports as `!!PRESERVED` and the GUI shows per scenario. If
+nothing differs, the file is not rewritten at all.
 
 ## Checks made before the engine is started
 
@@ -167,6 +201,7 @@ the engine's chatter and is echoed into the log pane.
 | `!!FILE <n> <total> <name>` | starting a scenario |
 | `!!BACKUP <name> <backupName>` | original copied |
 | `!!LOG <text>` | a line the engine wrote to its chatter |
+| `!!PRESERVED <name> <extCount> <strippedCount> <maps>` | extension list put back and/or surplus board layouts dropped |
 | `!!OK <name> <warnings>` | refreshed; `warnings` is `GameRefresher.warnings()` |
 | `!!FAIL <name> <message>` | this scenario failed; the batch continues |
 | `!!SUMMARY <refreshed> <failed>` | finished |
