@@ -97,7 +97,8 @@ Packages are written to `tmp/` and bundle their own Java runtime. The Linux `.de
 - [wif-save-bloat-analysis.md](docs/wif-save-bloat-analysis.md) — why the WiF module uses so much memory and produces huge `.vsav` saves (measured root causes: baked-in prototype expansion, O(traits²) escaping, embedded Place Marker, obfuscation-before-compression)
 - [wif-module-optimizations.md](docs/wif-module-optimizations.md) — module-side changes to shrink memory/save size with no engine change and no loss of game features
 - [wif-engine-optimizations.md](docs/wif-engine-optimizations.md) — proposed VASSAL engine changes to reduce saved-game memory and disk usage, tiered by effort, with `file:line` citations
-- [tools/README.md](tools/README.md) — command-line scripts for editing a saved game outside the GUI: swapping a map layout between `.vsav` files, translating the pieces that stood on a board which moved, and swapping mis-named duplicate counters for their correct twins
+- [docs/refresh-counters.md](docs/refresh-counters.md) — running VASSAL's own Refresh Counters over external saved games: why the engine runs in a subprocess, how it is bootstrapped, what must be preserved in each save, and why "module was saved with older vassal version" really means duplicate Piece Ids
+- [tools/README.md](tools/README.md) — command-line scripts for editing VASSAL files outside the GUI: swapping a map layout between `.vsav` files, translating the pieces that stood on a board which moved, swapping mis-named duplicate counters for their correct twins, and clearing an extension's duplicate Piece Ids (which block Refresh Counters)
 - [AGENTS.md](AGENTS.md) — architecture and developer guide (also symlinked as `CLAUDE.md`)
 
 ## Changelog

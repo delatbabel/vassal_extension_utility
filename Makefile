@@ -70,6 +70,20 @@ LINK_DST:=/usr/bin/$(LAUNCHER)
 MVN:=./mvnw
 DISTJAR:=target/$(JARNAME)-jar-with-dependencies.jar
 
+# The Refresh Counters runner links against the VASSAL engine, which is not on
+# Maven Central, so it is compiled only when we can point Maven at an engine jar
+# (see the refresh-runner profile in pom.xml). Look where VASSAL installs itself;
+# override with `make jar VASSAL_ENGINE_JAR=/path/to/Vengine.jar`. When none is
+# found the build still succeeds — the application then reports Refresh Counters
+# as unavailable. Only Vengine.jar is ever named: its manifest Class-Path pulls
+# in the rest of lib/ relative to itself.
+VASSAL_ENGINE_JAR?=$(firstword $(wildcard \
+  /usr/share/vassal/lib/Vengine.jar \
+  /usr/lib/vassal/lib/Vengine.jar \
+  /opt/vassal/lib/Vengine.jar \
+  $(HOME)/VASSAL/lib/Vengine.jar))
+MVNFLAGS:=$(if $(VASSAL_ENGINE_JAR),-Dvassal.engine.jar=$(VASSAL_ENGINE_JAR))
+
 DISTDIR:=dist
 TMPDIR:=tmp
 TOOLDIR:=$(DISTDIR)/tools
@@ -158,7 +172,9 @@ help:
 build: compile
 
 compile:
-	$(MVN) compile
+	@$(if $(VASSAL_ENGINE_JAR),echo "VASSAL engine: $(VASSAL_ENGINE_JAR)",\
+	  echo "No VASSAL engine found - building without Refresh Counters")
+	$(MVN) $(MVNFLAGS) compile
 
 test:
 	$(MVN) test
@@ -166,7 +182,9 @@ test:
 jar: $(DISTJAR)
 
 $(DISTJAR):
-	$(MVN) package
+	@$(if $(VASSAL_ENGINE_JAR),echo "VASSAL engine: $(VASSAL_ENGINE_JAR)",\
+	  echo "No VASSAL engine found - building without Refresh Counters")
+	$(MVN) $(MVNFLAGS) package
 
 run: $(DISTJAR)
 	java -jar $(DISTJAR)

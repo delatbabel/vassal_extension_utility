@@ -1,5 +1,19 @@
 # Changes
 
+## Unreleased
+
+Adds batch Refresh Counters for saved games outside the module.
+
+### Added
+
+- **Refresh Counters in Saved Games.** **Tools → Refresh Counters in Saved Games…** runs VASSAL's own *Refresh Counters* over any number of `.vsav` files against the module in the left panel — the batch equivalent of the engine's tool, for saved games that live outside the module. Select individual files or a whole folder; the same options dialog VASSAL shows is presented, and each scenario is copied to `<name>-backup.vsav` (never overwriting an earlier backup) before being rewritten in place.
+
+  The refresh is **not reimplemented**: the engine's own `GameRefresher` does the work, unmodified, in a subprocess — `GameModule.init()` may be called only once per JVM, so it cannot run in the utility's own process. Each save's recorded **module version is updated** to the loaded module's, while its record of **which extensions it was saved with is preserved** exactly, rather than being widened to every extension the refresh had to load.
+
+  Before starting, the tool checks that every extension any selected scenario names is active, and that the module's Piece Ids are sound — VASSAL refuses to refresh anything when two components share a Piece Id, but reports it only as *"module was saved with older vassal version"*. The utility names the colliding components instead, and stops before touching a file. See [docs/refresh-counters.md](docs/refresh-counters.md).
+
+  The runner links against the VASSAL engine, so it is compiled only when the build is pointed at one (`make jar` finds an installed VASSAL automatically). Built without it, the menu item says so; the engine is never bundled, so the tool always drives the VASSAL the user has installed.
+
 ## 1.0.12
 
 Fixes corrupt output from Delete Excess Units and makes it much faster.

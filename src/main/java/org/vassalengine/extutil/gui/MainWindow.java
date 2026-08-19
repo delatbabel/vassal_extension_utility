@@ -11,8 +11,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vassalengine.extutil.model.ComponentNode;
 import org.vassalengine.extutil.model.RecentFilesStore;
+import org.vassalengine.extutil.model.RefreshOptions;
 import org.vassalengine.extutil.model.SavedGame;
 import org.vassalengine.extutil.model.VassalArchive;
+import org.vassalengine.extutil.model.VassalInstallation;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NamedNodeMap;
@@ -24,6 +26,7 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.tree.DefaultMutableTreeNode;
 import java.awt.*;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
@@ -31,6 +34,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -214,6 +218,9 @@ public class MainWindow extends JFrame {
         JMenuItem excessUnits = new JMenuItem("Find Excess Units in Saved Game…");
         excessUnits.addActionListener(e -> checkExcessUnits());
 
+        JMenuItem refreshCounters = new JMenuItem("Refresh Counters in Saved Games…");
+        refreshCounters.addActionListener(e -> refreshCounters());
+
         toolsMenu.add(unusedLeft);
         toolsMenu.add(unusedRight);
         toolsMenu.addSeparator();
@@ -224,6 +231,7 @@ public class MainWindow extends JFrame {
         toolsMenu.add(propsRight);
         toolsMenu.addSeparator();
         toolsMenu.add(excessUnits);
+        toolsMenu.add(refreshCounters);
         bar.add(toolsMenu);
 
         return bar;
@@ -2054,6 +2062,525 @@ public class MainWindow extends JFrame {
     private void updateRoleBorders() {
         leftPanel.setRole(ArchivePanel.BORDER_SOURCE);
         rightPanel.setRole(ArchivePanel.BORDER_TARGET);
+    }
+
+
+    // -----------------------------------------------------------------------
+    // Refresh Counters
+    // -----------------------------------------------------------------------
+
+    /** Class name of the subprocess entry point; absent when built without VASSAL. */
+    private static final String RUNNER_CLASS = "org.vassalengine.extutil.refresh.RefreshRunner";
+
+    /**
+     * Runs VASSAL's own <b>Refresh Counters</b> over saved games chosen by the
+     * user, against the module in the left panel.
+     *
+     * <p>The engine does the work, in a separate JVM — see
+     * {@code org.vassalengine.extutil.refresh.RefreshRunner} for why it cannot be
+     * done in this one. Before launching it we do the checks the engine cannot:
+     * that a module is loaded, that an engine is installed, and that every
+     * extension any selected scenario was saved with is currently active. That
+     * last one matters because the refresh matches a piece against the definitions
+     * presently loaded; a scenario refreshed with one of its extensions missing
+     * has the pieces from that extension left unmatched.</p>
+     */
+    private void refreshCounters() {
+        final VassalArchive module = leftPanel.getArchive();
+        if (module == null || module.isExtension()) {
+            status("Load a module in the LEFT panel before refreshing counters.");
+            return;
+        }
+        if (module.getFile() == null) {
+            status("The left panel's module has no file on disk yet — save it first.");
+            return;
+        }
+        if (module.isModified()) {
+            JOptionPane.showMessageDialog(this,
+                    "The module in the left panel has unsaved changes.\n\n"
+                    + "Refresh Counters reads the module from disk, so those changes would\n"
+                    + "not be applied. Save the module first, then run this again.",
+                    "Unsaved Module Changes", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (MainWindow.class.getResource("/" + RUNNER_CLASS.replace('.', '/') + ".class") == null) {
+            JOptionPane.showMessageDialog(this,
+                    "<html>This build has no Refresh Counters runner.<br><br>"
+                    + "It links against the VASSAL engine, so it is only compiled when "
+                    + "an engine jar is given at build time:<br>"
+                    + "<tt>./mvnw package -Dvassal.engine.jar=/path/to/Vengine.jar</tt><br><br>"
+                    + "(<tt>make jar</tt> finds an installed engine and passes this for you.)</html>",
+                    "Refresh Counters Unavailable", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        final File engine = requireEngineJar();
+        if (engine == null) return;
+
+        final List<File> saves = chooseSavedGames(module.getFile());
+        if (saves == null || saves.isEmpty()) return;
+
+        if (!extensionsSatisfied(saves)) return;
+
+        final RefreshCountersDialog dialog =
+                new RefreshCountersDialog(this, saves, module.getFile().getName());
+        dialog.setVisible(true);
+        final RefreshOptions options = dialog.getResult();
+        if (options == null) return;
+
+        final int go = JOptionPane.showConfirmDialog(this,
+                "<html>Refresh " + RefreshCountersDialog.count(saves.size(), "scenario", "scenarios")
+                + " against <b>" + RefreshCountersDialog.escape(module.getFile().getName())
+                + "</b>?<br><br>Each is copied to <tt>&lt;name&gt;-backup.vsav</tt> first, then "
+                + "rewritten in place.</html>",
+                "Refresh Counters", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+        if (go != JOptionPane.OK_OPTION) return;
+
+        runRefresh(engine, module.getFile(), saves, options);
+    }
+
+    /**
+     * The installed engine jar, asking the user to point at one if it cannot be
+     * found. A jar chosen here is remembered for next time.
+     *
+     * @return the jar, or {@code null} if the user gave up
+     */
+    private File requireEngineJar() {
+        final File found = VassalInstallation.findEngineJar();
+        if (found != null) return found;
+
+        final int choice = JOptionPane.showConfirmDialog(this,
+                "<html>Could not find your VASSAL installation.<br><br>"
+                + "Refresh Counters is performed by the VASSAL engine itself, so a copy of "
+                + "VASSAL must be installed.<br>Locate its <tt>"
+                + VassalInstallation.ENGINE_JAR + "</tt> (in VASSAL's <tt>lib</tt> folder)?</html>",
+                "VASSAL Not Found", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+        if (choice != JOptionPane.OK_OPTION) return null;
+
+        final JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Locate " + VassalInstallation.ENGINE_JAR);
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+                "VASSAL engine (" + VassalInstallation.ENGINE_JAR + ")", "jar"));
+        if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return null;
+
+        final File chosen = fc.getSelectedFile();
+        if (!VassalInstallation.isEngineJar(chosen)) {
+            JOptionPane.showMessageDialog(this,
+                    "That is not " + VassalInstallation.ENGINE_JAR + ".",
+                    "Not the VASSAL Engine", JOptionPane.ERROR_MESSAGE);
+            return null;
+        }
+        VassalInstallation.saveEngineJar(chosen);
+        return chosen;
+    }
+
+    /**
+     * Asks for the saved games to refresh. Files and directories may both be
+     * selected, and selecting a directory means every {@code .vsav} directly in
+     * it — minus the {@code -backup} copies this tool makes, which must never be
+     * refreshed in their turn.
+     *
+     * @return the saved games, or {@code null} if the user cancelled
+     */
+    private List<File> chooseSavedGames(File moduleFile) {
+        final JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Select Saved Games or a Folder to Refresh");
+        fc.setMultiSelectionEnabled(true);
+        fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+                "VASSAL Saved Games (*.vsav) and folders", "vsav"));
+        final File startDir = moduleFile.getAbsoluteFile().getParentFile();
+        if (startDir != null && startDir.isDirectory()) fc.setCurrentDirectory(startDir);
+        if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return null;
+
+        final Set<File> collected = new java.util.TreeSet<>();
+        int skippedBackups = 0;
+        for (File selected : fc.getSelectedFiles()) {
+            if (selected.isDirectory()) {
+                final File[] listed = selected.listFiles(
+                        (d, n) -> n.toLowerCase().endsWith(".vsav") && new File(d, n).isFile());
+                if (listed == null) continue;
+                for (File f : listed) {
+                    if (isBackupName(f.getName())) skippedBackups++;
+                    else collected.add(f);
+                }
+            }
+            else if (selected.isFile()) {
+                collected.add(selected);      // named explicitly: take it even if it is a backup
+            }
+        }
+
+        if (collected.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "No saved games (*.vsav) found in that selection.",
+                    "Nothing to Refresh", JOptionPane.INFORMATION_MESSAGE);
+            return null;
+        }
+        if (skippedBackups > 0) {
+            status("Skipped " + skippedBackups + " -backup file(s).");
+        }
+        return new ArrayList<>(collected);
+    }
+
+    /** True for the {@code …-backup.vsav} / {@code …-backup-2.vsav} copies we write. */
+    private static boolean isBackupName(String name) {
+        return name.toLowerCase().matches(".*-backup(-\\d+)?\\.vsav");
+    }
+
+    /**
+     * Checks that every extension the selected scenarios were saved with is
+     * currently active, and explains what to do if not.
+     *
+     * <p>Each saved game records the extensions loaded when it was written (its
+     * {@code EXT} commands). Refreshing matches each piece against the definitions
+     * loaded at the time, so an extension that is inactive now leaves all of its
+     * pieces unmatched — silently, apart from a count of warnings. Since one run
+     * covers many scenarios, everything <em>any</em> of them needs has to be
+     * active at once.</p>
+     *
+     * @return true if the run may proceed
+     */
+    private boolean extensionsSatisfied(List<File> saves) {
+        final File extDir = moduleExtensionDir();
+
+        final Set<String> active = new LinkedHashSet<>();
+        for (File f : listVmdx(extDir)) active.add(stripVmdx(f.getName()));
+        final Set<String> inactive = new LinkedHashSet<>();
+        if (extDir != null) {
+            for (File f : listVmdx(new File(extDir, INACTIVE_DIR))) inactive.add(stripVmdx(f.getName()));
+        }
+
+        // needed extension -> the scenarios that want it
+        final Map<String, List<String>> missing = new java.util.TreeMap<>();
+        final List<String> unreadable = new ArrayList<>();
+        for (File save : saves) {
+            final Set<String> needed;
+            try {
+                needed = SavedGame.open(save).getExtensionNames();
+            } catch (Exception e) {
+                log.warn("Could not read {}: {}", save, e.toString());
+                unreadable.add(save.getName());
+                continue;
+            }
+            for (String name : needed) {
+                if (!active.contains(name)) {
+                    missing.computeIfAbsent(name, k -> new ArrayList<>()).add(save.getName());
+                }
+            }
+        }
+
+        if (!unreadable.isEmpty()) {
+            final int go = JOptionPane.showConfirmDialog(this,
+                    "<html>These files could not be read as saved games:<br><br><tt>"
+                    + String.join("<br>", unreadable)
+                    + "</tt><br><br>Continue with the rest?</html>",
+                    "Unreadable Saved Games", JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+            if (go != JOptionPane.OK_OPTION) return false;
+        }
+
+        if (missing.isEmpty()) return true;
+
+        final StringBuilder sb = new StringBuilder(
+                "<html>These extensions are needed by the selected scenarios but are "
+                + "<b>not active</b>:<br><br><table>");
+        for (Map.Entry<String, List<String>> e : missing.entrySet()) {
+            final List<String> wanters = e.getValue();
+            final String where = inactive.contains(e.getKey())
+                    ? "deactivated" : "not found in " + INACTIVE_DIR + "/ either";
+            sb.append("<tr><td><tt><b>").append(RefreshCountersDialog.escape(e.getKey()))
+              .append("</b></tt></td><td>&nbsp;(").append(where).append(")</td><td>&nbsp;needed by ")
+              .append(wanters.size() == 1
+                      ? RefreshCountersDialog.escape(wanters.get(0))
+                      : wanters.size() + " scenarios")
+              .append("</td></tr>");
+        }
+        sb.append("</table><br>Refresh Counters matches every piece against the definitions "
+                + "that are loaded, so pieces from an inactive extension would be left "
+                + "unmatched.<br><br>Activate them with <b>Show Extensions</b> (or put the "
+                + "<tt>.vmdx</tt> files in the module's <tt>_ext</tt> folder) and run this "
+                + "again.</html>");
+        JOptionPane.showMessageDialog(this, sb.toString(),
+                "Extensions Not Active", JOptionPane.ERROR_MESSAGE);
+        return false;
+    }
+
+    private static String stripVmdx(String fileName) {
+        return fileName.toLowerCase().endsWith(".vmdx")
+                ? fileName.substring(0, fileName.length() - ".vmdx".length())
+                : fileName;
+    }
+
+
+    /**
+     * Launches the runner and shows its progress, collecting the result.
+     *
+     * <p>The job is passed as a file rather than on the command line so that any
+     * number of scenarios, with any characters in their paths, survives the trip.
+     * The runner's classpath is the engine jar plus wherever this application is
+     * running from — and <em>only</em> the engine jar, never VASSAL's whole
+     * {@code lib/*}: its manifest {@code Class-Path} pulls in the rest, whereas a
+     * wildcard lets another jar's {@code images/} shadow the engine's and VASSAL
+     * dies with "Icon Family eye not found".</p>
+     */
+    private void runRefresh(File engine, File module, List<File> saves, RefreshOptions options) {
+        final File job;
+        try {
+            job = writeJobFile(module, saves, options);
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Could not write the job file: " + e.getMessage(),
+                    "Refresh Counters Failed", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        final JDialog progress = new JDialog(this, "Refresh Counters", true);
+        progress.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        final JProgressBar bar = new JProgressBar(0, saves.size());
+        bar.setStringPainted(true);
+        bar.setString("Starting VASSAL…");
+        final JTextArea logArea = new JTextArea(14, 74);
+        logArea.setEditable(false);
+        logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        final JButton stop = new JButton("Stop");
+        final JPanel south = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        south.add(stop);
+        final JPanel content = new JPanel(new BorderLayout(8, 8));
+        content.setBorder(new EmptyBorder(12, 12, 12, 12));
+        content.add(bar, BorderLayout.NORTH);
+        content.add(new JScrollPane(logArea), BorderLayout.CENTER);
+        content.add(south, BorderLayout.SOUTH);
+        progress.setContentPane(content);
+        progress.pack();
+        progress.setLocationRelativeTo(this);
+
+        final RefreshWorker worker = new RefreshWorker(engine, job, saves, bar, logArea, progress);
+        stop.addActionListener(e -> {
+            logArea.append("\nStopping — the scenario in progress will be left as it was.\n");
+            worker.cancel(true);
+        });
+        worker.execute();
+        progress.setVisible(true);           // blocks until the worker closes it
+    }
+
+    private File writeJobFile(File module, List<File> saves, RefreshOptions options)
+            throws IOException {
+        final File job = File.createTempFile("refresh-counters", ".job");
+        job.deleteOnExit();
+        final StringBuilder sb = new StringBuilder();
+        sb.append("module=").append(module.getAbsolutePath()).append('\n');
+        for (String o : options.toEngineOptions()) sb.append("option=").append(o).append('\n');
+        for (File f : saves) sb.append("file=").append(f.getAbsolutePath()).append('\n');
+        Files.write(job.toPath(), sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return job;
+    }
+
+    /** Outcome of one refreshed scenario, for the closing report. */
+    private static final class RefreshResult {
+        final String name;
+        final String detail;
+        final boolean ok;
+        RefreshResult(String name, String detail, boolean ok) {
+            this.name = name; this.detail = detail; this.ok = ok;
+        }
+    }
+
+    /**
+     * Runs the subprocess, turning its {@code !!}-prefixed progress lines into
+     * dialog updates. Everything it prints is echoed into the log area, so the
+     * engine's own per-piece messages are visible while it works.
+     */
+    private final class RefreshWorker extends SwingWorker<List<RefreshResult>, String> {
+        private final File engine;
+        private final File job;
+        private final List<File> saves;
+        private final JProgressBar bar;
+        private final JTextArea logArea;
+        private final JDialog dialog;
+        private final List<RefreshResult> results = new ArrayList<>();
+        private final List<String> blocked = new ArrayList<>();
+        private Process child;
+        private String fatal;
+
+        RefreshWorker(File engine, File job, List<File> saves,
+                      JProgressBar bar, JTextArea logArea, JDialog dialog) {
+            this.engine = engine; this.job = job; this.saves = saves;
+            this.bar = bar; this.logArea = logArea; this.dialog = dialog;
+        }
+
+        @Override protected List<RefreshResult> doInBackground() throws Exception {
+            final String ourCode = new File(MainWindow.class.getProtectionDomain()
+                    .getCodeSource().getLocation().toURI()).getAbsolutePath();
+            final List<String> cmd = new ArrayList<>();
+            cmd.add(VassalInstallation.javaExecutable().getAbsolutePath());
+            cmd.add("-Xmx" + refreshHeapMb() + "m");
+            cmd.add("-cp");
+            cmd.add(engine.getAbsolutePath() + File.pathSeparator + ourCode);
+            cmd.add(RUNNER_CLASS);
+            cmd.add(job.getAbsolutePath());
+            log.info("Refresh Counters: {}", String.join(" ", cmd));
+
+            final ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.redirectErrorStream(true);
+            child = pb.start();
+            try (java.io.BufferedReader in = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(child.getInputStream(),
+                            java.nio.charset.StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = in.readLine()) != null) {
+                    if (isCancelled()) { child.destroy(); break; }
+                    handle(line);
+                }
+            }
+            child.waitFor();
+            return results;
+        }
+
+        /** Interprets one line of runner output. */
+        private void handle(String line) {
+            if (!line.startsWith("!!")) {
+                log.debug("refresh: {}", line);
+                return;
+            }
+            final String[] f = line.substring(2).split("\t", -1);
+            final String tag = f[0];
+            switch (tag) {
+                case "READY":
+                    publish("Module loaded — version " + at(f, 1)
+                            + ", " + at(f, 2) + " extensions active.\n");
+                    break;
+                case "FILE":
+                    publish("\n[" + at(f, 1) + "/" + at(f, 2) + "] " + at(f, 3) + "\n");
+                    break;
+                case "BACKUP":
+                    publish("    backed up as " + at(f, 2) + "\n");
+                    break;
+                case "LOG":
+                    publish("    " + at(f, 1) + "\n");
+                    break;
+                case "OK": {
+                    final String warnings = at(f, 2);
+                    final boolean clean = "0".equals(warnings);
+                    results.add(new RefreshResult(at(f, 1),
+                            clean ? "refreshed" : "refreshed with " + warnings + " warning(s)", true));
+                    publish("    done" + (clean ? "" : " — " + warnings + " warning(s)") + "\n");
+                    break;
+                }
+                case "FAIL":
+                    results.add(new RefreshResult(at(f, 1), at(f, 2), false));
+                    publish("    FAILED: " + at(f, 2) + "\n");
+                    break;
+                case "BLOCKED":
+                    blocked.add(at(f, 1));
+                    break;
+                case "FATAL":
+                    fatal = at(f, 1);
+                    publish("\nFATAL: " + fatal + "\n");
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        private String at(String[] f, int i) { return i < f.length ? f[i] : ""; }
+
+        @Override protected void process(List<String> chunks) {
+            for (String c : chunks) logArea.append(c);
+            logArea.setCaretPosition(logArea.getDocument().getLength());
+            final int done = results.size();
+            bar.setValue(done);
+            bar.setString(done + " of " + saves.size() + " refreshed");
+        }
+
+        @Override protected void done() {
+            dialog.dispose();
+            if (child != null && child.isAlive()) child.destroy();
+            if (isCancelled()) {
+                status("Refresh Counters stopped after " + results.size() + " scenario(s).");
+            }
+            reportRefresh(results, blocked, fatal, saves.size());
+        }
+    }
+
+    /**
+     * A heap for the engine subprocess. VASSAL loads the whole module and every
+     * active extension, then a whole saved game on top; the WiF module needs
+     * several GB. Take three quarters of physical RAM, clamped to a sane range.
+     */
+    private static int refreshHeapMb() {
+        long physicalMb = 4096;
+        try {
+            final java.lang.management.OperatingSystemMXBean os =
+                    java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+            final java.lang.reflect.Method m =
+                    os.getClass().getMethod("getTotalMemorySize");
+            m.setAccessible(true);
+            physicalMb = ((Number) m.invoke(os)).longValue() / (1024 * 1024);
+        } catch (Exception ignored) {
+            // Not available on this JVM; the 4 GB default is a reasonable guess.
+        }
+        final long want = physicalMb * 3 / 4;
+        return (int) Math.max(2048, Math.min(12288, want));
+    }
+
+    /** Shows what happened, listing anything that did not refresh cleanly. */
+    private void reportRefresh(List<RefreshResult> results, List<String> blocked,
+                               String fatal, int requested) {
+        if (!blocked.isEmpty()) {
+            final int shown = Math.min(blocked.size(), 15);
+            final StringBuilder sb = new StringBuilder(
+                    "<html><b>Nothing was changed.</b><br><br>"
+                    + "VASSAL will not refresh anything while the module's piece definitions "
+                    + "have Piece Id (GPID) errors. It reports this as <i>\"module was saved "
+                    + "with an older vassal version\"</i>, which is misleading — the real "
+                    + "problem is:<br><br><tt>");
+            for (int i = 0; i < shown; i++) {
+                sb.append(RefreshCountersDialog.escape(blocked.get(i))).append("<br>");
+            }
+            if (blocked.size() > shown) {
+                sb.append("… and ").append(blocked.size() - shown).append(" more<br>");
+            }
+            sb.append("</tt><br>Two components may not share a Piece Id. Give the duplicates "
+                    + "distinct Ids in VASSAL's editor (or remove the duplicated components), "
+                    + "then run this again.</html>");
+            JOptionPane.showMessageDialog(this, sb.toString(),
+                    "Refresh Counters Blocked", JOptionPane.ERROR_MESSAGE);
+            status("Refresh Counters blocked: " + blocked.size() + " GPID error(s) in the module.");
+            return;
+        }
+        if (fatal != null) {
+            JOptionPane.showMessageDialog(this,
+                    "The VASSAL engine could not be started:\n\n" + fatal,
+                    "Refresh Counters Failed", JOptionPane.ERROR_MESSAGE);
+            status("Refresh Counters failed: " + fatal);
+            return;
+        }
+        if (results.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "No scenarios were refreshed. See the log for details.",
+                    "Refresh Counters", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        int ok = 0;
+        final StringBuilder notes = new StringBuilder();
+        for (RefreshResult r : results) {
+            if (r.ok && r.detail.equals("refreshed")) ok++;
+            else {
+                notes.append("<tr><td><tt>").append(RefreshCountersDialog.escape(r.name))
+                     .append("</tt></td><td>&nbsp;").append(RefreshCountersDialog.escape(r.detail))
+                     .append("</td></tr>");
+            }
+        }
+        final StringBuilder sb = new StringBuilder("<html>Refreshed <b>")
+                .append(results.size()).append("</b> of ").append(requested)
+                .append(" scenario(s); ").append(ok).append(" with no warnings.<br>"
+                        + "Each original was kept as <tt>&lt;name&gt;-backup.vsav</tt>.");
+        if (notes.length() > 0) {
+            sb.append("<br><br>Needing a look:<br><table>").append(notes).append("</table>");
+        }
+        sb.append("</html>");
+        JOptionPane.showMessageDialog(this, sb.toString(), "Refresh Counters",
+                notes.length() > 0 ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE);
+        status("Refresh Counters: " + results.size() + " scenario(s) refreshed.");
     }
 
     private void status(String msg) {

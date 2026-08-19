@@ -18,6 +18,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -73,6 +76,8 @@ public class SavedGame {
     private static final byte ESCAPE = '\\';
     private static final String ADD_PIECE_PREFIX = "+/";
     private static final String BASIC_PIECE_PREFIX = "piece;";
+    /** Prefix of the "this extension was loaded" command, {@code ExtensionsLoader.COMMAND_PREFIX}. */
+    private static final String EXT_PREFIX = "EXT\t";
 
     private static final byte[] HEX = {
         '0', '1', '2', '3', '4', '5', '6', '7',
@@ -317,7 +322,92 @@ public class SavedGame {
      * @param removeIndices indices (into the command list) of pieces to drop —
      *                      typically {@link ExcessPiece#commandIndex} values
      */
+    // -----------------------------------------------------------------------
+    // Extension registrations
+    // -----------------------------------------------------------------------
+
+    /**
+     * The saved game's record of which extensions were loaded when it was saved:
+     * the contents of its {@code EXT<TAB><name><TAB><version>} commands, in log
+     * order. Each {@code name} is an extension's file name without its
+     * {@code .vmdx} suffix ({@code ModuleExtension.getName()}).
+     *
+     * <p>VASSAL rebuilds this list from the <em>currently loaded</em> extensions
+     * every time it saves, so a refresh run with every extension active would
+     * otherwise widen each scenario's list to the full set. Capturing it before
+     * the refresh and putting it back with
+     * {@link #restoreExtensionRegistrations} keeps each scenario's own record
+     * exactly as it was.</p>
+     */
+    public List<String> getExtensionRegistrations() {
+        final List<String> out = new ArrayList<>();
+        for (int[] r : commandRanges) {
+            final String content = new String(state, r[1], r[2] - r[1], StandardCharsets.UTF_8);
+            if (content.startsWith(EXT_PREFIX)) out.add(content);
+        }
+        return out;
+    }
+
+    /** The extension names (without version) from {@link #getExtensionRegistrations()}. */
+    public Set<String> getExtensionNames() {
+        final Set<String> out = new LinkedHashSet<>();
+        for (String cmd : getExtensionRegistrations()) {
+            final List<String> f = seqDecode(cmd.substring(EXT_PREFIX.length()), '\t');
+            if (!f.isEmpty() && !f.get(0).isEmpty()) out.add(f.get(0));
+        }
+        return out;
+    }
+
+    /**
+     * Rewrites {@code file} so that its extension registrations are exactly
+     * {@code originals}, leaving every other command byte-for-byte untouched.
+     *
+     * <p>The file's own {@code EXT} commands are dropped and {@code originals}
+     * emitted in their place — at the position of the first one, so the list
+     * keeps the spot in the log VASSAL puts it in. If the file has no {@code EXT}
+     * commands at all they go directly after the first command
+     * ({@code begin_save}), which is where VASSAL writes them.</p>
+     *
+     * <p>Does nothing when the file's registrations already match. Writes via a
+     * temp file and an atomic move, like {@link #saveWithout}.</p>
+     *
+     * @return {@code true} if the file was rewritten
+     */
+    public static boolean restoreExtensionRegistrations(java.io.File file, List<String> originals)
+            throws IOException {
+        final SavedGame game = open(file);
+        if (game.getExtensionRegistrations().equals(originals)) return false;
+
+        final Set<Integer> drop = new HashSet<>();
+        int insertBefore = -1;
+        for (int i = 0; i < game.commandRanges.size(); i++) {
+            final int[] r = game.commandRanges.get(i);
+            final String content =
+                    new String(game.state, r[1], r[2] - r[1], StandardCharsets.UTF_8);
+            if (content.startsWith(EXT_PREFIX)) {
+                drop.add(i);
+                if (insertBefore < 0) insertBefore = i;
+            }
+        }
+        // No EXT commands to replace: put the list straight after begin_save.
+        if (insertBefore < 0) insertBefore = Math.min(1, game.commandRanges.size());
+
+        game.write(file, drop, insertBefore, originals);
+        return true;
+    }
+
     public void saveWithout(Set<Integer> removeIndices, java.io.File target) throws IOException {
+        write(target, removeIndices, -1, Collections.<String>emptyList());
+    }
+
+    /**
+     * Writes the saved game to {@code target}: every command copied verbatim
+     * except those at {@code removeIndices}, with {@code insertContents} spliced
+     * in before index {@code insertBefore}. The two metadata entries are copied
+     * byte-for-byte.
+     */
+    private void write(java.io.File target, Set<Integer> removeIndices,
+                       int insertBefore, List<String> insertContents) throws IOException {
         final java.io.File parent = target.getParentFile();
         if (parent != null) parent.mkdirs();
 
@@ -334,7 +424,7 @@ public class SavedGame {
                 final ZipEntry sg = new ZipEntry(SAVED_GAME_ENTRY);
                 if (savedGameTime >= 0) sg.setTime(savedGameTime);
                 zos.putNextEntry(sg);
-                writeObfuscated(zos, removeIndices);
+                writeObfuscated(zos, removeIndices, insertBefore, insertContents);
                 zos.closeEntry();
 
                 writeVerbatim(zos, SAVE_DATA_ENTRY, saveData, saveDataTime);
@@ -369,30 +459,74 @@ public class SavedGame {
      * pieces. The very first emitted token drops its (possibly empty) leading
      * delimiter so the stream never begins with a stray separator.
      */
-    private void writeObfuscated(OutputStream out, Set<Integer> removeIndices) throws IOException {
+    private void writeObfuscated(OutputStream out, Set<Integer> removeIndices)
+            throws IOException {
+        writeObfuscated(out, removeIndices, -1, Collections.<String>emptyList());
+    }
+
+    /**
+     * As above, additionally emitting {@code insertContents} as top-level command
+     * tokens immediately before the surviving token at index {@code insertBefore}
+     * (ignored when negative). Inserted commands are separated by a bare
+     * {@code <ESC>}, which is what makes them top level.
+     */
+    private void writeObfuscated(OutputStream out, Set<Integer> removeIndices,
+                                 int insertBefore, List<String> insertContents)
+            throws IOException {
         final int key = new Random().nextInt(256);
         // Accumulate hex output in a large buffer so the deflater sees big chunks
         // rather than 2 bytes at a time (which is dramatically slower).
-        final byte[] buf = new byte[1 << 16];
-        int p = 0;
-        for (byte h : HEADER) buf[p++] = h;
-        buf[p++] = HEX[(key & 0xF0) >>> 4];
-        buf[p++] = HEX[key & 0x0F];
+        final HexSink sink = new HexSink(out, key);
+        for (byte h : HEADER) sink.rawByte(h);
+        sink.rawByte(HEX[(key & 0xF0) >>> 4]);
+        sink.rawByte(HEX[key & 0x0F]);
 
         boolean firstEmitted = true;
         for (int idx = 0; idx < commandRanges.size(); idx++) {
+            if (idx == insertBefore) {
+                for (String content : insertContents) {
+                    if (!firstEmitted) sink.encoded(CMD_DELIM);
+                    firstEmitted = false;
+                    for (byte b : content.getBytes(StandardCharsets.UTF_8)) sink.encoded(b);
+                }
+            }
             if (removeIndices.contains(idx)) continue;
             final int[] r = commandRanges.get(idx);
             final int from = firstEmitted ? r[1] : r[0];   // skip leading delimiter for the first token
             firstEmitted = false;
-            for (int i = from; i < r[2]; i++) {
-                if (p >= buf.length - 1) { out.write(buf, 0, p); p = 0; }
-                final int x = (state[i] ^ key) & 0xFF;
-                buf[p++] = HEX[(x & 0xF0) >>> 4];
-                buf[p++] = HEX[x & 0x0F];
-            }
+            for (int i = from; i < r[2]; i++) sink.encoded(state[i]);
         }
-        if (p > 0) out.write(buf, 0, p);
+        sink.flush();
+    }
+
+    /**
+     * Buffers the obfuscated output. {@link #rawByte} writes a byte of the
+     * {@code !VCSK}+key header as-is; {@link #encoded} XORs a plaintext byte with
+     * the key and writes it as two hex digits.
+     */
+    private static final class HexSink {
+        private final OutputStream out;
+        private final int key;
+        private final byte[] buf = new byte[1 << 16];
+        private int p;
+
+        HexSink(OutputStream out, int key) { this.out = out; this.key = key; }
+
+        void rawByte(byte b) throws IOException {
+            if (p >= buf.length) flush();
+            buf[p++] = b;
+        }
+
+        void encoded(byte b) throws IOException {
+            if (p >= buf.length - 1) flush();
+            final int x = (b ^ key) & 0xFF;
+            buf[p++] = HEX[(x & 0xF0) >>> 4];
+            buf[p++] = HEX[x & 0x0F];
+        }
+
+        void flush() throws IOException {
+            if (p > 0) { out.write(buf, 0, p); p = 0; }
+        }
     }
 
     // -----------------------------------------------------------------------

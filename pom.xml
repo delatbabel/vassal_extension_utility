@@ -25,6 +25,12 @@
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
         <main.class>org.vassalengine.extutil.Main</main.class>
+        <!--
+          Excluded unless -Dvassal.engine.jar=... is given (see the refresh-runner
+          profile, which clears this). Without an engine the runner is left out and
+          the application reports Refresh Counters as unavailable.
+        -->
+        <refresh.runner.exclude>org/vassalengine/extutil/refresh/RefreshRunner.java</refresh.runner.exclude>
     </properties>
 
     <dependencies>
@@ -45,6 +51,50 @@
         </dependency>
     </dependencies>
 
+    <!--
+      The Refresh Counters runner links against VASSAL, which is not published to
+      Maven Central, so it is built only on demand:
+
+          ./mvnw package -Dvassal.engine.jar=/usr/share/vassal/lib/Vengine.jar
+
+      `make jar` finds an installed engine and passes this for you. Without it the
+      project still builds — the runner is simply left out, and the application
+      reports Refresh Counters as unavailable rather than failing to start.
+
+      Activation keys off the property being *set* rather than <file><exists>,
+      because a POM property cannot drive profile activation: Maven interpolates
+      the default rather than a -D override, so the profile switched on even when
+      pointed at a jar that was not there.
+
+      Only Vengine.jar is named, never lib/*: its manifest Class-Path pulls in the
+      other jars relative to itself. A wildcard lets another jar's images/ folder
+      shadow the engine's, and VASSAL then dies with "Icon Family eye not found"
+      (its own source flags this as bug 9670).
+    -->
+    <profiles>
+        <profile>
+            <id>refresh-runner</id>
+            <activation>
+                <property>
+                    <name>vassal.engine.jar</name>
+                </property>
+            </activation>
+            <properties>
+                <refresh.runner.exclude>nothing-to-exclude</refresh.runner.exclude>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>org.vassalengine</groupId>
+                    <artifactId>vengine</artifactId>
+                    <version>local</version>
+                    <scope>system</scope>
+                    <systemPath>${vassal.engine.jar}</systemPath>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
+
+
     <build>
         <plugins>
             <plugin>
@@ -53,6 +103,9 @@
                 <configuration>
                     <source>11</source>
                     <target>11</target>
+                    <excludes>
+                        <exclude>${refresh.runner.exclude}</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
             <plugin>

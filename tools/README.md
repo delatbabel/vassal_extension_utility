@@ -1,11 +1,14 @@
-# Saved-game command-line tools
+# Command-line tools
 
-Standalone Python 3 scripts for editing a VASSAL saved game (`.vsav`) outside the
-GUI — useful for building a series of pre-setup scenario files from one another.
-They are **not** part of the Java application and have no dependencies beyond the
-Python standard library.
+Standalone Python 3 scripts for editing VASSAL files outside the GUI — useful for
+building a series of pre-setup scenario files from one another, and for repairs
+the application does not (yet) offer. They are **not** part of the Java
+application and have no dependencies beyond the Python standard library.
 
-All three scripts work the way `model/SavedGame` does (see
+`swap_maps.py`, `shift_pieces.py` and `fix_sif_subs.py` edit a **saved game**
+(`.vsav`); `renumber_gpids.py` edits an **extension** (`.vmdx`).
+
+The three saved-game scripts work the way `model/SavedGame` does (see
 [docs/vsav-format.md](../docs/vsav-format.md) and
 [docs/vsav-excess-units.md](../docs/vsav-excess-units.md)):
 
@@ -147,6 +150,72 @@ exists. On a second pass over already-rewritten saves, `--keep-bak` leaves that
 existing `.bak` alone, so it stays the pristine original instead of becoming the
 first pass's output. The tool is idempotent — a counter already rewritten no
 longer matches an incorrect slot — so re-running it only picks up what is new.
+
+## renumber_gpids.py — clear duplicate Piece Ids in an extension
+
+```
+tools/renumber_gpids.py EXT.vmdx [--start=N] [--dry-run] [--no-backup]
+```
+
+VASSAL refuses to run **Refresh Counters** while any two components share a Piece
+Id (GPID). `GameRefresher.execute()` builds a `GpIdChecker` over every
+`PieceSlot`, and if `hasErrors()` it logs *"Unable to run Refresh, module was
+saved with older vassal version. Edit and save module with latest vassal version
+first."* and returns **without refreshing anything**. That message is misleading:
+`GpIdChecker.testGpId()` flags a GPID that is empty, non-numeric, or **already
+seen**, and never looks at the VASSAL version.
+
+Duplicates across extensions are easy to create. Extensions generate fresh ids as
+`<extensionId>:<n>`, but a slot copied from the module or from another extension
+keeps its plain numeric id, and `GpIdChecker` keys on the raw value when
+extensions are loaded — so two extensions can claim the same number.
+
+This script finds the target extension's slots whose GPID is also used by the
+module or by any sibling extension (`<module>_ext/` and `<module>_ext/inactive/`,
+located from the target's own path) and gives *those* slots fresh numbers,
+allocated consecutively from `--start` (default 16000), skipping anything already
+in use. The extension's `nextPieceSlotId` is advanced past the block.
+
+Both places the id appears are updated: the `gpid="..."` attribute and the same
+value inside that slot's own piece definition (`…;0;0;<gpid>;…`). Each id must
+occur exactly twice in `buildFile.xml` — once as each — or the script refuses,
+rather than risk rewriting a number it does not understand.
+
+### Which side to renumber
+
+A GPID is how a saved game refers to a piece definition, so renumbering a slot
+orphans any piece in any save that points at it. Renumber the side of a clash
+that **no saved game references**. Check before committing to it:
+
+```bash
+tools/renumber_gpids.py "…_ext/23-DoD-III.vmdx" --dry-run     # what would change
+```
+
+then look for the old numbers in your saves — for each `AddPiece`, the GPID is the
+4th `;`-field of the innermost `BasicPiece` state, and the piece name the 5th
+field of the innermost type, so you can see *which* of the two clashing
+components a save actually holds. Pieces whose GPID no longer resolves can still
+be matched by name (Refresh Counters' "Use counter names" option), but by GPID
+they are lost.
+
+### Never leave a spare copy in the extensions folder
+
+`ExtensionsManager`'s file filter is only `!isHidden() && !isDirectory()`: VASSAL
+loads **every** file in `<module>_ext/` whose metadata parses as an extension,
+whatever it is called. A `foo.vmdx.bak` or `Copy of foo.vmdx` left there is loaded
+as a real extension — which after a renumbering re-creates every duplicate GPID
+it just removed, and is easy to miss (the giveaway is the extension count going
+up by one). Backups therefore go in `<module>_ext/backups/`; directories are
+skipped by that filter, and only `inactive` is also scanned. Use `--no-backup` if
+you keep your own copies somewhere outside the extensions folder.
+
+### Modification times are preserved
+
+Only `buildFile.xml` is rewritten. Every other ZIP entry is copied byte-for-byte
+**with its original modification time**, because VASSAL decides whether a cached
+image tile is stale purely by comparing mtimes — restamping them forces a needless
+re-tile of every board image (see
+[docs/image-display-and-tiling.md](../docs/image-display-and-tiling.md)).
 
 ## Checking the result
 
