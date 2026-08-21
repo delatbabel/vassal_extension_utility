@@ -71,6 +71,18 @@ line suppresses the "enter save comments" dialog, exactly as the engine's own
 batch refresh (`GameState.saveGameRefresh`) does. AWT threads keep the JVM alive,
 so the runner must `System.exit()`.
 
+## Refusing to run against a module that is not there
+
+`DataArchive` accepts a path that does not exist, and `GameModule.init()` then
+builds an empty *"Unnamed module v0.0"* with no pieces in it rather than throwing.
+Every check downstream passes vacuously on such a module, and the refresh matches
+each piece against nothing — which does not fail, it strips every scenario. That
+is the one way this tool can destroy data quietly, so it is guarded twice: the
+module file must exist and be readable before `init()`, and the built module must
+have at least one `PieceSlot` afterwards. Either way out is `!!FATAL` before a
+single file is touched. The slot count is reported on `!!READY` so an implausibly
+small module is visible in the log.
+
 ## Per scenario
 
 Mirrors `PredefinedSetup.refreshWithStatus()`, but reads and writes an external
@@ -196,7 +208,7 @@ the engine's chatter and is echoed into the log pane.
 
 | Line | Meaning |
 |---|---|
-| `!!READY <moduleVersion> <extensionCount>` | module built, extensions loaded |
+| `!!READY <moduleVersion> <extensionCount> <slotCount>` | module built, extensions loaded |
 | `!!BLOCKED <problem>` | GPID error; nothing will be refreshed |
 | `!!FILE <n> <total> <name>` | starting a scenario |
 | `!!BACKUP <name> <backupName>` | original copied |

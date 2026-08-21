@@ -139,6 +139,15 @@ public final class RefreshRunner {
             say("FATAL", "job file names no module or no saved games");
             return 2;
         }
+        // A missing module must be caught here. DataArchive accepts a path that
+        // does not exist and GameModule.init() then quietly builds an empty
+        // "Unnamed module" with no pieces in it — whereupon every check below
+        // passes vacuously and the refresh matches every piece against nothing,
+        // gutting each scenario instead of failing.
+        if (!module.isFile() || !module.canRead()) {
+            say("FATAL", "module not readable: " + module.getPath());
+            return 2;
+        }
 
         Info.setConfig(new StandardConfig());       // else the save records VassalVersion 1.2.3
         new HeadlessMenuManager();
@@ -148,12 +157,25 @@ public final class RefreshRunner {
         new ExtensionsLoader().addTo(mod);
         Localization.getInstance().translate();
 
+        // Belt and braces for the same failure: the module file existed but did
+        // not yield a usable module. A build that fails partway leaves an empty
+        // shell rather than throwing, and refreshing against it would silently
+        // strip every piece from every scenario.
+        final List<PieceSlot> slots = mod.getAllDescendantComponentsOf(PieceSlot.class);
+        final int slotCount = slots.size();
+        if (slotCount == 0) {
+            say("FATAL", "module built with no piece definitions"
+                    + " (name \"" + mod.getGameName() + "\", version " + mod.getGameVersion()
+                    + ") — it is not a usable module, refusing to refresh anything");
+            return 2;
+        }
+
         // Suppress the "enter save comments" dialog, exactly as the engine's own
         // batch refresh (GameState.saveGameRefresh) does.
         mod.getPrefs().setValue(SaveMetaData.PROMPT_LOG_COMMENT, false);
 
         say("READY", mod.getGameVersion() + "\t"
-                + mod.getComponentsOf(ModuleExtension.class).size());
+                + mod.getComponentsOf(ModuleExtension.class).size() + "\t" + slotCount);
 
         // The engine refuses to refresh anything while the module's piece
         // definitions have GPID errors, and says only "module was saved with an
@@ -161,7 +183,7 @@ public final class RefreshRunner {
         // question up front, and name the actual culprits, rather than rewriting
         // every scenario for no gain.
         final GpIdChecker checker = new GpIdChecker(options);
-        for (final PieceSlot slot : mod.getAllDescendantComponentsOf(PieceSlot.class)) {
+        for (final PieceSlot slot : slots) {
             checker.add(slot);
         }
         for (final PrototypesContainer pc : mod.getComponentsOf(PrototypesContainer.class)) {

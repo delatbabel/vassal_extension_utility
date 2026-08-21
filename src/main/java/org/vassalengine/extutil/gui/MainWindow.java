@@ -2445,8 +2445,8 @@ public class MainWindow extends JFrame {
             final String tag = f[0];
             switch (tag) {
                 case "READY":
-                    publish("Module loaded — version " + at(f, 1)
-                            + ", " + at(f, 2) + " extensions active.\n");
+                    publish("Module loaded — version " + at(f, 1) + ", " + at(f, 2)
+                            + " extensions active, " + at(f, 3) + " piece definitions.\n");
                     break;
                 case "FILE":
                     publish("\n[" + at(f, 1) + "/" + at(f, 2) + "] " + at(f, 3) + "\n");
