@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 1.0.13
 
 Adds batch Refresh Counters for saved games outside the module.
 
@@ -13,6 +13,12 @@ Adds batch Refresh Counters for saved games outside the module.
   Before starting, the tool checks that every extension any selected scenario names is active, and that the module's Piece Ids are sound — VASSAL refuses to refresh anything when two components share a Piece Id, but reports it only as *"module was saved with older vassal version"*. The utility names the colliding components instead, and stops before touching a file. See [docs/refresh-counters.md](docs/refresh-counters.md).
 
   The runner links against the VASSAL engine, so it is compiled only when the build is pointed at one (`make jar` finds an installed VASSAL automatically). Built without it, the menu item says so; the engine is never bundled, so the tool always drives the VASSAL the user has installed.
+
+### Fixed
+
+- **Refresh Counters refuses to run against a module that is not there.** `DataArchive` accepts a path that does not exist, and `GameModule.init()` then builds an empty *"Unnamed module v0.0"* with no piece definitions rather than reporting a problem. Every check downstream passes on such a module — the Piece Id check included — and the refresh then matches each piece against nothing, which does not fail: it strips every scenario it is pointed at. A mistyped or since-deleted module path was enough to reach it.
+
+  The module file is now required to exist and be readable before the engine is started, and the module it builds is required to contain at least one piece definition afterwards (a build that fails partway leaves the same empty shell). Either way out stops the run before a single file is opened, so no backup is written and no scenario is altered. The count of piece definitions is now reported alongside the module version and extension count, so an implausibly small module is obvious in the log.
 
 ## 1.0.12
 
