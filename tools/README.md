@@ -5,10 +5,16 @@ building a series of pre-setup scenario files from one another, and for repairs
 the application does not (yet) offer. They are **not** part of the Java
 application and have no dependencies beyond the Python standard library.
 
-`swap_maps.py`, `shift_pieces.py` and `fix_sif_subs.py` edit a **saved game**
-(`.vsav`); `renumber_gpids.py` edits an **extension** (`.vmdx`).
+| script | edits | what it does |
+|---|---|---|
+| `swap_maps.py` | `.vsav` | copy a map layout from one save into another |
+| `shift_pieces.py` | `.vsav` | translate the pieces on one map |
+| `fix_sif_subs.py` | `.vsav` | swap mis-named counters for their correct twins |
+| `remove_ext_counters.py` | `.vsav` | delete every counter belonging to given extensions |
+| `renumber_gpids.py` | `.vmdx` | clear duplicate Piece Ids |
+| `drop_slots.py` | `.vmdx` | delete piece slots by Piece Id |
 
-The three saved-game scripts work the way `model/SavedGame` does (see
+The saved-game scripts work the way `model/SavedGame` does (see
 [docs/vsav-format.md](../docs/vsav-format.md) and
 [docs/vsav-excess-units.md](../docs/vsav-excess-units.md)):
 
@@ -98,8 +104,8 @@ dimensions are the board dimensions.
 ## fix_sif_subs.py — swap mis-named counters for their correct twins
 
 ```
-tools/fix_sif_subs.py [--in-place] [--keep-bak] [--dry-run]
-                      [--pair OLD=NEW]... EXTENSION.vmdx SAVE.vsav [SAVE.vsav...]
+tools/fix_sif_subs.py [--in-place] [--keep-bak] [--dry-run] [--pair OLD=NEW]...
+                      [--slots EXT.vmdx]... EXTENSION.vmdx SAVE.vsav [SAVE.vsav...]
 ```
 
 Written for the WiF `10-SiF.vmdx` extension, which holds two copies of some
@@ -107,13 +113,49 @@ submarine counters: the correct SiF ones named `<nation> S SUB <name>`, and
 incorrect leftovers named `<nation> SUB <name>` (no `" S "`). Saved games built
 before the fix contain the incorrect pieces; this rewrites each into its twin.
 
-The pairs are **derived from the extension**, not hard-coded: every `PieceSlot`
-whose name contains `" SUB "` is matched to the one named with `" S SUB "`, and
-the pair is used only if the two definitions differ in exactly two traits — the
-Embellishment (`emb2;Flip;…`, whose flip image gains the `sif` suffix) and the
-innermost `piece;;;<image>;<name>`. Any other difference means the two are
-different counters, not a duplicate, so the pair is **refused and reported**
-rather than guessed at.
+The pairs are **derived from the extension**, not hard-coded, and used only if the
+two definitions differ in exactly two traits — the Embellishment (`emb2;Flip;…`,
+whose flip image gains the `sif` suffix) and the innermost
+`piece;;;<image>;<name>`. Any other difference means the two are different
+counters, not a duplicate, so the pair is **refused and reported** rather than
+guessed at.
+
+### Two naming shapes
+
+The `" S "` marking the SiF counter sits in one of two places, and both are
+recognised:
+
+| plain name | SiF twin | rule |
+|---|---|---|
+| `CW SUB Amphion` | `CW S SUB Amphion` | type is a word in the middle |
+| `CW T CA SUB1` | `CW T CA S SUB1` | name ends in the type |
+| `CH T SUB` | `CH T S SUB` | ditto, no trailing number |
+
+A name that already carries the `" S "` yields no twin, so the script can never
+double-apply.
+
+### When the twins live in another extension
+
+`--slots EXT.vmdx` (repeatable) pools counter definitions from further archives,
+so the two halves of a pair may come from different extensions. That is the case
+once the S counters are split out into an extension of their own — the plain
+counters stay in `20-PatiF-AmiF-Ships` while their twins live in
+`25-PatiF-AmiF-SiF-SUBs`:
+
+```bash
+tools/fix_sif_subs.py --in-place \
+    "…_ext/20-PatiF-AmiF-Ships.vmdx" \
+    --slots="…_ext/25-PatiF-AmiF-SiF-SUBs.vmdx" \
+    data/scenarios/*.vsav
+```
+
+A pair that crosses archives is reported as such:
+`CW T CA SUB1 -> CW T CA S SUB1  [20-PatiF-AmiF-Ships.vmdx -> 25-PatiF-AmiF-SiF-SUBs.vmdx]`.
+
+Note that swapping counters into a different extension makes the scenario depend
+on that extension, which its recorded extension list will not mention. Running
+**Refresh Counters** afterwards adds the entry (see
+[docs/refresh-counters.md](../docs/refresh-counters.md)).
 
 A piece in a save is an `AddPiece` command whose type is the *expanded* trait
 list (prototypes inlined), so it can never be compared to the slot definition as
@@ -216,6 +258,99 @@ Only `buildFile.xml` is rewritten. Every other ZIP entry is copied byte-for-byte
 image tile is stale purely by comparing mtimes — restamping them forces a needless
 re-tile of every board image (see
 [docs/image-display-and-tiling.md](../docs/image-display-and-tiling.md)).
+
+## drop_slots.py — delete piece slots from an extension
+
+```
+tools/drop_slots.py EXT.vmdx GPID [GPID...] [--version=X.Y.Z]
+                    [--dry-run] [--no-backup]
+```
+
+For clearing a *duplicated* counter — the same component left behind in two
+archives — which is the case renumbering cannot fix: giving the two copies
+distinct Piece Ids would leave two identical counters in the palette. One copy
+has to go.
+
+When both copies share the same GPID **and** the same definition, deleting either
+is safe for existing saved games: every piece pointing at that GPID still matches
+the survivor. Check that the definitions really do match before choosing a side.
+
+### The empty-wrapper trap
+
+An extension never holds a component directly — each sits inside a
+`VASSAL.build.module.ExtensionElement` naming where in the module's tree it
+grafts. Deleting the component and leaving the wrapper produces an
+`ExtensionElement` with nothing in it, which is XML-valid but makes VASSAL
+**abort the whole module launch**: `ExtensionElement.build()` leaves its
+`extension` field null and `addTo()` then dereferences it (see
+[docs/vassal-empty-extensionelement-crash.md](../docs/vassal-empty-extensionelement-crash.md)).
+
+So a wrapper left empty by a deletion is removed along with the slot; a wrapper
+still holding other components is kept. The run says which of the two happened
+for each slot. Verify afterwards that the extension has no empty wrappers.
+
+`--version=X.Y.Z` also bumps the extension's version, in **both** places VASSAL
+keeps it: the `version` attribute on the `ModuleExtension` root and `<version>`
+in the separate `extensiondata` entry.
+
+```bash
+tools/drop_slots.py "…_ext/19-PatiF-AmiF-ACFT.vmdx" \
+    2634 2635 2654 2655 7149 --version=2.1.2
+```
+
+## remove_ext_counters.py — delete every counter from given extensions
+
+```
+tools/remove_ext_counters.py MODULE.vmod EXT_NAMES SAVE.vsav [SAVE.vsav...]
+                             [--drop-listing] [--dry-run] [--no-backup]
+```
+
+For a scenario that has picked up counters from an extension it was never meant
+to be played with: the extension was active when the scenario was built, so its
+pieces went into the force pools, but the scenario's own extension list never
+included it. **Refresh Counters cannot fix this** — the pieces match their
+definitions perfectly, so they are not "excess" in the Excess-Units sense
+([docs/vsav-excess-units.md](../docs/vsav-excess-units.md)); they simply should
+not be there.
+
+`EXT_NAMES` is comma-separated, each the `.vmdx` file name without its suffix —
+which is also what appears in the save's `EXT` commands, e.g.
+`09-ClassicShips,21-PatiF-AmiF-HWs`.
+
+A piece is attributed to an extension by its **GPID**: the 4th `;`-field of the
+innermost BasicPiece state, looked up against the `gpid` attributes of every
+PieceSlot in the module and each `<module>_ext/*.vmdx`. That is exact only while
+GPIDs are unique across the module and its extensions, so check that first with
+`renumber_gpids.py`.
+
+### Stacks are left alone deliberately
+
+Force-pool pieces are almost always inside stacks, and a stack's state lists its
+members by piece id, so removing a piece leaves those ids dangling. That is safe:
+`Stack.setState()` looks each one up and silently skips what it cannot resolve
+(`if (child != null)`), so a stack comes up with fewer members, and one that loses
+everything comes up empty. Run **Refresh Counters** afterwards and its
+`StackRefresher` rebuilds the stacking from scratch, tidying both cases. (In one
+real run, 284 of the 390 affected stacks were emptied outright and the refresh
+cleared them all.)
+
+### Dropping the dependency too
+
+`--drop-listing` additionally removes the save's `EXT<TAB><name><TAB><version>`
+registration for each named extension, so the scenario stops declaring a
+dependency it no longer has.
+
+This is opt-in, and deliberately tied to the extensions you are stripping: a
+scenario's true dependencies **cannot** be derived from its counters alone. An
+extension supplying only boards or charts — `01-EURO-Maps`, say — contributes no
+piece definitions at all, so anything that pruned "extensions with no counters
+present" would throw away exactly the entries a scenario needs to draw its maps.
+For the same reason the application's own rule only ever *adds* extension entries.
+
+```bash
+tools/remove_ext_counters.py "data/…2_1_2.vmod" \
+    "09-ClassicShips,21-PatiF-AmiF-HWs" data/scenarios/*.vsav --dry-run
+```
 
 ## Checking the result
 

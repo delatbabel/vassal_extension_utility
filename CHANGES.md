@@ -1,5 +1,26 @@
 # Changes
 
+## Unreleased
+
+Refresh Counters now corrects each scenario's extension list, and the
+command-line tools gain three repairs the application does not offer.
+
+### Changed
+
+- **Refresh Counters rebuilds a scenario's extension list instead of merely preserving it.** A saved game records which extensions were loaded when it was written, and that record goes stale: when a counter is moved into a different extension, the scenario ends up depending on an extension it never names, and VASSAL reports those pieces as unmatchable on load with no hint why. Every entry the scenario already had is still kept verbatim, version included, but an entry is now **added** for each extension that supplies a piece the scenario holds and is not already listed. The piece-to-extension mapping is by Piece Id, via the new `model/ExtensionIndex`, read from the module and its `_ext` archives.
+
+  The rule is **additive only**. A scenario's dependencies cannot be inferred from its counters alone — an extension supplying only boards or charts has no piece definitions at all — so nothing is ever pruned; dropping a dependency is a deliberate act (`tools/remove_ext_counters.py --drop-listing`). See [docs/refresh-counters.md](docs/refresh-counters.md).
+
+### Added
+
+- **`tools/remove_ext_counters.py`** — deletes every counter belonging to given extensions from a saved game. For a scenario that picked up counters from an extension it was never meant to be played with: the pieces match their definitions perfectly, so Refresh Counters cannot help and they are not "excess" either. `--drop-listing` also removes the scenario's `EXT` registration for those extensions.
+- **`tools/drop_slots.py`** — deletes piece slots from an extension by Piece Id, for clearing a component duplicated across two archives. Removes the enclosing `ExtensionElement` when a deletion would leave it empty, which would otherwise abort every module launch with a `NullPointerException`. Can bump the extension version in both places VASSAL keeps it.
+- **`tools/fix_sif_subs.py --slots EXT.vmdx`** (repeatable) — pools counter definitions from further archives, so the two halves of a pair may live in different extensions. It also recognises a second naming shape: as well as `CW SUB Amphion` → `CW S SUB Amphion`, names that *end* in the type, such as `CW T CA SUB1` → `CW T CA S SUB1`.
+
+### Fixed
+
+- **`tools/renumber_gpids.py` no longer refuses a slot whose definition omits its own Piece Id.** Some slots carry an empty field where the id would sit, because `PieceSlot.getPiece()` stamps the attribute onto the piece at creation, so the copy in the definition never mattered. The script required exactly two occurrences and gave up on such a slot; it now accepts the attribute plus *at most* one copy in the definition, still refusing if the number turns up anywhere else, and reports which slots were in that state.
+
 ## 1.0.13
 
 Adds batch Refresh Counters for saved games outside the module.

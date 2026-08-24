@@ -30,10 +30,23 @@ delimiter; every surviving command is copied verbatim, never decoded and
 re-encoded. `savedata`/`moduledata` are copied whole and the output goes via a
 temp file, exactly as model/SavedGame.saveWithout does.
 
+## Dropping the dependency as well
+
+`--drop-listing` additionally removes the saved game's `EXT<TAB><name><TAB><version>`
+registration for each named extension, so the scenario stops declaring a
+dependency it no longer has.
+
+This is opt-in rather than automatic, and it is deliberately tied to the
+extensions you are stripping: a scenario's true dependencies **cannot** be
+derived from its counters alone. An extension that supplies only boards or charts
+— `01-EURO-Maps`, say — contributes no piece definitions at all, so anything that
+pruned "extensions with no counters present" would throw away exactly the entries
+a scenario needs to render its maps.
+
 ## Usage
 
     tools/remove_ext_counters.py MODULE.vmod EXT_NAMES SAVE.vsav [SAVE.vsav...]
-                                 [--dry-run] [--no-backup]
+                                 [--drop-listing] [--dry-run] [--no-backup]
 
 EXT_NAMES is a comma-separated list of extension names — the `.vmdx` file name
 without its suffix, which is also what appears in the save's `EXT` commands, e.g.
@@ -46,6 +59,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from swap_maps import read_vsav, split_commands, write_vsav
 
 SLOT_TAGS = ('PieceSlot', 'CardSlot')
+EXT_PREFIX = 'EXT\t'
 
 
 def extensions_dir(module_path):
@@ -116,9 +130,16 @@ def main(argv):
     for path in saves:
         state, entries = read_vsav(path)
         toks = split_commands(state)
-        drop, per_ext, examples = set(), {}, {}
+        drop, per_ext, examples, listings = set(), {}, {}, []
         for idx, (ds, cs, end) in enumerate(toks):
             content = state[cs:end].decode('utf-8', 'replace')
+            if content.startswith(EXT_PREFIX):
+                name = content.split('\t')[1] if '\t' in content[len(EXT_PREFIX):] \
+                    or content.count('\t') >= 1 else ''
+                if '--drop-listing' in flags and name in targets:
+                    drop.add(idx)
+                    listings.append(name)
+                continue
             gpid = piece_gpid(content)
             if gpid is None:
                 continue
@@ -128,11 +149,13 @@ def main(argv):
                 per_ext[ext] = per_ext.get(ext, 0) + 1
                 examples.setdefault(ext, []).append(piece_name(content))
 
-        print('%s: %d piece(s)' % (os.path.basename(path), len(drop)))
+        print('%s: %d piece(s)' % (os.path.basename(path), sum(per_ext.values())))
         for ext in sorted(per_ext):
             print('    %-26s %5d   e.g. %s' % (ext, per_ext[ext],
                                                ', '.join(examples[ext][:3])))
-        grand += len(drop)
+        if listings:
+            print('    dropping extension listing(s): %s' % ', '.join(sorted(listings)))
+        grand += sum(per_ext.values())
         if not drop or '--dry-run' in flags:
             continue
 

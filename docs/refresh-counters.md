@@ -119,7 +119,7 @@ Each save records the module version it was made with, in its `savedata` entry.
 the version of the module that performed the refresh. That is the desired update
 and needs no help.
 
-### Extension list — must be put back
+### Extension list — must be corrected, not merely put back
 
 A saved game also records which extensions were loaded when it was written, as
 `EXT<TAB><name><TAB><version>` commands in the command log (`ExtensionsLoader
@@ -128,11 +128,37 @@ rebuilds that list from the **currently loaded** extensions on every save.
 
 A batch refresh must have every extension active at once (see below), so a plain
 re-save would widen every scenario's list to the full set — in the WiF module,
-from a scenario's own 14 or 16 to all 24. That record is a statement about what
-the scenario needs, so it is captured before the refresh and restored afterwards
-by `SavedGame.restoreExtensionRegistrations()`, which drops the file's `EXT`
-tokens and re-emits the originals at the same position. Every other command is
-copied byte-for-byte; verified on a real refresh, only the `EXT` tokens differ.
+from a scenario's own 14 or 16 to all 27.
+
+But the recorded list is not simply worth preserving either: it goes stale. It
+says what was loaded when the scenario was last written, so when counters are
+moved between extensions — a unit relocated into a new extension, say — the
+scenario ends up depending on an extension it never names, and VASSAL reports
+those pieces as unmatchable on load with no hint as to why.
+
+So the list is **rebuilt from what the scenario actually contains**:
+
+- every entry the scenario already had is kept, **verbatim, version included** —
+  it is the record of what the scenario was built against, and a refresh has no
+  cause to revise it;
+- an entry is **added** for every extension that supplies a piece in the
+  scenario but is not already listed.
+
+The mapping from piece to extension is by GPID: `SavedGame.getPieceGpids()`
+collects the GPID of every piece in the save, and `model/ExtensionIndex` says
+which archive defines each one, read straight from the module and its
+`<module>_ext/*.vmdx` files. Pieces defined by the module itself, and orphaned
+pieces no archive defines, contribute nothing.
+
+**The rule is additive only.** It never removes an entry, because a scenario's
+dependencies cannot be inferred from its counters: an extension supplying only
+boards or charts (`01-EURO-Maps`) contributes no piece definitions at all, so
+pruning "extensions with no counters present" would discard exactly the entries
+needed to draw the maps. Removing a dependency is a deliberate act — see
+`tools/remove_ext_counters.py --drop-listing`.
+
+Every other command is copied byte-for-byte; verified on real refreshes, only the
+`EXT` tokens differ.
 
 ### Surplus board layouts — must be stripped
 
@@ -160,8 +186,9 @@ in passing. Commands starting with a piece-command prefix are excluded outright.
 
 ### Both are applied in one pass
 
-`SavedGame.PreservedState.capture(game)` reads both before the refresh and
-`restore(file)` reapplies them after, in a **single** rewrite — a 30 MB saved game
+`SavedGame.PreservedState.capture(game)` reads all of it before the refresh —
+extension registrations, board-layout maps, and the GPIDs of every piece — and
+`restore(file, index)` applies the corrections after, in a **single** rewrite — a 30 MB saved game
 is deobfuscated and re-obfuscated once, not once per fix. It returns how many
 extension registrations were rewritten and which maps' layouts were dropped, both
 of which the runner reports as `!!PRESERVED` and the GUI shows per scenario. If
@@ -209,11 +236,13 @@ the engine's chatter and is echoed into the log pane.
 | Line | Meaning |
 |---|---|
 | `!!READY <moduleVersion> <extensionCount> <slotCount>` | module built, extensions loaded |
+| `!!INDEX <gpids> <extensions> <duplicates>` | GPID-to-extension index built; `duplicates` should be 0 |
 | `!!BLOCKED <problem>` | GPID error; nothing will be refreshed |
 | `!!FILE <n> <total> <name>` | starting a scenario |
 | `!!BACKUP <name> <backupName>` | original copied |
 | `!!LOG <text>` | a line the engine wrote to its chatter |
-| `!!PRESERVED <name> <extCount> <strippedCount> <maps>` | extension list put back and/or surplus board layouts dropped |
+| `!!PRESERVED <name> <extCount> <strippedCount> <maps>` | extension list rewritten and/or surplus board layouts dropped |
+| `!!EXTADDED <name> <extensions>` | extensions added to the scenario's list |
 | `!!OK <name> <warnings>` | refreshed; `warnings` is `GameRefresher.warnings()` |
 | `!!FAIL <name> <message>` | this scenario failed; the batch continues |
 | `!!SUMMARY <refreshed> <failed>` | finished |
