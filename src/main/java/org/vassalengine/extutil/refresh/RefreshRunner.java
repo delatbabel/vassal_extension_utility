@@ -7,12 +7,14 @@
  */
 package org.vassalengine.extutil.refresh;
 
+import org.vassalengine.extutil.model.ExtensionIndex;
 import org.vassalengine.extutil.model.SavedGame;
 
 import VASSAL.Info;
 import VASSAL.build.GameModule;
 import VASSAL.build.GpIdChecker;
 import VASSAL.build.module.ExtensionsLoader;
+import VASSAL.build.module.ExtensionsManager;
 import VASSAL.build.module.GameRefresher;
 import VASSAL.build.module.GameState;
 import VASSAL.build.module.ModuleExtension;
@@ -76,7 +78,10 @@ import java.util.Set;
  * over the original. Two things the engine rebuilds from whatever happens to be
  * loaded are captured beforehand and reapplied afterwards — the scenario's own
  * extension list, and the set of maps it has board layouts for; see
- * {@link SavedGame.PreservedState}. The module name/version recorded in the save
+ * {@link SavedGame.PreservedState}. The extension list is not merely put back but
+ * <em>extended</em> to name every extension the scenario actually draws counters
+ * from, which is how a unit moved into a new extension stops the scenario
+ * silently depending on an extension it never lists. The module name/version recorded in the save
  * is <em>not</em> preserved: the engine stamps the running module's, which is the
  * intended update.</p>
  */
@@ -195,6 +200,14 @@ public final class RefreshRunner {
             return 3;
         }
 
+        // Which extension supplies which piece definition, so each scenario's
+        // extension list can be extended to what it actually depends on.
+        final List<File> extensionFiles =
+                new ExtensionsManager(module).getActiveExtensions();
+        final ExtensionIndex index = ExtensionIndex.read(module, extensionFiles);
+        say("INDEX", index.size() + "\t" + extensionFiles.size()
+                + "\t" + index.getDuplicateCount());
+
         final GameState gs = mod.getGameState();
         final ChatterTail chatter = new ChatterTail(mod);
 
@@ -205,7 +218,7 @@ public final class RefreshRunner {
             say("FILE", (i + 1) + "\t" + saves.size() + "\t" + save.getName());
             chatter.mark();
             try {
-                final int warnings = refreshOne(mod, gs, save, options);
+                final int warnings = refreshOne(mod, gs, save, options, index);
                 for (String line : chatter.since()) say("LOG", line);
                 say("OK", save.getName() + "\t" + warnings);
                 refreshed++;
@@ -265,8 +278,8 @@ public final class RefreshRunner {
      *
      * @return the engine's count of refresh anomalies for this file
      */
-    private static int refreshOne(GameModule mod, GameState gs, File save, Set<String> options)
-            throws IOException {
+    private static int refreshOne(GameModule mod, GameState gs, File save, Set<String> options,
+                                  ExtensionIndex index) throws IOException {
 
         if (!save.isFile()) throw new IOException("not a file: " + save);
 
@@ -302,11 +315,15 @@ public final class RefreshRunner {
 
             move(tmp, save);
 
-            final SavedGame.PreservedState.Result restored = preserved.restore(save);
+            final SavedGame.PreservedState.Result restored = preserved.restore(save, index);
             if (restored.changedAnything()) {
                 say("PRESERVED", save.getName() + "\t" + restored.extensionsRestored
                         + "\t" + restored.strippedBoardPickerMaps.size() + "\t"
                         + String.join(", ", restored.strippedBoardPickerMaps));
+            }
+            if (!restored.addedExtensions.isEmpty()) {
+                say("EXTADDED", save.getName() + "\t"
+                        + String.join(", ", restored.addedExtensions));
             }
             return refresher.warnings();
         }

@@ -354,6 +354,44 @@ public class SavedGame {
     }
 
     /**
+     * The GPIDs of every piece in the saved game — the 4th {@code ;}-field of each
+     * {@code AddPiece} command's innermost BasicPiece state. Mapping these back
+     * through {@link ExtensionIndex} gives the extensions the scenario actually
+     * depends on.
+     */
+    public Set<String> getPieceGpids() {
+        final Set<String> out = new LinkedHashSet<>();
+        for (int[] r : commandRanges) {
+            final String content = contentOf(r);
+            if (!content.startsWith(ADD_PIECE_PREFIX)) continue;
+            final int[] cut = commandCuts(content);
+            if (cut == null) continue;
+            final String basicType = content.substring(cut[1] + 1, cut[2]);
+            if (!lastTrait(basicType).startsWith(BASIC_PIECE_PREFIX)) continue;
+            final String[] state = lastTrait(content.substring(cut[2] + 1)).split(";");
+            if (state.length > 3 && !state[3].isEmpty()) out.add(state[3]);
+        }
+        return out;
+    }
+
+    /** Offsets of the three unescaped {@code /} separators of an AddPiece, or null. */
+    private static int[] commandCuts(String content) {
+        final int[] cut = new int[3];
+        int found = 0;
+        for (int i = 0; i < content.length() && found < 3; i++) {
+            if (content.charAt(i) == '/' && (i == 0 || content.charAt(i - 1) != '\\')) {
+                cut[found++] = i;
+            }
+        }
+        return found == 3 ? cut : null;
+    }
+
+    private static String lastTrait(String seq) {
+        final int tab = seq.lastIndexOf('\t');
+        return tab < 0 ? seq : seq.substring(tab + 1);
+    }
+
+    /**
      * The map identifiers that have a board layout recorded in this saved game —
      * one per {@code <mapIdentifier>BoardPicker<TAB><board>[/rev]<TAB>…} command
      * ({@code BoardPicker.encode}, whose whole layout for a map lives in that one
@@ -421,15 +459,51 @@ public class SavedGame {
     public static final class PreservedState {
         private final List<String> extensionRegistrations;
         private final Set<String> boardPickerMaps;
+        private final Set<String> pieceGpids;
 
-        private PreservedState(List<String> extensionRegistrations, Set<String> boardPickerMaps) {
+        private PreservedState(List<String> extensionRegistrations, Set<String> boardPickerMaps,
+                               Set<String> pieceGpids) {
             this.extensionRegistrations = extensionRegistrations;
             this.boardPickerMaps = boardPickerMaps;
+            this.pieceGpids = pieceGpids;
         }
 
         /** Reads the state to preserve out of an unrefreshed saved game. */
         public static PreservedState capture(SavedGame game) {
-            return new PreservedState(game.getExtensionRegistrations(), game.getBoardPickerMaps());
+            return new PreservedState(game.getExtensionRegistrations(), game.getBoardPickerMaps(),
+                                      game.getPieceGpids());
+        }
+
+        /**
+         * The extension list to write: the scenario's own entries unchanged, plus
+         * an entry for every extension that supplies a piece in it but is not
+         * already listed.
+         *
+         * <p>A saved game's list records what was loaded when it was written, so
+         * it goes stale as counters move between extensions — a unit relocated
+         * into a new extension leaves the scenario silently depending on an
+         * extension it never names, and VASSAL then reports the piece as
+         * unmatchable on load. Deriving the additions from the GPIDs the scenario
+         * actually contains keeps the list true.</p>
+         *
+         * <p>Existing entries are copied verbatim, versions included: they are the
+         * record of what the scenario was built against, and nothing here has
+         * cause to revise it. Additions are stamped with the indexed version.</p>
+         */
+        List<String> targetExtensions(ExtensionIndex index) {
+            final List<String> out = new ArrayList<>(extensionRegistrations);
+            if (index == null) return out;
+            final Set<String> listed = new LinkedHashSet<>();
+            for (String cmd : extensionRegistrations) {
+                final List<String> f = seqDecode(cmd.substring(EXT_PREFIX.length()), '\t');
+                if (!f.isEmpty()) listed.add(f.get(0));
+            }
+            for (String name : index.extensionsFor(pieceGpids)) {
+                if (listed.contains(name)) continue;
+                final String version = index.versionOf(name);
+                out.add(EXT_PREFIX + name + '\t' + (version == null ? "" : version));
+            }
+            return out;
         }
 
         public List<String> getExtensionRegistrations() { return extensionRegistrations; }
@@ -443,6 +517,16 @@ public class SavedGame {
          * @return what was changed, for reporting
          */
         public Result restore(java.io.File file) throws IOException {
+            return restore(file, null);
+        }
+
+        /**
+         * As above, but with {@code index} the extension list is <em>extended</em>
+         * to cover everything the scenario depends on rather than merely put back
+         * as it was. See {@link #targetExtensions}.
+         */
+        public Result restore(java.io.File file, ExtensionIndex index) throws IOException {
+            final List<String> wanted = targetExtensions(index);
             final SavedGame game = open(file);
 
             final Set<Integer> drop = new HashSet<>();
@@ -465,10 +549,10 @@ public class SavedGame {
                     strippedMaps.add(map);
                 }
             }
-            extensionsDiffer = !currentExtensions.equals(extensionRegistrations);
+            extensionsDiffer = !currentExtensions.equals(wanted);
 
             if (!extensionsDiffer && strippedMaps.isEmpty()) {
-                return new Result(0, Collections.<String>emptyList());
+                return new Result(0, Collections.<String>emptyList(), addedExtensions(wanted));
             }
             if (!extensionsDiffer) {
                 drop.removeAll(indicesOf(game, EXT_PREFIX));   // leave a matching list alone
@@ -481,8 +565,21 @@ public class SavedGame {
             }
 
             game.write(file, drop, insertBefore,
-                    extensionsDiffer ? extensionRegistrations : Collections.<String>emptyList());
-            return new Result(extensionsDiffer ? extensionRegistrations.size() : 0, strippedMaps);
+                    extensionsDiffer ? wanted : Collections.<String>emptyList());
+            return new Result(extensionsDiffer ? wanted.size() : 0, strippedMaps,
+                              addedExtensions(wanted));
+        }
+
+        /** Extension names in {@code wanted} that the scenario did not already list. */
+        private List<String> addedExtensions(List<String> wanted) {
+            final List<String> added = new ArrayList<>();
+            for (String cmd : wanted) {
+                if (!extensionRegistrations.contains(cmd)) {
+                    final List<String> f = seqDecode(cmd.substring(EXT_PREFIX.length()), '\t');
+                    added.add(f.isEmpty() ? cmd : f.get(0));
+                }
+            }
+            return added;
         }
 
         private static Set<Integer> indicesOf(SavedGame game, String prefix) {
@@ -499,10 +596,14 @@ public class SavedGame {
             public final int extensionsRestored;
             /** Map identifiers whose surplus board layout was dropped. */
             public final List<String> strippedBoardPickerMaps;
+            /** Extensions newly added to the scenario's list. */
+            public final List<String> addedExtensions;
 
-            Result(int extensionsRestored, List<String> strippedBoardPickerMaps) {
+            Result(int extensionsRestored, List<String> strippedBoardPickerMaps,
+                   List<String> addedExtensions) {
                 this.extensionsRestored = extensionsRestored;
                 this.strippedBoardPickerMaps = strippedBoardPickerMaps;
+                this.addedExtensions = addedExtensions;
             }
 
             public boolean changedAnything() {

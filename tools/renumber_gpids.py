@@ -97,21 +97,32 @@ def rewrite(ext_path, mapping, next_slot_id, out_path):
         xml = z.read(BUILD_FILE).decode('utf-8')
         infos = z.infolist()
 
+        stateless = []
         for old, new in mapping.items():
-            # Each id must appear exactly twice: the slot's gpid attribute, and
-            # the same value inside that slot's own BasicPiece state. Anything
-            # else means the number is used somewhere we do not understand, so
-            # refuse rather than corrupt the file.
+            # The id lives in the slot's gpid attribute, and usually also inside
+            # that slot's own BasicPiece state. The state copy is optional: some
+            # slots carry an empty field there (`;0;0;;`) because VASSAL stamps
+            # the attribute onto the piece at creation time
+            # (PieceSlot.getPiece() sets PIECE_ID from getGpId()). What must hold
+            # is that the number appears nowhere else — otherwise it is in use
+            # somewhere we do not understand, and we refuse rather than corrupt
+            # the file.
             bare = len(re.findall(r'(?<![0-9])' + old + r'(?![0-9])', xml))
             attr = xml.count('gpid="%s"' % old)
             state = len(re.findall(r';0;0;' + old + r';', xml))
-            if (bare, attr, state) != (2, 1, 1):
+            if attr != 1 or state > 1 or bare != attr + state:
                 raise SystemExit(
                     'gpid %s appears %d time(s) (attribute %d, piece state %d); '
-                    'expected exactly attribute 1 + state 1 — refusing'
-                    % (old, bare, attr, state))
+                    'expected attribute 1 plus at most 1 piece state and nothing '
+                    'else — refusing' % (old, bare, attr, state))
+            if state == 0:
+                stateless.append(old)
             xml = xml.replace('gpid="%s"' % old, 'gpid="%s"' % new)
             xml = re.sub(r';0;0;' + old + r';', ';0;0;%s;' % new, xml)
+        if stateless:
+            print('  note: %d slot(s) carried no gpid inside their own definition '
+                  '(harmless — VASSAL stamps it from the attribute): %s'
+                  % (len(stateless), ', '.join(stateless)))
 
         if next_slot_id is not None:
             root_attr = re.search(r'nextPieceSlotId="(\d+)"', xml)

@@ -2398,6 +2398,7 @@ public class MainWindow extends JFrame {
         private final List<RefreshResult> results = new ArrayList<>();
         private final List<String> blocked = new ArrayList<>();
         private int strippedTotal;
+        private int extensionsAdded;
         private Process child;
         private String fatal;
 
@@ -2450,6 +2451,17 @@ public class MainWindow extends JFrame {
                     break;
                 case "FILE":
                     publish("\n[" + at(f, 1) + "/" + at(f, 2) + "] " + at(f, 3) + "\n");
+                    break;
+                case "INDEX":
+                    publish("Indexed " + at(f, 1) + " piece definitions across "
+                            + at(f, 2) + " extension(s)"
+                            + ("0".equals(at(f, 3)) ? "" : " — " + at(f, 3)
+                               + " GPID(s) claimed by more than one archive")
+                            + ".\n");
+                    break;
+                case "EXTADDED":
+                    extensionsAdded++;
+                    publish("    added to its extension list: " + at(f, 2) + "\n");
                     break;
                 case "BACKUP":
                     publish("    backed up as " + at(f, 2) + "\n");
@@ -2518,7 +2530,8 @@ public class MainWindow extends JFrame {
             if (isCancelled()) {
                 status("Refresh Counters stopped after " + results.size() + " scenario(s).");
             }
-            reportRefresh(results, blocked, fatal, saves.size(), strippedTotal);
+            reportRefresh(results, blocked, fatal, saves.size(), strippedTotal,
+                    extensionsAdded);
         }
     }
 
@@ -2545,7 +2558,8 @@ public class MainWindow extends JFrame {
 
     /** Shows what happened, listing anything that did not refresh cleanly. */
     private void reportRefresh(List<RefreshResult> results, List<String> blocked,
-                               String fatal, int requested, int strippedBoardPickers) {
+                               String fatal, int requested, int strippedBoardPickers,
+                               int extensionsAdded) {
         if (!blocked.isEmpty()) {
             final int shown = Math.min(blocked.size(), 15);
             final StringBuilder sb = new StringBuilder(
@@ -2599,6 +2613,10 @@ public class MainWindow extends JFrame {
         if (strippedBoardPickers > 0) {
             sb.append("<br>Dropped ").append(strippedBoardPickers)
               .append(" surplus board layout(s) for maps the scenarios do not use.");
+        }
+        if (extensionsAdded > 0) {
+            sb.append("<br>Extended ").append(extensionsAdded)
+              .append(" scenario(s)' extension list to cover the counters they contain.");
         }
         if (notes.length() > 0) {
             sb.append("<br><br>Needing a look:<br><table>").append(notes).append("</table>");
