@@ -58,32 +58,58 @@ def command_fields(cmd):
     return cmd[cut[0] + 1:cut[1]], cmd[cut[1] + 1:cut[2]], cmd[cut[2] + 1:]
 
 
-def load_pairs(ext_path, overrides=None):
+def sif_twin(name):
+    """The SiF (" S ") name for a plain counter name, or None if it has none.
+
+    Two shapes occur. Where the type is a word in the middle, the " S " is
+    inserted before it: `CW SUB Amphion` -> `CW S SUB Amphion`. Where the name
+    ends in the type, it goes before that final token: `CW T CA SUB1` ->
+    `CW T CA S SUB1`, `CH T SUB` -> `CH T S SUB`. A name that already carries the
+    " S " yields None, so an S counter is never treated as needing one.
+    """
+    if BAD in name and GOOD not in name:
+        return name.replace(BAD, GOOD, 1)
+    head, sep, last = name.rpartition(' ')
+    if sep and last.startswith('SUB') and head.rsplit(' ', 1)[-1] != 'S':
+        return head + ' S ' + last
+    return None
+
+
+def load_pairs(ext_paths, overrides=None):
     """-> ({incorrect name: pair}, [(incorrect name, why refused)])
 
-    `overrides` maps an incorrect name to the twin to use instead of the
-    derived `" S SUB "` one — for a counter whose derived name is taken by an
-    unrelated component. An override is validated exactly like a derived pair.
+    Slots are pooled across every archive in `ext_paths`, so a pair may span two
+    of them — which is what happens when the S counters are split out into an
+    extension of their own. Each pair records where both halves came from.
+
+    `overrides` maps an incorrect name to the twin to use instead of the derived
+    one — for a counter whose derived name is taken by an unrelated component. An
+    override is validated exactly like a derived pair.
     """
     overrides = overrides or {}
-    with zipfile.ZipFile(ext_path) as z:
-        root = ET.fromstring(z.read('buildFile.xml'))
+    if isinstance(ext_paths, str):
+        ext_paths = [ext_paths]
 
     slots = {}
-    for el in root.iter():
-        if el.tag.split('.')[-1] in SLOT_TAGS and el.get('entryName'):
-            slots[el.get('entryName')] = (el.get('gpid'), el.text or '')
+    origin = {}
+    for ext_path in ext_paths:
+        with zipfile.ZipFile(ext_path) as z:
+            root = ET.fromstring(z.read('buildFile.xml'))
+        for el in root.iter():
+            if el.tag.split('.')[-1] in SLOT_TAGS and el.get('entryName'):
+                slots[el.get('entryName')] = (el.get('gpid'), el.text or '')
+                origin[el.get('entryName')] = os.path.basename(ext_path)
 
     unknown = [n for n in overrides if n not in slots]
     if unknown:
-        raise SystemExit('%s: no such counter: %s'
-                         % (os.path.basename(ext_path), ', '.join(unknown)))
+        raise SystemExit('no such counter: %s' % ', '.join(unknown))
 
     pairs, refused = {}, []
     for name, (gpid, defn) in sorted(slots.items()):
-        if name not in overrides and (BAD not in name or GOOD in name):
+        derived = sif_twin(name)
+        if name not in overrides and derived is None:
             continue
-        good_name = overrides.get(name) or name.replace(BAD, GOOD, 1)
+        good_name = overrides.get(name) or derived
         if good_name not in slots:
             refused.append((name, 'no "%s" twin' % good_name.strip()))
             continue
@@ -107,6 +133,7 @@ def load_pairs(ext_path, overrides=None):
 
         pairs[name] = {
             'name': name, 'good_name': good_name,
+            'from': origin.get(name, '?'), 'to': origin.get(good_name, '?'),
             'gpid': gpid, 'good_gpid': good_gpid,
             'emb2': old_traits[-2], 'good_emb2': new_traits[-2],
             'basic': old_traits[-1], 'good_basic': new_traits[-1],
@@ -169,6 +196,10 @@ def main(argv):
     ap = argparse.ArgumentParser(
         description='Replace mis-named counters in a .vsav with their twins.')
     ap.add_argument('extension', metavar='EXTENSION.vmdx')
+    ap.add_argument('--slots', metavar='EXT.vmdx', action='append', default=[],
+                    help='additional archive to take counter definitions from, '
+                         'for when the S counters live in a different extension; '
+                         'repeatable')
     ap.add_argument('saves', metavar='SAVE.vsav', nargs='+')
     ap.add_argument('--in-place', action='store_true',
                     help='overwrite each save, keeping the original as .bak')
@@ -190,9 +221,10 @@ def main(argv):
             ap.error('--pair wants OLD=NEW, got %r' % spec)
         overrides[old] = new
 
-    pairs, refused = load_pairs(args.extension, overrides)
+    archives = [args.extension] + args.slots
+    pairs, refused = load_pairs(archives, overrides)
     print('%s: %d correctable counter pair(s)'
-          % (os.path.basename(args.extension), len(pairs)))
+          % (', '.join(os.path.basename(a) for a in archives), len(pairs)))
     for name in sorted(overrides):
         if name in pairs:
             print('  pair given — %s -> %s' % (name, pairs[name]['good_name']))
@@ -206,8 +238,10 @@ def main(argv):
         total += n
         print('\n%s: %d piece(s)' % (os.path.basename(path), n))
         for name in sorted(fixed):
-            print('  %-22s -> %-24s x%d'
-                  % (name, pairs[name]['good_name'], fixed[name]))
+            p = pairs[name]
+            cross = '' if p['from'] == p['to'] else '  [%s -> %s]' % (p['from'], p['to'])
+            print('  %-22s -> %-24s x%d%s'
+                  % (name, p['good_name'], fixed[name], cross))
         if args.dry_run or not n:
             continue
 
