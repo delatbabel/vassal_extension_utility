@@ -11,6 +11,8 @@ application and have no dependencies beyond the Python standard library.
 | `shift_pieces.py` | `.vsav` | translate the pieces on one map |
 | `fix_sif_subs.py` | `.vsav` | swap mis-named counters for their correct twins |
 | `remove_ext_counters.py` | `.vsav` | delete every counter belonging to given extensions |
+| `remove_placemark_carriers.py` | `.vsav` | delete off-map pieces carrying a stale embedded Place Marker |
+| `remove_offmap_pieces.py` | `.vsav` | report (and optionally delete) every piece that is on no map |
 | `renumber_gpids.py` | `.vmdx` | clear duplicate Piece Ids |
 | `drop_slots.py` | `.vmdx` | delete piece slots by Piece Id |
 
@@ -351,6 +353,70 @@ For the same reason the application's own rule only ever *adds* extension entrie
 tools/remove_ext_counters.py "data/…2_1_2.vmod" \
     "09-ClassicShips,21-PatiF-AmiF-HWs" data/scenarios/*.vsav --dry-run
 ```
+
+## remove_placemark_carriers.py — clear stale embedded Place Markers
+
+```
+tools/remove_placemark_carriers.py SAVE.vsav [SAVE.vsav...] [--dry-run] [--no-backup]
+```
+
+The WiF module once had a Place Marker defined with an **embedded** marker
+("Define Marker") instead of a reference: its `markerSpec` held an entire
+serialised piece inline, with further prototypes expanded inside it. That trait
+was removed from the module in 2.1.2, but pieces already in a saved game keep
+whatever they were baked with — and each carrier's type is ~21 KB.
+
+**Refresh Counters cannot clear them,** which is the whole reason this tool
+exists. Every carrier has `map = null`, and `GameRefresher.getRefreshables()`
+builds its work list by walking *map contents*, so an off-map piece is never
+collected and never rebuilt. Tested directly: refreshing such a save reports every
+counter refreshed with no warnings and leaves the command log the same byte
+length. (`DeleteNoMap` does not help either — it only applies to pieces the
+refresher collected, and VASSAL has it disabled in its own dialog over issue
+12902.)
+
+A piece is deleted only when **both** hold: its BasicPiece state has
+`map == "null"`, and its type contains a `placemark` trait. A carrier that *is* on
+a map is **reported and kept** — that one is not an orphan, and Refresh Counters
+will rebuild it. (In practice the one such case, `US BB Alaska`, is also
+unmatchable by GPID, so it needs the Excess Units tool instead.)
+
+## remove_offmap_pieces.py — audit pieces that are on no map
+
+```
+tools/remove_offmap_pieces.py SAVE.vsav [SAVE.vsav...] [--apply] [--no-backup]
+                              [--keep-name=SUBSTR]... [--only-name=SUBSTR]...
+                              [--module=MODULE.vmod]
+```
+
+Off-map pieces accumulate: a scenario built by swapping another's map layout can
+be left holding counters that belonged to the old layout and now belong nowhere.
+They are invisible in play, immune to Refresh Counters, and still cost memory and
+bytes in every save.
+
+**This reports by default and writes only with `--apply`** — deliberately, because
+off-map does *not* by itself mean unwanted. In the WiF scenarios the largest group
+is ownership markers (`US Owned`, `CW Owned`, `MajP Lending Strip`, ~529 per save,
+identical across the fif and nonfif variants of the same scenario), which look
+like a deliberate off-map pool rather than debris; deleting those could break
+ownership marking. Yet `105` and `107` carry none at all, so the population is not
+structural either. Decide per piece name, not per save:
+
+```bash
+# what is there, attributed to the archive that defines each piece
+tools/remove_offmap_pieces.py data/scenarios/*.vsav --module="data/…2_1_2.vmod"
+
+# everything except the ownership pool
+tools/remove_offmap_pieces.py data/scenarios/103-*.vsav \
+    --keep-name=owned --keep-name="lending strip" --apply
+```
+
+`--module` attributes each piece to the archive defining its GPID, which shows at
+a glance whether a group comes from an extension the scenario no longer uses —
+the signature of map-swap debris.
+
+Decks are never touched: their contents always carry a real map id (verified —
+279 of 279 deck members in a sample scenario).
 
 ## Checking the result
 

@@ -96,15 +96,19 @@ no help either: it only applies to pieces the refresher collected (and VASSAL ha
 its own dialog over issue 12902).
 
 These are therefore **orphaned pieces** — invisible in play, immune to Refresh Counters, and
-carried in memory and in every save indefinitely. Removing them needs byte-level surgery on the
-save (select the `AddPiece` commands whose innermost BasicPiece state has a `null` map, drop them,
-and let the next refresh rebuild the stacking; dangling stack references are harmless because
-`Stack.setState()` skips ids it cannot resolve).
+carried in memory and in every save indefinitely. **`tools/remove_placemark_carriers.py` removes
+them** (dangling stack references are harmless — `Stack.setState()` skips ids it cannot resolve).
+Applied to the 16 scenarios it cleared 238 pieces: 56 each from `103`/`104` and 63 each from
+`106`/`108`. One carrier is deliberately kept — `US BB Alaska` in `106` is *on* a map, so it is
+not an orphan; it is also unmatchable by GPID, which is why a refresh never repaired it, making it
+a case for the Excess Units tool.
 
 **Wider note.** Off-map pieces are not confined to those four: `101`, `102` and `120` carry **529**
 each with no Place Marker among them, while `105` and `107` have **zero** — which suggests the
-population is avoidable rather than structural. Worth a separate audit before deciding whether to
-delete all off-map pieces or only the provably-stale Place Marker carriers.
+population is avoidable rather than structural. **`tools/remove_offmap_pieces.py` audits this** —
+it reports by default and writes only with `--apply`, and can exclude groups by name. The bulk is
+ownership markers (`US Owned`, `CW Owned`, `MajP Lending Strip`), which look like a deliberate
+off-map pool rather than debris, so review the report before deleting anything.
 
 ---
 
