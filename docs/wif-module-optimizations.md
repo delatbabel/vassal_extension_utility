@@ -55,6 +55,13 @@ marker in‑game before and after.
 
 ## Fix 2 — Reduce traits per piece (the big one)
 
+> 📄 **Detailed follow-up: [wif-fix2-trait-reduction.md](wif-fix2-trait-reduction.md)** — names the
+> specific traits that can move to the map, the specific near-duplicate prototypes, where the
+> `mark` constants come from, and the dead traits with their locations. It also corrects two
+> things below: `macro` is the editor's **Trigger Action** trait, and the median piece carries
+> **102** traits, not 201 (the earlier count included each prototype's own terminal Basic Piece,
+> which pieces do not inherit).
+
 **Why it matters most.** The median WiF piece carries **201 traits** (normal pieces have 10–20),
 almost all from expanded prototypes. Escaping overhead is **quadratic** in trait count
 (`backslashes ≈ 0.251 × traits²`, R² = 0.999 — [analysis §3](wif-save-bloat-analysis.md#3-cause-2--sequenceencoder-escaping-is-otraits-per-piece)),
@@ -74,7 +81,10 @@ preserve features. Candidate techniques, all feature‑preserving:
    prototype removes one copy from *every* piece that used it — and shrinks the quadratic
    escaping of the pieces that remain.
 
-2. **Consolidate near‑duplicate prototypes.** 207 prototype definitions with heavy overlap
+2. **Consolidate near‑duplicate prototypes.** *(Measured since: this saves almost nothing on its
+   own — traits inherited twice by one piece total 0.1%. Its value is making the eliminations in
+   technique 1 and 3 a single edit instead of seven. See the
+   [deep dive §3](wif-fix2-trait-reduction.md#3-consolidating-near-duplicate-prototypes--what-it-actually-buys).)* 207 prototype definitions with heavy overlap
    (the `…Defaults…` family: `SUBDefaults12`, `NavalDefaults12`, etc.) tend to accumulate
    copy‑pasted trait stacks. Factor the common traits into a shared base prototype that the
    variants include, so a unit expands *one* copy of the common logic rather than several
