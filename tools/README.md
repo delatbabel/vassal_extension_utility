@@ -106,8 +106,9 @@ dimensions are the board dimensions.
 ## fix_sif_subs.py — swap mis-named counters for their correct twins
 
 ```
-tools/fix_sif_subs.py [--in-place] [--keep-bak] [--dry-run] [--pair OLD=NEW]...
-                      [--slots EXT.vmdx]... EXTENSION.vmdx SAVE.vsav [SAVE.vsav...]
+tools/fix_sif_subs.py [--in-place] [--keep-bak] [--dry-run] [--add]
+                      [--pair OLD=NEW]... [--slots EXT.vmdx]...
+                      EXTENSION.vmdx SAVE.vsav [SAVE.vsav...]
 ```
 
 Written for the WiF `10-SiF.vmdx` extension, which holds two copies of some
@@ -158,6 +159,45 @@ Note that swapping counters into a different extension makes the scenario depend
 on that extension, which its recorded extension list will not mention. Running
 **Refresh Counters** afterwards adds the entry (see
 [docs/refresh-counters.md](../docs/refresh-counters.md)).
+
+### `--add`: keep the original and add the twin beside it
+
+Default behaviour **replaces** the counter. `--add` instead **keeps it and adds
+its twin into the same stack**, which is what the "everything" scenarios need:
+their force pools are meant to hold one copy of every counter, so both the plain
+and the SiF version belong there.
+
+For each match a new `AddPiece` command is emitted directly after the original,
+carrying:
+
+- **a fresh piece id**, allocated above the highest id already in the file;
+- **the twin's type** — the original's type with the same two traits substituted
+  that the replace path uses, which is exactly what the twin's own definition
+  expands to;
+- **the original's state**, with the innermost gpid repointed at the twin's slot
+  and the `UniqueID` property reset to the new id. That last one matters: VASSAL
+  keeps a piece's `UniqueID` equal to its own piece id, and two pieces sharing one
+  is asking for trouble.
+
+The new id is then threaded into the state of whichever stack listed the original,
+**immediately after it**, so the twin lands in the same force-pool stack directly
+alongside the counter it accompanies.
+
+Insertion is positional among the id tokens rather than appended, because a
+stack's state ends with a `@@<layer>` marker after the ids
+(`Stack.HAS_LAYER_MARKER`) — an id appended after that marker would be misread.
+
+```bash
+tools/fix_sif_subs.py --add --in-place \
+    "…_ext/20-PatiF-AmiF-Ships.vmdx" \
+    --slots="…_ext/25-PatiF-AmiF-SiF-SUBs.vmdx" \
+    data/scenarios/*everything*.vsav
+```
+
+Verify afterwards that piece ids are still unique, that every twin appears in a
+stack, and that each twin's `UniqueID` matches its own id. Only counters whose
+original is actually present get a twin — if the original is missing from the
+scenario there is nothing to add beside.
 
 A piece in a save is an `AddPiece` command whose type is the *expanded* trait
 list (prototypes inlined), so it can never be compared to the slot definition as

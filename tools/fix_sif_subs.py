@@ -31,6 +31,8 @@ import argparse, os, re, sys, zipfile, xml.etree.ElementTree as ET
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from swap_maps import read_vsav, split_commands, write_vsav
 
+CMD_DELIM = 0x1b        # ESC — the top-level command separator
+
 SLOT_TAGS = ('PieceSlot', 'CardSlot')
 BAD, GOOD = ' SUB ', ' S SUB '
 
@@ -192,6 +194,117 @@ def fix(path, pairs):
     return b''.join(parts), entries, fixed
 
 
+def add_twins(path, pairs):
+    """Add each matched counter's twin *alongside* it, in the same stack.
+
+    Used for the "everything" scenarios, whose force pools are meant to hold one
+    copy of every counter: there the plain counter must stay and its SiF twin be
+    added next to it, rather than replacing it.
+
+    For every piece matching an incorrect slot, a new `AddPiece` command is
+    emitted immediately after it, carrying:
+
+    - a fresh piece id, taken above the highest id already in the file;
+    - the twin's type — the original's type with the two differing traits
+      substituted, which is exactly what the twin's own definition expands to
+      (the same substitution the replace path makes);
+    - the original's state with the innermost gpid repointed at the twin's slot,
+      and the `UniqueID` property reset to the new piece id, which is the
+      invariant VASSAL maintains (a piece's UniqueID equals its own id).
+
+    The new id is then inserted into the state of whichever stack listed the
+    original, immediately after it, so the twin lands in the same force-pool
+    stack directly above the counter it accompanies. Insertion is positional
+    among the id tokens, which keeps it ahead of the trailing `@@<layer>` marker
+    that `Stack` appends after the ids.
+
+    -> (rewritten command log, entries, {incorrect name: count})
+    """
+    state, entries = read_vsav(path)
+    toks = split_commands(state)
+
+    # Pass 1: find the pieces to twin and allocate ids above everything in use.
+    next_id = 0
+    plan = {}                      # token index -> (new command bytes, old id, new id)
+    for ds, cs, end in toks:
+        content = state[cs:end].decode('utf-8', 'replace')
+        f = command_fields(content)
+        if f and f[0].isdigit():
+            next_id = max(next_id, int(f[0]))
+    next_id += 1
+
+    fixed = {}
+    for idx, (ds, cs, end) in enumerate(toks):
+        content = state[cs:end].decode('utf-8', 'replace')
+        f = command_fields(content)
+        if not f:
+            continue
+        pid, ptype, pstate = f
+        basic = ptype.rpartition('\t')[2]
+        if not basic.startswith('piece;'):
+            continue
+        name = basic.split(';')[4] if basic.count(';') >= 4 else ''
+        pair = pairs.get(name)
+        if pair is None:
+            continue
+        bs = pstate.rpartition('\t')[2].split(';')
+        if basic != pair['basic'] or len(bs) < 4 or bs[3] != pair['gpid']:
+            continue
+        if ptype.count(pair['emb2']) != 1 or ptype.count(pair['basic']) != 1:
+            raise SystemExit('%s: cannot locate a unique flip/basic trait to '
+                             'splice; refusing' % name)
+
+        new_id = str(next_id)
+        next_id += 1
+        new_type = ptype.replace(pair['emb2'], pair['good_emb2']) \
+                        .replace(pair['basic'], pair['good_basic'])
+        bs[3] = pair['good_gpid']
+        new_basic_state = ';'.join(bs)
+        new_state = pstate[:pstate.rindex('\t') + 1] + new_basic_state \
+            if '\t' in pstate else new_basic_state
+        # A piece's UniqueID property mirrors its own id; keep that true.
+        marker = 'UniqueID;' + pid
+        if marker in new_state:
+            new_state = new_state.replace(marker, 'UniqueID;' + new_id, 1)
+        cmd = '+/%s/%s/%s' % (new_id, new_type, new_state)
+        plan[idx] = (cmd.encode('utf-8'), pid, new_id)
+        fixed[name] = fixed.get(name, 0) + 1
+
+    added = {old: new for _, old, new in plan.values()}
+
+    # Pass 2: rebuild, emitting each twin after its original and threading the
+    # new ids into the stacks that hold them.
+    parts, first = [], True
+    for idx, (ds, cs, end) in enumerate(toks):
+        content = state[cs:end]
+        text = content.decode('utf-8', 'replace')
+        f = command_fields(text)
+        if f and added:
+            inner = f[1].rpartition('\t')[2]
+            if inner.startswith('stack'):
+                content = _thread_into_stack(text, added).encode('utf-8')
+        parts.append(content if first else state[ds:cs] + content)
+        first = False
+        if idx in plan:
+            parts.append(bytes([CMD_DELIM]) + plan[idx][0])
+    return b''.join(parts), entries, fixed
+
+
+def _thread_into_stack(text, added):
+    """Insert each new id directly after the id it accompanies, in a stack state."""
+    pid, ptype, pstate = command_fields(text)
+    head, sep, tail = pstate.rpartition('\t')
+    body = tail if sep else pstate
+    tokens = body.split(';')
+    out = []
+    for t in tokens:
+        out.append(t)
+        if t in added:
+            out.append(added[t])
+    rebuilt = ';'.join(out)
+    return '+/%s/%s/%s' % (pid, ptype, (head + sep + rebuilt) if sep else rebuilt)
+
+
 def main(argv):
     ap = argparse.ArgumentParser(
         description='Replace mis-named counters in a .vsav with their twins.')
@@ -210,6 +323,10 @@ def main(argv):
     ap.add_argument('--pair', metavar='OLD=NEW', action='append', default=[],
                     help='use NEW as the twin of OLD instead of the derived '
                          '" S SUB " name; repeatable')
+    ap.add_argument('--add', action='store_true',
+                    help='ADD each twin alongside the original in the same stack, '
+                         'instead of replacing the original (for the "everything" '
+                         'scenarios, whose force pools hold one of every counter)')
     ap.add_argument('--dry-run', action='store_true',
                     help='report what would change, write nothing')
     args = ap.parse_args(argv)
@@ -233,15 +350,17 @@ def main(argv):
 
     total = 0
     for path in args.saves:
-        plain, entries, fixed = fix(path, pairs)
+        plain, entries, fixed = (add_twins if args.add else fix)(path, pairs)
         n = sum(fixed.values())
         total += n
-        print('\n%s: %d piece(s)' % (os.path.basename(path), n))
+        print('\n%s: %d piece(s) %s' % (os.path.basename(path), n,
+                                        'to add' if args.add else 'to rewrite'))
         for name in sorted(fixed):
             p = pairs[name]
             cross = '' if p['from'] == p['to'] else '  [%s -> %s]' % (p['from'], p['to'])
-            print('  %-22s -> %-24s x%d%s'
-                  % (name, p['good_name'], fixed[name], cross))
+            arrow = '+' if args.add else '->'
+            print('  %-22s %s %-24s x%d%s'
+                  % (name, arrow, p['good_name'], fixed[name], cross))
         if args.dry_run or not n:
             continue
 
