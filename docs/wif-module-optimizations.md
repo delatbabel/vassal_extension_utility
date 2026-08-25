@@ -18,7 +18,21 @@ a fix to one definition automatically shrinks *every* piece and *every future sa
 
 ---
 
-## Fix 1 — Convert the embedded Place Marker to a reference *(do this first)*
+<a id="fix-1-status"></a>
+## Fix 1 — Convert the embedded Place Marker to a reference — ✅ **DONE (module 2.1.2)**
+
+> **Status: no further module work needed.** Verified against
+> `WiF CE Official Combo ver 2_1_2.vmod` + 27 extensions: there are **zero** `placemark` traits
+> anywhere — both by parsing every piece/prototype definition and by a raw text search for the
+> string `placemark` across all 28 `buildFile.xml` files (0 occurrences). The trait was not
+> converted to a reference, it was **removed outright**, which is better than this fix asked for.
+> `Land6` still exists but now holds only `sendto` ×2 and `return`; the commands the marker used
+> (`dropchicommkr`, `deletechcommkr`) appear nowhere in the module.
+>
+> ⚠️ **But four saved games still carry baked copies, and Refresh Counters cannot clear them** —
+> see [Leftovers in existing saves](#fix-1-leftovers-in-existing-saves) below.
+
+The original analysis, for reference:
 
 **What / where.** There is exactly **one** Place Marker (`placemark`) trait in the whole
 module + extensions, inside prototype **`Land6`**. It is defined with an **embedded** marker
@@ -50,6 +64,47 @@ per‑instance memory each of those pieces holds (`markerSpec` field, `PlaceMark
 
 **Risk.** Very low. One trait, well‑understood, behaviour‑preserving. Verify by placing the
 marker in‑game before and after.
+
+<a id="fix-1-leftovers-in-existing-saves"></a>
+### Leftovers in existing saves — a refresh will *not* remove them
+
+Changing the module does not retroactively shrink pieces already stored in a `.vsav`, and in this
+case **Refresh Counters cannot fix them either**. Four scenarios still carry the embedded blob:
+
+| scenario | pieces carrying it | their bytes | % of save |
+|---|---:|---:|---:|
+| `103-presetup-aif-superdeluxe-nonfif` | 56 | 1 451 331 | 0.69% |
+| `104-presetup-aif-deluxe-nonfif` | 56 | 1 451 331 | 0.84% |
+| `106-presetup-ssw-superdeluxe-nonfif` | 63 | 1 638 883 | 0.75% |
+| `108-presetup-ssw-deluxe-nonfif` | 63 | 1 638 883 | 0.91% |
+
+The stored trait is the embedded form this fix describes —
+`placemark;;58231,0,dropchicommkr;+\/null\/mark\;numcvs…` with `SUBDefaults12`,
+`NavalDefaults12` and `ACFTDefaults12` inlined. Each carrier's type is **~21.6 KB**. The carriers
+are convoy/oiler counters (`CW S CPs Mod`, `FR Co Oilers Mod`, `CH Tanker Mod`), not land units,
+so this is a different Place Marker from the `Land6` one originally found — or the same one after
+it moved.
+
+**Why a refresh does not help.** Tested directly: refreshing `103` against 2.1.2 reported
+*5962 counters collected, 5962 refreshed, 0 warnings* and left all 56 in place, with the
+deobfuscated command log **byte-for-byte the same length** (209 165 110 before and after).
+
+Every one of those pieces has **`map = null`** — it is not on any map, and sits in a stack that is
+likewise off-map. `GameRefresher.getRefreshables()` builds its work list by walking **map
+contents**, so an off-map piece is never collected and never rebuilt. The `DeleteNoMap` option is
+no help either: it only applies to pieces the refresher collected (and VASSAL has it disabled in
+its own dialog over issue 12902).
+
+These are therefore **orphaned pieces** — invisible in play, immune to Refresh Counters, and
+carried in memory and in every save indefinitely. Removing them needs byte-level surgery on the
+save (select the `AddPiece` commands whose innermost BasicPiece state has a `null` map, drop them,
+and let the next refresh rebuild the stacking; dangling stack references are harmless because
+`Stack.setState()` skips ids it cannot resolve).
+
+**Wider note.** Off-map pieces are not confined to those four: `101`, `102` and `120` carry **529**
+each with no Place Marker among them, while `105` and `107` have **zero** — which suggests the
+population is avoidable rather than structural. Worth a separate audit before deciding whether to
+delete all off-map pieces or only the provably-stale Place Marker carriers.
 
 ---
 
@@ -141,10 +196,13 @@ offer such a scan as a future tool (it already parses the same trees and piece�
 
 ## Expected combined effect
 
-- **Fix 1** is immediate, safe, and removes a large per‑piece blob from ~2 066 pieces.
-- **Fix 2** is the structural lever: because of quadratic escaping, cutting the median 201
-  traits materially shrinks *every* piece in *both* memory and every future save, and reduces
-  the ~1.7 M live trait objects the engine holds during play.
+- **Fix 1** — ✅ done in module 2.1.2; the trait is gone module-wide. What remains is cleaning the
+  baked copies out of four saved games, which a refresh cannot do (see above).
+- **Fix 2** is the structural lever: because of quadratic escaping, cutting the median trait count
+  materially shrinks *every* piece in *both* memory and every future save, and reduces the live
+  trait objects the engine holds during play. Detailed follow-up:
+  **[wif-fix2-trait-reduction.md](wif-fix2-trait-reduction.md)** (which also corrects the median
+  to **102** traits, not 201).
 - **Fixes 3–4** keep the module from regressing.
 
 None of these changes any game feature; they change *how* the same behaviour is stored. Combined

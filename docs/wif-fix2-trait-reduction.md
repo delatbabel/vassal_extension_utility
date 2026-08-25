@@ -7,7 +7,9 @@ near-duplicate prototypes really buys, where the `mark` constants come from, and
 are dead.
 
 Measured against **`WiF CE Official Combo ver 2_1_2.vmod` + 27 extensions** (6182 piece slots,
-207 prototypes), i.e. *after* the embedded Place Marker removal.
+207 prototypes), i.e. *after* the embedded Place Marker removal
+([Fix 1](wif-module-optimizations.md#fix-1-status), confirmed complete: zero `placemark`
+traits remain module-wide).
 
 ---
 

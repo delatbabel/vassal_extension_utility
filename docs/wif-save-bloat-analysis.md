@@ -68,7 +68,7 @@ saved game:
 | `macro` (Global Key / Trigger) | 655 | **232 075** | ~354× |
 | `mark` (Marker) | — | 191 484 | — |
 | `emb2` (Layer) | 1 389 | 55 092 | ~40× |
-| `placemark` (Place Marker) | **1** | **2 066** | ~2066× |
+| `placemark` (Place Marker) | **1** | **2 066** | ~2066× — *removed in 2.1.2, now 0* |
 | `prototype` (reference) | 4 155 | **0** | baked away |
 
 So one `macro` trait authored once in a shared "defaults" prototype becomes a *fully‑duplicated
@@ -77,6 +77,7 @@ member's "X + Y bytes" observation (piece + unrolled prototype) — confirmed an
 
 ---
 
+<a id="3-cause-2--sequenceencoder-escaping-is-otraits-per-piece"></a>
 ## 3. Cause #2 — SequenceEncoder escaping is **O(traits²)** per piece
 
 A piece's `type` (and `state`) is a nested `SequenceEncoder` structure. `Decorator.getType()`
@@ -132,8 +133,15 @@ The `state` portion is almost pure escaping — the mutable one‑value‑per‑
 
 ## 4. Cause #3 — embedded "Define Marker" Place Markers
 
-The module contains **exactly one** `placemark;` (Place Marker) trait, inside prototype
-**`Land6`**, and it uses an **embedded** marker definition rather than a reference. Its
+> ✅ **Fixed in module 2.1.2.** There are now **zero** `placemark` traits anywhere in the module or
+> its 27 extensions; `Land6` retains only `sendto` ×2 and `return`. The measurements below are
+> from 2.1.1 and are kept as the record of the problem. Four saved games still carry baked copies
+> that **Refresh Counters cannot remove** (the carriers are off-map, so the refresher never
+> collects them) — see
+> [wif-module-optimizations.md → Leftovers in existing saves](wif-module-optimizations.md#fix-1-leftovers-in-existing-saves).
+
+As measured in 2.1.1, the module contained **exactly one** `placemark;` (Place Marker) trait,
+inside prototype **`Land6`**, and it uses an **embedded** marker definition rather than a reference. Its
 `markerSpec` field is a whole serialised piece — `+\/null\/mark\;numcvs… prototype\;SUBDefaults12…`
 — i.e. an entire `AddPiece` command stored inline (and the embedded marker even references
 *further* prototypes).
@@ -159,6 +167,7 @@ there is nothing to remove — which matches the user's own hunt through the mod
 
 ---
 
+<a id="5-cause-4--obfuscation-hex-doubles-the-bytes-and-defeats-compression"></a>
 ## 5. Cause #4 — obfuscation hex‑doubles the bytes (and defeats compression)
 
 VASSAL writes the command log through `ObfuscatingOutputStream` (anti‑cheat only), which XORs
@@ -223,7 +232,7 @@ not pixels.
 |---|---|---|---|
 | §2 Prototype expansion (200 traits/piece) | memory **and** disk | module design | **highest** — attacks the base content and (via §3) the escaping |
 | §3 O(N²) escaping | memory (222 MB string), CPU, disk (~3×) | engine format | high (memory/CPU); high (disk, pre‑ZIP) |
-| §4 Embedded Place Marker (`Land6`) | memory **and** disk | **module — one trait** | high value, near‑zero risk |
+| §4 Embedded Place Marker (`Land6`) | memory **and** disk | **module — one trait** | ✅ done in 2.1.2; leftovers remain in 4 saves |
 | §5 Obfuscate‑before‑zip | disk (~1.8×), memory, CPU | engine | ~2× disk, easy |
 | §6 No dedup | disk | engine format | high, but format change |
 
