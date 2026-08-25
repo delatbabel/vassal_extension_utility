@@ -108,7 +108,12 @@ each with no Place Marker among them, while `105` and `107` have **zero** — wh
 population is avoidable rather than structural. **`tools/remove_offmap_pieces.py` audits this** —
 it reports by default and writes only with `--apply`, and can exclude groups by name. The bulk is
 ownership markers (`US Owned`, `CW Owned`, `MajP Lending Strip`), which look like a deliberate
-off-map pool rather than debris, so review the report before deleting anything.
+off-map pool rather than debris, so review the report before deleting anything. Its `--csv` option
+writes an exact manifest of the pending deletion — one row per piece, with scenario, counter name,
+GPID, defining archive, container and stored position — for review in a spreadsheet. Across the 16
+scenarios that is **3043 pieces in 14 of them** (`105` and `107` have none), spanning 57 distinct
+counters, all of them loose rather than in a stack or deck, and all but 91 defined by the module
+itself.
 
 ---
 

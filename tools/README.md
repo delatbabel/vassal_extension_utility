@@ -385,6 +385,7 @@ unmatchable by GPID, so it needs the Excess Units tool instead.)
 
 ```
 tools/remove_offmap_pieces.py SAVE.vsav [SAVE.vsav...] [--apply] [--no-backup]
+                              [--csv=OUT.csv]
                               [--keep-name=SUBSTR]... [--only-name=SUBSTR]...
                               [--module=MODULE.vmod]
 ```
@@ -414,6 +415,36 @@ tools/remove_offmap_pieces.py data/scenarios/103-*.vsav \
 `--module` attributes each piece to the archive defining its GPID, which shows at
 a glance whether a group comes from an extension the scenario no longer uses —
 the signature of map-swap debris.
+
+### The CSV manifest
+
+`--csv=OUT.csv` writes **one row per piece that a run with `--apply` would
+delete** — the same selection, so the file is an exact manifest of the pending
+deletion rather than a separate report that might drift from it. It honours the
+name filters, and can be combined with `--apply` to record what was removed.
+
+| column | meaning |
+|---|---|
+| `scenario` | save file the piece is in |
+| `piece_name` | counter name (innermost BasicPiece name) |
+| `gpid` | Piece Id, i.e. which definition it came from |
+| `defining_archive` | archive defining that GPID, or `(unmatchable)`; needs `--module` |
+| `container` | `stack`, `deck` or `loose` |
+| `x`, `y` | stored position — off-map pieces keep the coordinates they last had |
+| `piece_id` | the save's own id for the piece, for tracing one row back |
+
+```bash
+tools/remove_offmap_pieces.py $(ls data/scenarios/*.vsav | grep -v -- -backup) \
+    --module="data/…2_1_2.vmod" --csv=data/scenarios/offmap-pieces.csv
+```
+
+Open it in a spreadsheet and pivot on `piece_name` or `defining_archive` to decide
+what is a deliberate off-map pool and what is debris. Feed the conclusion back as
+`--keep-name` / `--only-name` filters, then re-run with `--apply`.
+
+Note the `x`/`y` columns: an off-map piece retains its last coordinates, so a
+cluster sharing a position is a good sign of a group that came off the same board
+— which is what map-swap debris looks like.
 
 Decks are never touched: their contents always carry a real map id (verified —
 279 of 279 deck members in a sample scenario).

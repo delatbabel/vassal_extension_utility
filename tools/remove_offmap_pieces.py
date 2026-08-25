@@ -35,17 +35,23 @@ rebuilds the stacking, though only for stacks that are themselves on a map.
 ## Usage
 
     tools/remove_offmap_pieces.py SAVE.vsav [SAVE.vsav...]
-                                  [--apply] [--no-backup]
-                                  [--keep-name SUBSTR]... [--only-name SUBSTR]...
-                                  [--module MODULE.vmod]
+                                  [--apply] [--no-backup] [--csv=OUT.csv]
+                                  [--keep-name=SUBSTR]... [--only-name=SUBSTR]...
+                                  [--module=MODULE.vmod]
 
 `--keep-name` excludes any piece whose name contains SUBSTR; `--only-name`
 restricts the selection to names containing SUBSTR. Both are repeatable and
 case-insensitive. `--module` additionally attributes each piece to the archive
 that defines its GPID, which shows at a glance whether a group comes from an
 extension that this scenario no longer uses.
+
+`--csv=OUT.csv` writes one row per piece that a run with `--apply` **would**
+delete — the same selection, so the file is an exact manifest of the pending
+deletion. Columns: `scenario, piece_name, gpid, defining_archive, container, x, y,
+piece_id`. It honours the name filters, and can be combined with `--apply` to
+record what was removed.
 """
-import os, re, sys, glob, zipfile
+import csv, os, re, sys, glob, zipfile
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -99,11 +105,15 @@ def main(argv):
         if a.startswith('--keep-name='): keep.append(a.split('=', 1)[1].lower())
         elif a.startswith('--only-name='): only.append(a.split('=', 1)[1].lower())
         elif a.startswith('--module='): module = a.split('=', 1)[1]
+    csv_out = None
+    for a in argv:
+        if a.startswith('--csv='): csv_out = a.split('=', 1)[1]
     saves = [a for a in argv if not a.startswith('--')]
     if not saves:
         raise SystemExit(__doc__.strip().split('## Usage')[1].strip())
 
     owner = gpid_owners(module) if module else {}
+    manifest = []          # rows for --csv: exactly what --apply would delete
     grand = 0
     for path in saves:
         state, entries = read_vsav(path)
@@ -129,11 +139,23 @@ def main(argv):
             if only and not any(o in low for o in only):
                 continue
             gpid = bs.split(';')[3] if bs.count(';') >= 3 else ''
-            key = (name, owner.get(gpid, '(unmatchable)') if module else '',
-                   inside.get(pid, 'loose'))
+            arch = owner.get(gpid, '(unmatchable)') if module else ''
+            where = inside.get(pid, 'loose')
+            key = (name, arch, where)
             rows[key] = rows.get(key, 0) + 1
             drop.add(idx)
             freed += end - cs
+            fields = bs.split(';')
+            manifest.append({
+                'scenario': os.path.basename(path),
+                'piece_name': name,
+                'gpid': gpid,
+                'defining_archive': arch,
+                'container': where,
+                'x': fields[1] if len(fields) > 1 else '',
+                'y': fields[2] if len(fields) > 2 else '',
+                'piece_id': pid,
+            })
 
         print('\n%s: %d off-map piece(s), %d bytes (%.2f%% of the command log)'
               % (os.path.basename(path), len(drop), freed,
@@ -159,6 +181,16 @@ def main(argv):
         write_vsav(path, b''.join(parts), entries)
         print('    wrote %s: %d of %d commands kept'
               % (os.path.basename(path), len(toks) - len(drop), len(toks)))
+
+    if csv_out:
+        cols = ['scenario', 'piece_name', 'gpid', 'defining_archive',
+                'container', 'x', 'y', 'piece_id']
+        with open(csv_out, 'w', newline='', encoding='utf-8') as fh:
+            w = csv.DictWriter(fh, fieldnames=cols)
+            w.writeheader()
+            for row in manifest:
+                w.writerow(row)
+        print('\nwrote %s: %d row(s)' % (csv_out, len(manifest)))
 
     print('\n%d off-map piece(s) across %d file(s)%s'
           % (grand, len(saves),
