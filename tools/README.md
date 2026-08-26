@@ -13,6 +13,7 @@ application and have no dependencies beyond the Python standard library.
 | `remove_ext_counters.py` | `.vsav` | delete every counter belonging to given extensions |
 | `remove_placemark_carriers.py` | `.vsav` | delete off-map pieces carrying a stale embedded Place Marker |
 | `remove_offmap_pieces.py` | `.vsav` | report (and optionally delete) every piece that is on no map |
+| `dedupe_pieces.py` | `.vsav` | reduce duplicated counters to one copy each |
 | `renumber_gpids.py` | `.vmdx` | clear duplicate Piece Ids |
 | `drop_slots.py` | `.vmdx` | delete piece slots by Piece Id |
 
@@ -488,6 +489,43 @@ cluster sharing a position is a good sign of a group that came off the same boar
 
 Decks are never touched: their contents always carry a real map id (verified —
 279 of 279 deck members in a sample scenario).
+
+## dedupe_pieces.py — reduce duplicated counters to one copy
+
+```
+tools/dedupe_pieces.py MODULE.vmod SAVE.vsav [SAVE.vsav...]
+                       (--list | --extension=NAME[,NAME...])
+                       [--dry-run] [--no-backup]
+```
+
+For a scenario whose force pools are meant to hold exactly one of every counter
+but picked up a second copy of some — typically an earlier edit adding a counter
+that was already present under a different force-pool column.
+
+A duplicate here means two or more `AddPiece` commands whose innermost BasicPiece
+state carries the **same GPID**, i.e. two pieces built from the same palette slot.
+The first in log order is kept and the rest dropped; the run prints the
+coordinates of both so you can see which survived.
+
+### `--extension` is required, and that is the point
+
+Plenty of counters are legitimately present many times. In the WiF "everything"
+scenarios `US Entry Option` appears **17** times (one per entry slot),
+`MajP Lending Strip` and `Impulse Weather` 10 each, and `Naval Units In Port
+Details` 6 (one per TF-and-port map). Deduplicating blindly would destroy them.
+
+So the tool refuses to run without being told which extensions to consider. Use
+`--list` first to see what is duplicated and which archive defines it, thenname the
+extensions you actually mean:
+
+```bash
+tools/dedupe_pieces.py "data/…2_1_2.vmod" data/scenarios/003-*.vsav --list
+tools/dedupe_pieces.py "data/…2_1_2.vmod" data/scenarios/003-*.vsav \
+    --extension=09-ClassicShips
+```
+
+Stacks are left with dangling member ids, which `Stack.setState()` skips; a later
+Refresh Counters rebuilds the stacking.
 
 ## Checking the result
 

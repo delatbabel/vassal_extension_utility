@@ -30,7 +30,7 @@
           profile, which clears this). Without an engine the runner is left out and
           the application reports Refresh Counters as unavailable.
         -->
-        <refresh.runner.exclude>org/vassalengine/extutil/refresh/RefreshRunner.java</refresh.runner.exclude>
+        <refresh.runner.exclude>org/vassalengine/extutil/refresh/*.java</refresh.runner.exclude>
     </properties>
 
     <dependencies>

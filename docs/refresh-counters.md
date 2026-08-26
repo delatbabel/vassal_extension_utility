@@ -71,6 +71,45 @@ line suppresses the "enter save comments" dialog, exactly as the engine's own
 batch refresh (`GameState.saveGameRefresh`) does. AWT threads keep the JVM alive,
 so the runner must `System.exit()`.
 
+## Adding counters — `AddCountersRunner`
+
+A second engine-backed runner in the same package, for putting counters *into* a
+saved game. It exists because byte-level surgery cannot do this in general.
+
+Copying an existing piece and patching a trait or two works when the new counter's
+definition differs from an existing one in a known, small way — that is what
+`tools/fix_sif_subs.py --add` does for the SiF twins. But adding an **arbitrary**
+counter needs its definition **expanded**, with prototypes inlined exactly as
+VASSAL inlines them, and the only thing that reliably gets that right is VASSAL.
+So the runner asks the engine to build each piece the same way dragging one off
+the palette does:
+
+```java
+GamePiece p = PieceCloner.getInstance().clonePiece(slot.getPiece());
+p.setProperty(Properties.PIECE_ID, slot.getGpId());
+map.placeOrMerge(p, point);
+```
+
+`placeOrMerge` is what supplies the stacking: dropped at the coordinates of an
+existing counter, the new piece merges into that counter's stack — which is how
+"put it in the same stack as X" is expressed. It also registers the piece with
+`GameState`, which is what makes it part of the save.
+
+The job file names the module, the save, and one `add=<gpid>\t<map>\t<x>\t<y>`
+line per counter; resolving *which* stack a counter belongs in is left to the
+caller, since that is a judgement about names rather than something the engine
+knows.
+
+**Look up maps with `getAllDescendantComponentsOf(Map.class)`, not
+`getComponentsOf`.** The latter returns only the module's direct children: in the
+WiF module it finds 7 maps where there are 51, because the force-pool maps are
+contributed by extensions and grafted deeper into the tree. Every placement fails
+with "no map named …" if you get this wrong.
+
+The scenario's extension list and board layouts are captured and reapplied exactly
+as in `RefreshRunner` — saving rebuilds both from whatever is loaded, so adding a
+counter from a previously-unused extension correctly extends the list.
+
 ## Refusing to run against a module that is not there
 
 `DataArchive` accepts a path that does not exist, and `GameModule.init()` then
