@@ -247,9 +247,61 @@ public final class GameLibrary {
     }
 
     private static String encode(String s) {
-        // Project names are path segments; only a few characters need escaping and
-        // URLEncoder would turn spaces into '+', which is wrong in a path.
-        return s.replace(" ", "%20").replace("#", "%23").replace("?", "%3F");
+        // Project names are a single path segment, so '/' must go too. Everything
+        // else is handled by encodeUrlPath() when the request is opened.
+        return s.replace(" ", "%20").replace("#", "%23")
+                .replace("?", "%3F").replace("/", "%2F");
+    }
+
+    /** Characters legal unescaped in a URL path (RFC 3986 pchar, plus '/'). */
+    private static final String PATH_SAFE =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        + "-._~!$&'()*+,;=:@/";
+
+    /**
+     * Percent-encodes the path of {@code url}, leaving scheme and host alone.
+     *
+     * <p>Needed because the library's download URLs embed the filename verbatim,
+     * and module filenames routinely contain spaces —
+     * {@code .../WiF CE Official Combo ver 2_1_1.vmod}. {@code HttpURLConnection}
+     * passes a raw space straight into the request line, and the object store
+     * answers <b>HTTP 400</b>. Extensions downloaded fine only because their
+     * filenames happen to have no spaces, which is what made this look like a
+     * module-specific fault.</p>
+     *
+     * <p>An existing {@code %XX} escape is copied through untouched, so a URL that
+     * is already encoded is left alone rather than double-encoded — that would
+     * turn {@code %20} into {@code %2520} and 400 all over again.</p>
+     */
+    static String encodeUrlPath(String url) {
+        final int scheme = url.indexOf("://");
+        if (scheme < 0) return url;
+        final int pathStart = url.indexOf('/', scheme + 3);
+        if (pathStart < 0) return url;
+
+        final String path = url.substring(pathStart);
+        final StringBuilder sb = new StringBuilder(url.substring(0, pathStart));
+        for (int i = 0; i < path.length(); i++) {
+            final char c = path.charAt(i);
+            if (c == '%' && i + 2 < path.length()
+                    && isHex(path.charAt(i + 1)) && isHex(path.charAt(i + 2))) {
+                sb.append(path, i, i + 3);          // already escaped
+                i += 2;
+            }
+            else if (PATH_SAFE.indexOf(c) >= 0) {
+                sb.append(c);
+            }
+            else {
+                for (byte b : String.valueOf(c).getBytes(StandardCharsets.UTF_8)) {
+                    sb.append('%').append(String.format("%02X", b & 0xFF));
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    private static boolean isHex(char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
     }
 
     private String getText(String url) throws IOException {
@@ -265,7 +317,8 @@ public final class GameLibrary {
     }
 
     private static HttpURLConnection open(String url, String accept) throws IOException {
-        final HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        final HttpURLConnection c =
+                (HttpURLConnection) new URL(encodeUrlPath(url)).openConnection();
         c.setConnectTimeout(TIMEOUT_MS);
         c.setReadTimeout(TIMEOUT_MS);
         c.setInstanceFollowRedirects(true);
