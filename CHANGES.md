@@ -1,9 +1,36 @@
 # Changes
 
-## Unreleased
+## 1.0.13
 
-Refresh Counters now corrects each scenario's extension list, and the
-command-line tools gain three repairs the application does not offer.
+Adds batch Refresh Counters for saved games outside the module, downloading a
+module and its extensions from the game library, and a set of command-line
+repairs for saved games and extensions.
+
+### Added
+
+- **Refresh Counters in Saved Games.** **Tools → Refresh Counters in Saved Games…** runs VASSAL's own *Refresh Counters* over any number of `.vsav` files against the module in the left panel — the batch equivalent of the engine's tool, for saved games that live outside the module. Select individual files or a whole folder; the same options dialog VASSAL shows is presented, and each scenario is copied to `<name>-backup.vsav` (never overwriting an earlier backup) before being rewritten in place.
+
+  The refresh is **not reimplemented**: the engine's own `GameRefresher` does the work, unmodified, in a subprocess — `GameModule.init()` may be called only once per JVM, so it cannot run in the utility's own process. Each save's recorded **module version is updated** to the loaded module's, and two things the engine would otherwise rebuild from whatever is loaded are corrected: its record of **which extensions it was saved with**, and its **board layouts** — the engine writes one for every map that exists, so a scenario would otherwise carry layouts for maps belonging to extensions it never listed, and log "No such map" for anyone loading it with only its own extensions.
+
+  Before starting, the tool checks that every extension any selected scenario names is active, and that the module's Piece Ids are sound — VASSAL refuses to refresh anything when two components share a Piece Id, but reports it only as *"module was saved with older vassal version"*. The utility names the colliding components instead, and stops before touching a file. See [docs/refresh-counters.md](docs/refresh-counters.md).
+
+  The runner links against the VASSAL engine, so it is compiled only when the build is pointed at one (`make jar` finds an installed VASSAL automatically). Built without it, the menu item says so; the engine is never bundled, so the tool always drives the VASSAL the user has installed.
+
+- **Download a module and its extensions from the game library.** **File → Download Module from Library…** takes a library page URL (or bare project name), asks where to put things, and fetches the module plus the newest copy of each extension into a correctly-named `<module>_ext` folder. Point it at a saved game instead and only the extensions that game names are fetched; any it names that the library does not publish are listed rather than silently skipped.
+
+  "Newest" is decided **per file, not per release**, because a release is a batch upload and one extension can appear in several — in the WiF project `23-DoD-III.vmdx` is in releases 2.1.3, 2.1.2 and 2.1.1 while twenty-two others only ever appeared in 2.1.1, so taking the newest release alone would fetch two extensions and miss twenty-two. Where a project publishes more than one `.vmod` the dialog asks which, rather than guessing. Downloads are written to a temporary file, checked against the library's SHA-256 and then moved into place, so a failure or a cancel never leaves a truncated module.
+
+  JSON is read by a small built-in parser, so the application gains no new dependency and still builds offline.
+
+- **Add counters to a saved game** (`refresh/AddCountersRunner`). Byte-level editing can copy an existing piece and patch a trait or two, but an arbitrary counter needs its definition expanded with prototypes inlined exactly as VASSAL inlines them — so the engine builds each piece the way dragging one off the palette does, and drops it at an existing counter's coordinates so it merges into that counter's stack.
+
+- **`tools/remove_placemark_carriers.py`** — deletes off-map pieces still carrying the embedded Place Marker that the WiF module dropped in 2.1.2. Refresh Counters cannot clear these: every carrier is on no map, and the engine builds its refresh list by walking map contents, so an off-map piece is never collected and never rebuilt.
+
+- **`tools/remove_offmap_pieces.py`** — reports, and with `--apply` deletes, every piece that is on no map. Off-map does not by itself mean unwanted, so it reports by default; `--csv` writes an exact manifest of the pending deletion (scenario, counter, Piece Id, defining archive, container, position) for review in a spreadsheet, and `--keep-name` / `--only-name` let the decision be made per counter name.
+
+- **`tools/dedupe_pieces.py`** — reduces counters present more than once to a single copy. `--extension` is required rather than optional: plenty of counters legitimately appear many times, so deduplicating blindly would destroy them.
+
+- **`tools/fix_sif_subs.py --add`** — keeps the original counter and adds its twin into the same stack, rather than replacing it, for scenarios whose force pools are meant to hold one copy of every counter.
 
 ### Changed
 
@@ -11,35 +38,15 @@ command-line tools gain three repairs the application does not offer.
 
   The rule is **additive only**. A scenario's dependencies cannot be inferred from its counters alone — an extension supplying only boards or charts has no piece definitions at all — so nothing is ever pruned; dropping a dependency is a deliberate act (`tools/remove_ext_counters.py --drop-listing`). See [docs/refresh-counters.md](docs/refresh-counters.md).
 
-### Added
-
-- **`tools/remove_ext_counters.py`** — deletes every counter belonging to given extensions from a saved game. For a scenario that picked up counters from an extension it was never meant to be played with: the pieces match their definitions perfectly, so Refresh Counters cannot help and they are not "excess" either. `--drop-listing` also removes the scenario's `EXT` registration for those extensions.
-- **`tools/drop_slots.py`** — deletes piece slots from an extension by Piece Id, for clearing a component duplicated across two archives. Removes the enclosing `ExtensionElement` when a deletion would leave it empty, which would otherwise abort every module launch with a `NullPointerException`. Can bump the extension version in both places VASSAL keeps it.
-- **`tools/fix_sif_subs.py --slots EXT.vmdx`** (repeatable) — pools counter definitions from further archives, so the two halves of a pair may live in different extensions. It also recognises a second naming shape: as well as `CW SUB Amphion` → `CW S SUB Amphion`, names that *end* in the type, such as `CW T CA SUB1` → `CW T CA S SUB1`.
-
 ### Fixed
 
-- **`tools/renumber_gpids.py` no longer refuses a slot whose definition omits its own Piece Id.** Some slots carry an empty field where the id would sit, because `PieceSlot.getPiece()` stamps the attribute onto the piece at creation, so the copy in the definition never mattered. The script required exactly two occurrences and gave up on such a slot; it now accepts the attribute plus *at most* one copy in the definition, still refusing if the number turns up anywhere else, and reports which slots were in that state.
-
-## 1.0.13
-
-Adds batch Refresh Counters for saved games outside the module.
-
-### Added
-
-- **Refresh Counters in Saved Games.** **Tools → Refresh Counters in Saved Games…** runs VASSAL's own *Refresh Counters* over any number of `.vsav` files against the module in the left panel — the batch equivalent of the engine's tool, for saved games that live outside the module. Select individual files or a whole folder; the same options dialog VASSAL shows is presented, and each scenario is copied to `<name>-backup.vsav` (never overwriting an earlier backup) before being rewritten in place.
-
-  The refresh is **not reimplemented**: the engine's own `GameRefresher` does the work, unmodified, in a subprocess — `GameModule.init()` may be called only once per JVM, so it cannot run in the utility's own process. Each save's recorded **module version is updated** to the loaded module's, while two things the engine would otherwise rebuild from whatever is loaded are put back: its record of **which extensions it was saved with**, rather than being widened to every extension the refresh had to load, and its **board layouts** — the engine writes one for every map that exists, so a scenario would otherwise come away carrying layouts for maps belonging to extensions it never listed, and log "No such map" for anyone loading it with only its own extensions.
-
-  Before starting, the tool checks that every extension any selected scenario names is active, and that the module's Piece Ids are sound — VASSAL refuses to refresh anything when two components share a Piece Id, but reports it only as *"module was saved with older vassal version"*. The utility names the colliding components instead, and stops before touching a file. See [docs/refresh-counters.md](docs/refresh-counters.md).
-
-  The runner links against the VASSAL engine, so it is compiled only when the build is pointed at one (`make jar` finds an installed VASSAL automatically). Built without it, the menu item says so; the engine is never bundled, so the tool always drives the VASSAL the user has installed.
-
-### Fixed
+- **Downloading a module whose filename contains spaces failed with HTTP 400.** The library embeds the filename verbatim in the download URL, so the module's URL carried literal spaces; `HttpURLConnection` passes those into the request line and the object store rejects it. Extensions were unaffected only because their filenames happen to have no spaces, which made the fault look module-specific. Request paths are now percent-encoded, leaving any existing `%XX` escape untouched so an already-encoded URL is not double-encoded.
 
 - **Refresh Counters refuses to run against a module that is not there.** `DataArchive` accepts a path that does not exist, and `GameModule.init()` then builds an empty *"Unnamed module v0.0"* with no piece definitions rather than reporting a problem. Every check downstream passes on such a module — the Piece Id check included — and the refresh then matches each piece against nothing, which does not fail: it strips every scenario it is pointed at. A mistyped or since-deleted module path was enough to reach it.
 
   The module file is now required to exist and be readable before the engine is started, and the module it builds is required to contain at least one piece definition afterwards (a build that fails partway leaves the same empty shell). Either way out stops the run before a single file is opened, so no backup is written and no scenario is altered. The count of piece definitions is now reported alongside the module version and extension count, so an implausibly small module is obvious in the log.
+
+- **`tools/renumber_gpids.py` no longer refuses a slot whose definition omits its own Piece Id.** Some slots carry an empty field where the id would sit, because `PieceSlot.getPiece()` stamps the attribute onto the piece at creation, so the copy in the definition never mattered. The script required exactly two occurrences and gave up on such a slot; it now accepts the attribute plus *at most* one copy in the definition, still refusing if the number turns up anywhere else, and reports which slots were in that state.
 
 ## 1.0.12
 

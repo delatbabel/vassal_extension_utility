@@ -19,7 +19,9 @@ VASSAL's built-in module editor lets you edit a module or extension in isolation
 7. Create a new empty extension for the loaded module (**File → New Extension**) and save it with **File → Save Extension As…**, which defaults to the module's `_ext` directory (creating it if needed).
 8. Remove unused (unreferenced) images from a module or extension (**Tools → Remove Unused Images**), after reviewing and confirming the list — mirroring the VASSAL editor's tool of the same name.
 9. List a module's extensions — active and inactive — and activate/deactivate or open them for editing (**Show Extensions**).
-10. Find and remove "excess" game pieces from a saved game (`.vsav`) — pieces missing from the module's active extensions that otherwise cause *"Image not found"* / *"No such map"* on load and *"Unable to match piece … by name"* on Refresh Counters (**Excess Units…**). The tidied game is written to a new file, leaving the original unchanged.
+10. Download a module and its extensions from the VASSAL game library (**File → Download Module from Library…**) — paste the library page URL, choose a folder, and the newest copy of each extension is fetched into a correctly-named `<module>_ext` folder. Optionally point it at a saved game to fetch only the extensions that game needs.
+11. Run VASSAL's own **Refresh Counters** over any number of external saved games (**Tools → Refresh Counters in Saved Games…**), updating each piece to the module's current definitions. The engine does the work in a subprocess; each save is backed up first.
+12. Find and remove "excess" game pieces from a saved game (`.vsav`) — pieces missing from the module's active extensions that otherwise cause *"Image not found"* / *"No such map"* on load and *"Unable to match piece … by name"* on Refresh Counters (**Excess Units…**). The tidied game is written to a new file, leaving the original unchanged.
 
 ## Building
 
@@ -99,7 +101,7 @@ Packages are written to `tmp/` and bundle their own Java runtime. The Linux `.de
 - [wif-engine-optimizations.md](docs/wif-engine-optimizations.md) — proposed VASSAL engine changes to reduce saved-game memory and disk usage, tiered by effort, with `file:line` citations
 - [docs/wif-fix2-trait-reduction.md](docs/wif-fix2-trait-reduction.md) — deep dive into reducing traits per WiF piece: which automation can move to map-level Global Key Commands, what prototype consolidation really buys, where the Marker constants come from, and the dead traits
 - [docs/refresh-counters.md](docs/refresh-counters.md) — running VASSAL's own Refresh Counters over external saved games: why the engine runs in a subprocess, how it is bootstrapped, what must be preserved in each save, and why "module was saved with older vassal version" really means duplicate Piece Ids
-- [tools/README.md](tools/README.md) — command-line scripts for editing VASSAL files outside the GUI: swapping a map layout between `.vsav` files, translating the pieces that stood on a board which moved, swapping mis-named duplicate counters for their correct twins, and clearing an extension's duplicate Piece Ids (which block Refresh Counters)
+- [tools/README.md](tools/README.md) — command-line scripts for editing VASSAL files outside the GUI: swapping a map layout between saves, translating pieces off a board that moved, swapping or adding mis-named counters' correct twins, clearing an extension's duplicate Piece Ids, deleting slots or whole extensions' worth of counters, reducing duplicated counters, and auditing pieces that are on no map
 - [AGENTS.md](AGENTS.md) — architecture and developer guide (also symlinked as `CLAUDE.md`)
 
 ## Changelog
