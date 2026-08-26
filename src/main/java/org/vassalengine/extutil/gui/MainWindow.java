@@ -180,6 +180,11 @@ public class MainWindow extends JFrame {
         quit.setAccelerator(KeyStroke.getKeyStroke("ctrl Q"));
         quit.addActionListener(e -> { if (confirmUnsavedChanges()) System.exit(0); });
 
+        JMenuItem downloadModule = new JMenuItem("Download Module from Library…");
+        downloadModule.addActionListener(e -> downloadFromLibrary());
+
+        fileMenu.add(downloadModule);
+        fileMenu.addSeparator();
         fileMenu.add(openMod);
         fileMenu.add(openExt);
         fileMenu.addSeparator();
@@ -2625,6 +2630,21 @@ public class MainWindow extends JFrame {
         JOptionPane.showMessageDialog(this, sb.toString(), "Refresh Counters",
                 notes.length() > 0 ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE);
         status("Refresh Counters: " + results.size() + " scenario(s) refreshed.");
+    }
+
+    /**
+     * Downloads a module and its extensions from the VASSAL game library.
+     * See {@link DownloadModuleDialog} for the flow; everything it needs is
+     * decided in the dialog, so this only supplies a sensible starting folder and
+     * reports the outcome.
+     */
+    private void downloadFromLibrary() {
+        final VassalArchive loaded = leftPanel.getArchive();
+        File start = loaded != null && loaded.getFile() != null
+                ? loaded.getFile().getAbsoluteFile().getParentFile()
+                : new File(System.getProperty("user.home"));
+        final String result = new DownloadModuleDialog(this).run(start);
+        if (result != null) status(result);
     }
 
     private void status(String msg) {
