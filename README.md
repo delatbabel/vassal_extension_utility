@@ -104,6 +104,16 @@ Packages are written to `tmp/` and bundle their own Java runtime. The Linux `.de
 - [tools/README.md](tools/README.md) — command-line scripts for editing VASSAL files outside the GUI: swapping a map layout between saves, translating pieces off a board that moved, swapping or adding mis-named counters' correct twins, clearing an extension's duplicate Piece Ids, deleting slots or whole extensions' worth of counters, reducing duplicated counters, and auditing pieces that are on no map
 - [AGENTS.md](AGENTS.md) — architecture and developer guide (also symlinked as `CLAUDE.md`)
 
+## Logs
+
+Both live in `~/.vassal-extension-utility/`:
+
+- `extension-utility.log` — the application log (rolling, 4 MB × 4).
+- `refresh-counters.log` — the full transcript of the last **Refresh Counters**
+  run, including everything the VASSAL engine itself printed. This is the file to
+  look at if a refresh does not do what you expected; the dialog that closes each
+  run names its path.
+
 ## Changelog
 
 - [CHANGES.md](CHANGES.md) — release-by-release history of changes

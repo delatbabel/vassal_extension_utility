@@ -110,11 +110,66 @@ public final class VassalInstallation {
                 && f.getName().equalsIgnoreCase(ENGINE_JAR);
     }
 
-    /** The {@code java} launcher of the JVM running this utility. */
+    /**
+     * A {@code java} launcher able to run the Refresh Counters subprocess.
+     *
+     * <p>Not simply {@code java.home/bin/java}: when this utility is installed
+     * from one of its own packages, that file <b>does not exist</b>. {@code
+     * jpackage} builds the bundled runtime with {@code --strip-native-commands},
+     * so the runtime has no {@code bin} directory at all — only {@code conf},
+     * {@code legal}, {@code lib} and {@code release}. Taking {@code java.home}
+     * on faith made {@code ProcessBuilder.start()} fail with "Cannot run
+     * program", which surfaced as <i>"No scenarios were refreshed"</i> with
+     * nothing anywhere to say why.</p>
+     *
+     * <p>Resolved in this order, first hit wins: the JVM running this utility
+     * (right for {@code java -jar} and {@code mvn exec:java}), {@code
+     * JAVA_HOME}, {@code PATH} — which is what VASSAL's own launcher script
+     * uses — and finally the conventional JVM directories, newest name first.</p>
+     *
+     * @return an executable launcher, or {@code null} if none could be found
+     */
     public static File javaExecutable() {
-        final File bin = new File(System.getProperty("java.home"), "bin");
-        final File exe = new File(bin, "java.exe");
-        return exe.isFile() ? exe : new File(bin, "java");
+        final String exe = System.getProperty("os.name", "").toLowerCase().contains("win")
+                ? "java.exe" : "java";
+
+        final File own = launcher(System.getProperty("java.home"), exe);
+        if (own != null) return own;
+
+        final File fromEnv = launcher(System.getenv("JAVA_HOME"), exe);
+        if (fromEnv != null) return fromEnv;
+
+        final String path = System.getenv("PATH");
+        if (path != null) {
+            for (String dir : path.split(File.pathSeparator)) {
+                if (dir.isEmpty()) continue;
+                final File f = new File(dir, exe);
+                if (f.isFile() && f.canExecute()) return f;
+            }
+        }
+
+        for (String base : new String[]{"/usr/lib/jvm", "/usr/java", "/Library/Java/JavaVirtualMachines"}) {
+            final File[] dirs = new File(base).listFiles(File::isDirectory);
+            if (dirs == null) continue;
+            java.util.Arrays.sort(dirs, java.util.Comparator.comparing(File::getName).reversed());
+            for (File d : dirs) {
+                final File f = launcher(d.getPath(), exe);
+                if (f != null) return f;
+                final File macOs = launcher(new File(d, "Contents/Home").getPath(), exe);
+                if (macOs != null) return macOs;
+            }
+        }
+
+        log.warn("No java launcher found: java.home={}, JAVA_HOME={}",
+                System.getProperty("java.home"), System.getenv("JAVA_HOME"));
+        return null;
+    }
+
+    /** {@code <javaHome>/bin/<exe>} when that is an executable file, else null. */
+    private static File launcher(String javaHome, String exe) {
+        if (javaHome == null || javaHome.isEmpty()) return null;
+        final File f = new File(new File(javaHome, "bin"), exe);
+        return f.isFile() && f.canExecute() ? f : null;
     }
 
     // -----------------------------------------------------------------------

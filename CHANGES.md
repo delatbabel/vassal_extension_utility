@@ -1,5 +1,25 @@
 # Changes
 
+## 1.0.14
+
+Fixes Refresh Counters in an installed build, where it could not start the engine
+at all, and gives the utility a log file that can be found.
+
+### Fixed
+
+- **Refresh Counters did nothing in a build installed from a package, reporting only "No scenarios were refreshed".** The engine subprocess was launched with `java.home/bin/java`, and in an installed build that file does not exist: `jpackage` builds the runtime it bundles with `--strip-native-commands`, so the runtime holds only `conf`, `legal`, `lib` and `release` — there is no `bin` directory. `ProcessBuilder.start()` therefore threw before the engine was ever reached.
+
+  A launcher is now resolved by searching, first hit wins: the JVM running the utility (right for `java -jar` and `mvn exec:java`), `JAVA_HOME`, each `PATH` entry — which is how VASSAL's own launcher script finds Java — and finally the conventional JVM directories, macOS's `Contents/Home` layout included. Each candidate must be an executable file. If none is found the run is refused up front with a dialog saying what is needed, instead of failing invisibly.
+
+- **A failure in the background half of Refresh Counters was discarded.** `SwingWorker` holds whatever `doInBackground()` threw until someone calls `get()`, and nothing did, so the exception above left `results`, `blocked` and `fatal` all empty — which is indistinguishable from a run that simply found nothing to do, and produced exactly that message. The outcome is now collected and reported. A run that yields no `OK`, `FAIL`, `BLOCKED` or `FATAL` also reports the subprocess **exit code** and quotes its **last dozen lines of output**, so a launcher that is not there, a JVM too old for the engine's class files, or a process killed outright each say so.
+
+- **"See the log for details" named a log that did not exist.** Logging went only to a console appender, and a utility started from a desktop entry or an installed package has no console attached. There are now two files, both in `~/.vassal-extension-utility/`:
+
+  - `extension-utility.log` — the application log, rolling at 4 MB × 4.
+  - `refresh-counters.log` — the full transcript of the last Refresh Counters run: everything the subprocess printed, engine output included, flushed line by line so a run still in progress can be read, with the exact command line and job file at the top.
+
+  Every Refresh Counters dialog — success, blocked, failed, or nothing-refreshed — names the transcript's path.
+
 ## 1.0.13
 
 Adds batch Refresh Counters for saved games outside the module, downloading a

@@ -1,11 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Two appenders, because either one alone leaves a user stuck. The console is
+  where output goes when the utility is started from a terminal; the file is the
+  only place it can go when it is started from a desktop entry or one of its own
+  packages, which have no console attached. Dialogs that tell the user to "check
+  the log" name this file's path, so it has to exist wherever the app came from.
+-->
 <configuration>
+    <property name="LOG_DIR" value="${user.home}/.vassal-extension-utility"/>
+
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/extension-utility.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/extension-utility.%i.log</fileNamePattern>
+            <minIndex>1</minIndex>
+            <maxIndex>3</maxIndex>
+        </rollingPolicy>
+        <triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy">
+            <maxFileSize>4MB</maxFileSize>
+        </triggeringPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
     </root>
 </configuration>

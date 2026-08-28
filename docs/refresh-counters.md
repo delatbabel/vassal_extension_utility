@@ -51,6 +51,35 @@ jar's `images/` folder can precede the engine's on the classpath, and
 `IllegalStateException: Icon Family eye not found`. VASSAL's own source flags this
 hazard as bug 9670.
 
+### Finding a `java` to run it with
+
+The subprocess needs a launcher, and **this application's own `java.home` is not
+reliably one**. `jpackage` builds the runtime it bundles with
+`--strip-native-commands`, so a utility installed from its own `.deb`/`.rpm`/`.exe`
+package has a runtime containing only `conf`, `legal`, `lib` and `release` — no
+`bin`, and therefore no `java`:
+
+```
+/opt/vassal-extension-utility/lib/runtime/
+├── conf
+├── legal
+├── lib
+└── release          ← no bin/java anywhere
+```
+
+`VassalInstallation.javaExecutable()` therefore searches, first hit wins:
+
+1. `java.home/bin/java` — correct when started with `java -jar` or `mvn exec:java`;
+2. `JAVA_HOME/bin/java`;
+3. each `PATH` entry — which is how VASSAL's own launcher script finds Java;
+4. the conventional JVM directories (`/usr/lib/jvm`, `/usr/java`,
+   `/Library/Java/JavaVirtualMachines`), newest name first, including macOS's
+   `Contents/Home` layout.
+
+Only an existing, executable file counts at each step. If nothing is found the run
+is refused up front with a dialog naming the requirement, rather than failing at
+`ProcessBuilder.start()`.
+
 ### Engine bootstrap
 
 The minimum that makes a module usable headlessly:
@@ -266,6 +295,33 @@ The runner therefore asks the same question up front, with the same `GpIdChecker
 and if it objects reports **which** slots collide and stops before touching a
 single file. The engine keeps its error list private, so the names are recovered
 by re-walking the slots — advisory detail attached to the engine's own verdict.
+
+## Where the output goes
+
+Two destinations, because the progress dialog is gone the moment the run ends and
+the engine's own output is far too much to show in it:
+
+- **The dialog** shows the `!!` protocol lines as they arrive — one block per
+  scenario, plus whatever the engine wrote to the chatter for that scenario.
+- **`~/.vassal-extension-utility/refresh-counters.log`** gets *everything*, the
+  engine's own stdout and stderr included, flushed line by line so a run that
+  hangs is still readable. It is rewritten by each run, and holds the exact
+  command line and job file at the top. Every closing dialog names this path.
+
+The application's own log goes to `~/.vassal-extension-utility/extension-utility.log`
+(rolling, 4 MB × 4). A console appender alone was no use: started from a desktop
+entry or an installed package there is no console attached, so a dialog saying
+"see the log" pointed at nothing the user could find.
+
+### A run that reports nothing
+
+If the engine produces no `OK`, `FAIL`, `BLOCKED` or `FATAL` at all, the closing
+dialog reports its **exit code** and quotes its **last dozen non-protocol lines**.
+This covers what the protocol cannot describe: a launcher that is not there, a JVM
+too old for the engine's class files, or the process being killed outright.
+`RefreshWorker.done()` also calls `get()`, without which anything thrown in the
+background half was discarded — the failure that motivated all of this looked
+exactly like a successful run that found nothing to do.
 
 ## Progress protocol
 

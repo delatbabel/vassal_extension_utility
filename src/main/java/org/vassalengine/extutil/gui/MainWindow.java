@@ -2328,6 +2328,23 @@ public class MainWindow extends JFrame {
      * dies with "Icon Family eye not found".</p>
      */
     private void runRefresh(File engine, File module, List<File> saves, RefreshOptions options) {
+        // The launcher is resolved before anything else because it is the one
+        // piece of the command that can be missing on a perfectly good install:
+        // jpackage strips the native commands out of the runtime it bundles, so
+        // this application's own java.home has no bin/java in it.
+        final File launcher = VassalInstallation.javaExecutable();
+        if (launcher == null) {
+            JOptionPane.showMessageDialog(this,
+                    "<html>No <tt>java</tt> launcher could be found.<br><br>"
+                    + "Refresh Counters is performed by the VASSAL engine in a separate "
+                    + "process, which needs one. This build of the utility does not carry a "
+                    + "launcher of its own.<br><br>Install a JRE (Java 11 or newer), or set "
+                    + "<tt>JAVA_HOME</tt>, and run this again.</html>",
+                    "No Java Launcher", JOptionPane.ERROR_MESSAGE);
+            status("Refresh Counters: no java launcher found.");
+            return;
+        }
+
         final File job;
         try {
             job = writeJobFile(module, saves, options);
@@ -2357,7 +2374,8 @@ public class MainWindow extends JFrame {
         progress.pack();
         progress.setLocationRelativeTo(this);
 
-        final RefreshWorker worker = new RefreshWorker(engine, job, saves, bar, logArea, progress);
+        final RefreshWorker worker =
+                new RefreshWorker(launcher, engine, job, saves, bar, logArea, progress);
         stop.addActionListener(e -> {
             logArea.append("\nStopping — the scenario in progress will be left as it was.\n");
             worker.cancel(true);
@@ -2394,6 +2412,10 @@ public class MainWindow extends JFrame {
      * engine's own per-piece messages are visible while it works.
      */
     private final class RefreshWorker extends SwingWorker<List<RefreshResult>, String> {
+        /** How much of the engine's own output to quote back if a run yields nothing. */
+        private static final int TAIL_LINES = 12;
+
+        private final File launcher;
         private final File engine;
         private final File job;
         private final List<File> saves;
@@ -2402,14 +2424,18 @@ public class MainWindow extends JFrame {
         private final JDialog dialog;
         private final List<RefreshResult> results = new ArrayList<>();
         private final List<String> blocked = new ArrayList<>();
+        /** The engine's non-protocol output, last {@value #TAIL_LINES} lines. */
+        private final java.util.Deque<String> tail = new java.util.ArrayDeque<>();
         private int strippedTotal;
         private int extensionsAdded;
+        private int exitCode = -1;
         private Process child;
         private String fatal;
+        private java.io.PrintWriter transcript;
 
-        RefreshWorker(File engine, File job, List<File> saves,
+        RefreshWorker(File launcher, File engine, File job, List<File> saves,
                       JProgressBar bar, JTextArea logArea, JDialog dialog) {
-            this.engine = engine; this.job = job; this.saves = saves;
+            this.launcher = launcher; this.engine = engine; this.job = job; this.saves = saves;
             this.bar = bar; this.logArea = logArea; this.dialog = dialog;
         }
 
@@ -2417,7 +2443,7 @@ public class MainWindow extends JFrame {
             final String ourCode = new File(MainWindow.class.getProtectionDomain()
                     .getCodeSource().getLocation().toURI()).getAbsolutePath();
             final List<String> cmd = new ArrayList<>();
-            cmd.add(VassalInstallation.javaExecutable().getAbsolutePath());
+            cmd.add(launcher.getAbsolutePath());
             cmd.add("-Xmx" + refreshHeapMb() + "m");
             cmd.add("-cp");
             cmd.add(engine.getAbsolutePath() + File.pathSeparator + ourCode);
@@ -2425,26 +2451,75 @@ public class MainWindow extends JFrame {
             cmd.add(job.getAbsolutePath());
             log.info("Refresh Counters: {}", String.join(" ", cmd));
 
-            final ProcessBuilder pb = new ProcessBuilder(cmd);
-            pb.redirectErrorStream(true);
-            child = pb.start();
-            try (java.io.BufferedReader in = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(child.getInputStream(),
-                            java.nio.charset.StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = in.readLine()) != null) {
-                    if (isCancelled()) { child.destroy(); break; }
-                    handle(line);
+            // Everything the subprocess says goes to a file as well as to the
+            // dialog. The dialog closes with the run, and the engine's own
+            // output — which is where the reason for a bad run usually is — is
+            // far too much to show; without the file there is nothing left to
+            // look at afterwards.
+            transcript = openTranscript(cmd);
+            try {
+                final ProcessBuilder pb = new ProcessBuilder(cmd);
+                pb.redirectErrorStream(true);
+                child = pb.start();
+                try (java.io.BufferedReader in = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(child.getInputStream(),
+                                java.nio.charset.StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = in.readLine()) != null) {
+                        if (isCancelled()) { child.destroy(); break; }
+                        record(line);
+                        handle(line);
+                    }
                 }
+                exitCode = child.waitFor();
+                record("--- exit code " + exitCode + " ---");
             }
-            child.waitFor();
+            finally {
+                if (transcript != null) transcript.close();
+            }
             return results;
+        }
+
+        /**
+         * Opens the transcript, or returns null if it cannot be written — a run
+         * must not be stopped by a logging problem.
+         */
+        private java.io.PrintWriter openTranscript(List<String> cmd) {
+            final File file = refreshLogFile();
+            try {
+                final File dir = file.getParentFile();
+                if (dir != null) Files.createDirectories(dir.toPath());
+                final java.io.PrintWriter w = new java.io.PrintWriter(
+                        Files.newBufferedWriter(file.toPath(),
+                                java.nio.charset.StandardCharsets.UTF_8));
+                w.println("Refresh Counters — " + new java.util.Date());
+                w.println("command: " + String.join(" ", cmd));
+                w.println("job file: " + job.getAbsolutePath());
+                w.println();
+                w.flush();
+                return w;
+            }
+            catch (IOException e) {
+                log.warn("Could not write the refresh transcript {}", file, e);
+                return null;
+            }
+        }
+
+        /** Copies one line to the transcript, flushing so a hung run is readable. */
+        private void record(String line) {
+            if (transcript == null) return;
+            transcript.println(line);
+            transcript.flush();
         }
 
         /** Interprets one line of runner output. */
         private void handle(String line) {
             if (!line.startsWith("!!")) {
                 log.debug("refresh: {}", line);
+                if (!line.trim().isEmpty()) {
+                    tail.addLast(line);
+                    if (tail.size() > TAIL_LINES) tail.removeFirst();
+                }
                 return;
             }
             final String[] f = line.substring(2).split("\t", -1);
@@ -2535,8 +2610,26 @@ public class MainWindow extends JFrame {
             if (isCancelled()) {
                 status("Refresh Counters stopped after " + results.size() + " scenario(s).");
             }
+            else {
+                // A SwingWorker keeps whatever its background half threw until
+                // someone asks for it, and nobody did: a launcher that was not
+                // there threw here and the user saw only "no scenarios were
+                // refreshed", with no way to find out why.
+                try {
+                    get();
+                }
+                catch (java.util.concurrent.ExecutionException e) {
+                    final Throwable cause = e.getCause() == null ? e : e.getCause();
+                    log.error("Refresh Counters failed", cause);
+                    record("EXCEPTION: " + cause);
+                    if (fatal == null) fatal = cause.toString();
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             reportRefresh(results, blocked, fatal, saves.size(), strippedTotal,
-                    extensionsAdded);
+                    extensionsAdded, exitCode, new ArrayList<>(tail));
         }
     }
 
@@ -2561,10 +2654,22 @@ public class MainWindow extends JFrame {
         return (int) Math.max(2048, Math.min(12288, want));
     }
 
+    /**
+     * Where the last Refresh Counters run's full transcript is kept. Alongside
+     * the application log, in the same folder as the rest of the utility's
+     * settings, so it is findable however the application was started.
+     */
+    static File refreshLogFile() {
+        return new File(new File(System.getProperty("user.home"), ".vassal-extension-utility"),
+                "refresh-counters.log");
+    }
+
     /** Shows what happened, listing anything that did not refresh cleanly. */
     private void reportRefresh(List<RefreshResult> results, List<String> blocked,
                                String fatal, int requested, int strippedBoardPickers,
-                               int extensionsAdded) {
+                               int extensionsAdded, int exitCode, List<String> tail) {
+        final String logNote = "<br><br>The full transcript of this run is in<br><tt>"
+                + RefreshCountersDialog.escape(refreshLogFile().getPath()) + "</tt>";
         if (!blocked.isEmpty()) {
             final int shown = Math.min(blocked.size(), 15);
             final StringBuilder sb = new StringBuilder(
@@ -2581,7 +2686,7 @@ public class MainWindow extends JFrame {
             }
             sb.append("</tt><br>Two components may not share a Piece Id. Give the duplicates "
                     + "distinct Ids in VASSAL's editor (or remove the duplicated components), "
-                    + "then run this again.</html>");
+                    + "then run this again.").append(logNote).append("</html>");
             JOptionPane.showMessageDialog(this, sb.toString(),
                     "Refresh Counters Blocked", JOptionPane.ERROR_MESSAGE);
             status("Refresh Counters blocked: " + blocked.size() + " GPID error(s) in the module.");
@@ -2589,15 +2694,34 @@ public class MainWindow extends JFrame {
         }
         if (fatal != null) {
             JOptionPane.showMessageDialog(this,
-                    "The VASSAL engine could not be started:\n\n" + fatal,
+                    "<html>The VASSAL engine could not be started:<br><br><tt>"
+                    + RefreshCountersDialog.escape(fatal) + "</tt>" + logNote + "</html>",
                     "Refresh Counters Failed", JOptionPane.ERROR_MESSAGE);
             status("Refresh Counters failed: " + fatal);
             return;
         }
         if (results.isEmpty()) {
-            JOptionPane.showMessageDialog(this,
-                    "No scenarios were refreshed. See the log for details.",
+            // Nothing to report on and nothing that named itself as the problem.
+            // Quote the engine back verbatim rather than sending the user off to
+            // look for a log they have no reason to be able to find.
+            final StringBuilder sb = new StringBuilder(
+                    "<html><b>No scenarios were refreshed.</b><br><br>The VASSAL engine ")
+                    .append(exitCode < 0
+                            ? "did not run, or was stopped before it could report anything"
+                            : "exited with code " + exitCode + " without refreshing anything");
+            sb.append('.');
+            if (!tail.isEmpty()) {
+                sb.append("<br><br>Its last output was:<br><tt>");
+                for (String line : tail) {
+                    sb.append(RefreshCountersDialog.escape(line)).append("<br>");
+                }
+                sb.append("</tt>");
+            }
+            sb.append(logNote).append("</html>");
+            JOptionPane.showMessageDialog(this, sb.toString(),
                     "Refresh Counters", JOptionPane.WARNING_MESSAGE);
+            status("Refresh Counters: nothing was refreshed (engine exit code "
+                    + exitCode + "); see " + refreshLogFile().getPath());
             return;
         }
 
@@ -2626,7 +2750,7 @@ public class MainWindow extends JFrame {
         if (notes.length() > 0) {
             sb.append("<br><br>Needing a look:<br><table>").append(notes).append("</table>");
         }
-        sb.append("</html>");
+        sb.append(logNote).append("</html>");
         JOptionPane.showMessageDialog(this, sb.toString(), "Refresh Counters",
                 notes.length() > 0 ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE);
         status("Refresh Counters: " + results.size() + " scenario(s) refreshed.");
