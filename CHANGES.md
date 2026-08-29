@@ -2,8 +2,17 @@
 
 ## 1.0.14
 
-Fixes Refresh Counters in an installed build, where it could not start the engine
-at all, and gives the utility a log file that can be found.
+A repair release for **Refresh Counters**, which could not run at all in 1.0.13
+when the utility had been installed from one of its own packages: it reported
+*"No scenarios were refreshed"* without ever starting the VASSAL engine, and the
+log it told the user to consult did not exist. Everything else in 1.0.13 is
+unaffected, as is running the utility from the jar or from `make run`, where
+Refresh Counters worked throughout.
+
+**Upgrading.** If you installed 1.0.13 from a `.deb`, `.rpm`, `.exe` or `.dmg`,
+install 1.0.14 over it — the fix is in the application, not in your modules,
+extensions or saved games, none of which need changing. Nothing else about the
+utility's behaviour has changed.
 
 ### Fixed
 
@@ -19,6 +28,15 @@ at all, and gives the utility a log file that can be found.
   - `refresh-counters.log` — the full transcript of the last Refresh Counters run: everything the subprocess printed, engine output included, flushed line by line so a run still in progress can be read, with the exact command line and job file at the top.
 
   Every Refresh Counters dialog — success, blocked, failed, or nothing-refreshed — names the transcript's path.
+
+### Verified
+
+Against the WiF CE Official Combo 2.1.3 module and its 27 extensions: with
+`java.home` pointed at a stripped `jpackage` runtime the launcher search resolves
+to the system `java`; four scenarios refreshed from copies (5702, 5315, 6743 and
+5255 counters), each recording the loaded module's version in place of the one it
+was saved with. The packaged build carries the runner classes and the new logging
+configuration.
 
 ## 1.0.13
 
