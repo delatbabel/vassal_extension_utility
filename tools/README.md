@@ -14,6 +14,7 @@ application and have no dependencies beyond the Python standard library.
 | `remove_placemark_carriers.py` | `.vsav` | delete off-map pieces carrying a stale embedded Place Marker |
 | `remove_offmap_pieces.py` | `.vsav` | report (and optionally delete) every piece that is on no map |
 | `dedupe_pieces.py` | `.vsav` | reduce duplicated counters to one copy each |
+| `copy_counter_positions.py` | `.vsav` | give counters the positions they hold in a reference save |
 | `missing_counters.py` | — (read-only) | report an extension's counters that a save does not contain |
 | `renumber_gpids.py` | `.vmdx` | clear duplicate Piece Ids |
 | `drop_slots.py` | `.vmdx` | delete piece slots by Piece Id |
@@ -310,6 +311,55 @@ reports cost one pass together and cannot contradict each other. Columns are
 Per-extension and per-scenario tallies go to stderr as it runs, so a whole
 extension that is absent stands out immediately; the CSV holds the detail.
 
+## copy_counter_positions.py — copy counter positions from a reference save
+
+```
+tools/copy_counter_positions.py --reference REF.vsav --module MODULE.vmod
+                                --anchor "Map Name;X;Y" --jobs DIR
+                                [--gpid-file FILE] [--dry-run] [--no-backup]
+                                SAVE.vsav [SAVE.vsav...]
+```
+
+Counters added in bulk land in one arbitrary spot and then have to be
+distributed. Doing that by hand once, in a reference scenario, and copying the
+result to the rest of the family is far less work than repeating it — and keeps
+the family consistent.
+
+**Two steps, because stacking belongs to the engine.** A counter's position is
+three fields of its BasicPiece state, which this could rewrite directly. Its
+*stacking* is not: a stack is a separate piece whose state lists members by id,
+so re-homing a counter by hand means editing two stacks, getting the `@@<layer>`
+suffix right, and hoping the destination stack exists. Instead each counter is
+**removed** here and **re-placed by VASSAL** at the reference position, where
+`Map.placeOrMerge` merges it into whatever stack is there — exactly what dragging
+it would do. Removal needs no stack surgery either: the id left behind is
+dangling, and `Stack.setState()` silently skips what it cannot resolve.
+
+So the script writes the pruned saves plus one job file per save, and
+[`AddCountersRunner`](../docs/refresh-counters.md#adding-counters--addcountersrunner)
+completes the move:
+
+```bash
+tools/copy_counter_positions.py --reference data/scenarios/101-….vsav \
+    --module "data/…2_1_3.vmod" --anchor "World Maps;207;60" \
+    --gpid-file /tmp/gpids.txt --jobs /tmp/movejobs \
+    data/scenarios/1*.vsav data/scenarios/2*.vsav
+
+for job in /tmp/movejobs/*.job; do
+  java -cp "$VENGINE:$UTILJAR" \
+       org.vassalengine.extutil.refresh.AddCountersRunner "$job"
+done
+```
+
+**What gets moved.** Only counters **at the anchor** with **exactly one copy in
+the reference**. The anchor is what makes this safe against a scenario holding
+other copies of the same counter: one already in its right place is never
+touched. `--gpid-file` narrows it to a named set of Piece Ids and is usually what
+you want — without it, *any* counter at the anchor that the reference also holds
+is moved to the reference's position for it, including ones that were never part
+of the exercise. A counter the reference does not hold stays where it is, which
+is how a target may keep extras the reference never had.
+
 ## renumber_gpids.py — clear duplicate Piece Ids in an extension
 
 ```
@@ -568,6 +618,11 @@ tools/remove_offmap_pieces.py $(ls data/scenarios/*.vsav | grep -v -- -backup) \
 Open it in a spreadsheet and pivot on `piece_name` or `defining_archive` to decide
 what is a deliberate off-map pool and what is debris. Feed the conclusion back as
 `--keep-name` / `--only-name` filters, then re-run with `--apply`.
+
+`dedupe_pieces.py` takes the same idea of an exact list: `--only-gpid` reduces
+just the counters you name, where `--extension` reduces every duplicated counter
+of an extension — including ones deliberately held in multiples, such as the WiF
+CoiF Oilers and Tankers.
 
 Note the `x`/`y` columns: an off-map piece retains its last coordinates, so a
 cluster sharing a position is a good sign of a group that came off the same board

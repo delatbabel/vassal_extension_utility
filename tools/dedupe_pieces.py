@@ -15,6 +15,11 @@ Plenty of counters are legitimately present many times — in the WiF scenarios
 `US Entry Option` appears 17 times (one per entry slot) and `Naval Units In Port
 Details` 6 times (one per TF/port map). Deduplicating blindly would destroy them.
 
+`--only-gpid` names the counters exactly, which is what a hand-checked list of
+duplicates calls for — `--extension` reduces *every* duplicated counter of that
+extension, including ones deliberately held in multiples. The two can be combined;
+either alone is enough to select.
+
 So `--extension` is **required**: only counters defined by the named extensions
 are considered. Pass `--list` first to see what is duplicated and by whom.
 
@@ -27,7 +32,8 @@ rebuilds the stacking.
 ## Usage
 
     tools/dedupe_pieces.py MODULE.vmod SAVE.vsav [SAVE.vsav...]
-                           (--list | --extension=NAME[,NAME...])
+                           (--list | --extension=NAME[,NAME...]
+                                   | --only-gpid=GPID[,GPID...])
                            [--dry-run] [--no-backup]
 """
 import os, re, sys, glob, zipfile
@@ -63,13 +69,17 @@ def slot_index(module_path):
 def main(argv):
     flags = {a for a in argv if a.startswith('--') and '=' not in a}
     wanted = None
+    only_gpid = None
     for a in argv:
         if a.startswith('--extension='):
             wanted = {x.strip() for x in a.split('=', 1)[1].split(',') if x.strip()}
+        elif a.startswith('--only-gpid='):
+            only_gpid = {g.strip() for g in a.split('=', 1)[1].split(',') if g.strip()}
     args = [a for a in argv if not a.startswith('--')]
-    if len(args) < 2 or (wanted is None and '--list' not in flags):
+    if len(args) < 2 or (wanted is None and only_gpid is None and '--list' not in flags):
         raise SystemExit('usage: dedupe_pieces.py MODULE.vmod SAVE.vsav [SAVE.vsav...] '
-                         '(--list | --extension=NAME[,NAME...]) [--dry-run] [--no-backup]')
+                         '(--list | --extension=NAME[,NAME...] | --only-gpid=GPID[,GPID...]) '
+                         '[--dry-run] [--no-backup]')
     module, saves = args[0], args[1:]
     index = slot_index(module)
 
@@ -112,7 +122,9 @@ def main(argv):
 
         kept = []
         for g, v in dups.items():
-            if v[0][1] not in wanted:
+            if only_gpid is not None and g not in only_gpid:
+                continue
+            if wanted is not None and v[0][1] not in wanted:
                 continue
             for extra in v[1:]:
                 drop.add(extra[0])
