@@ -1,25 +1,52 @@
 # Changes
 
-## 1.0.14
+## 1.0.15
 
-A repair release for two faults that appeared only in an **installed** build, each
-of them invisible in development: **Download Module from Library** could not
-connect at all from the Windows and macOS packages, and **Refresh Counters** could
-not start the VASSAL engine from any package. Both are faults in how the packages
-are built or how the application starts a subprocess — running from the jar or
-from `make run` was unaffected throughout.
+Fixes **Download Module from Library** on Windows and macOS, where it could not
+connect to the library at all. Linux packages were never affected, and nothing
+else changes: this is a packaging fix, with no change to the application's own
+code.
 
-**Upgrading.** Install 1.0.14 over 1.0.13. The fixes are in the application and
-its packaging, not in your modules, extensions or saved games, none of which need
-changing. Nothing else about the utility's behaviour has changed.
+**Upgrading.** Windows and macOS users should install 1.0.15 — 1.0.14 and every
+earlier package for those platforms cannot reach the library. Linux users gain
+nothing over 1.0.14.
 
 ### Fixed
 
-- **Download Module from Library failed on Windows and macOS with an SSL handshake error.** Entering a library URL produced `javax.net.ssl.SSLHandshakeException: (handshake_failure) Received fatal alert: handshake_failure` before anything could be downloaded. The Windows and macOS packages carry a runtime built by `jlink` from an explicit module list, and that list was missing `jdk.crypto.ec` — the SunEC provider. It is loaded as a service, so nothing in the application's bytecode refers to it and `jdeps` cannot detect it as a dependency.
+- **Download Module from Library failed on Windows and macOS with an SSL handshake error.** Entering a library URL produced `javax.net.ssl.SSLHandshakeException: (handshake_failure) Received fatal alert: handshake_failure` a moment after the progress bar appeared, on every URL and every attempt — reinstalling, or switching between the 64-bit and 32-bit builds, made no difference.
 
-  Without it the runtime has no elliptic-curve key agreement at all: no x25519, no secp256r1, leaving only the FFDHE groups, which the library's server does not accept — so the connection was rejected during the handshake, every time, on every URL. The Linux `.deb`/`.rpm` were never affected because `jpackage` builds their runtime itself and includes every JDK module.
+  The Windows and macOS packages carry a runtime built by `jlink` from an explicit module list, and that list was missing `jdk.crypto.ec` — the SunEC provider. It is loaded as a service, so nothing in the application's bytecode refers to it and `jdeps` cannot detect it as a dependency. Without it the runtime has no elliptic-curve key agreement at all: no x25519, no secp256r1, leaving only the FFDHE groups, which the library's server does not accept, so the connection was refused during the handshake. The Linux `.deb`/`.rpm` were never affected because `jpackage` builds their runtime itself and includes every JDK module — which is also why this never appeared in development.
 
-  `jdk.crypto.ec` is now included, along with `jdk.charsets` for the legacy encodings a module's XML declaration may name. Each packaged runtime is checked against the module list as it is built, so an image that cannot make an HTTPS connection fails the build instead of reaching a user.
+  `jdk.crypto.ec` is now included, at no measurable cost in size, along with `jdk.charsets` (about 1 MB) for the legacy encodings a module's XML declaration may name.
+
+### Changed
+
+- **The build verifies the runtime it produced.** `jlink` will produce an image that cannot open an HTTPS connection without complaint, so each linked runtime is now checked against the module list as it is built and the build fails naming what is absent. The runtime rules also depend on a stamp of that list: a linked runtime is a directory, which Make otherwise treats as up to date forever, and a rebuilt package was found repackaging a runtime linked before this fix. See [docs/packaging.md](docs/packaging.md).
+
+### Verified
+
+The handshake failure was reproduced away from Windows, by linking a runtime from
+the module list the packages shipped and fetching the library URL with it: the
+same exception, to the character. With `jdk.crypto.ec` added, the same
+`GameLibrary` code fetches the project (2 module packages, 24 extensions) and
+downloads an extension whose SHA-256 checks out. All three Windows packages were
+rebuilt and confirmed to contain the module.
+
+## 1.0.14
+
+A repair release for **Refresh Counters**, which could not run at all in 1.0.13
+when the utility had been installed from one of its own packages: it reported
+*"No scenarios were refreshed"* without ever starting the VASSAL engine, and the
+log it told the user to consult did not exist. Everything else in 1.0.13 is
+unaffected, as is running the utility from the jar or from `make run`, where
+Refresh Counters worked throughout.
+
+**Upgrading.** If you installed 1.0.13 from a `.deb`, `.rpm`, `.exe` or `.dmg`,
+install 1.0.14 over it — the fix is in the application, not in your modules,
+extensions or saved games, none of which need changing. Nothing else about the
+utility's behaviour has changed.
+
+### Fixed
 
 - **Refresh Counters did nothing in a build installed from a package, reporting only "No scenarios were refreshed".** The engine subprocess was launched with `java.home/bin/java`, and in an installed build that file does not exist: `jpackage` builds the runtime it bundles with `--strip-native-commands`, so the runtime holds only `conf`, `legal`, `lib` and `release` — there is no `bin` directory. `ProcessBuilder.start()` therefore threw before the engine was ever reached.
 
@@ -35,12 +62,6 @@ changing. Nothing else about the utility's behaviour has changed.
   Every Refresh Counters dialog — success, blocked, failed, or nothing-refreshed — names the transcript's path.
 
 ### Verified
-
-The handshake failure was reproduced away from Windows, by linking a runtime from
-the module list the packages shipped and fetching the library URL with it: the
-same exception, to the character. With `jdk.crypto.ec` added, the same code
-fetches the project (2 module packages, 24 extensions) and downloads an extension
-whose SHA-256 checks out.
 
 Against the WiF CE Official Combo 2.1.3 module and its 27 extensions: with
 `java.home` pointed at a stripped `jpackage` runtime the launcher search resolves
