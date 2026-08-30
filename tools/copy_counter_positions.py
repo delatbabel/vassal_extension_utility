@@ -173,8 +173,12 @@ def main(argv):
         print('    wrote %s: %d of %d commands kept'
               % (name, len(toks) - len(drop), len(toks)))
 
+    # Count the files actually processed: the reference is only among them when
+    # it was listed, so len(saves) - 1 is wrong whenever it was not.
+    processed = sum(1 for p in saves
+                    if os.path.abspath(p) != os.path.abspath(ref))
     print('\n%d counter(s) to re-place across %d file(s)%s'
-          % (grand, len(saves) - 1, ' (dry run — nothing written)'
+          % (grand, processed, ' (dry run — nothing written)'
              if '--dry-run' in flags else ''))
     return 0
 
