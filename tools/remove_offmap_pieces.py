@@ -37,7 +37,12 @@ rebuilds the stacking, though only for stacks that are themselves on a map.
     tools/remove_offmap_pieces.py SAVE.vsav [SAVE.vsav...]
                                   [--apply] [--no-backup] [--csv=OUT.csv]
                                   [--keep-name=SUBSTR]... [--only-name=SUBSTR]...
+                                  [--only-gpid=GPID[,GPID...]]
                                   [--module=MODULE.vmod]
+
+`--only-gpid` restricts the run to the given Piece Ids — exact, unlike the
+substring name filters, which is what you want when working from a report that
+names the counters to remove and nothing else must be caught alongside them.
 
 `--keep-name` excludes any piece whose name contains SUBSTR; `--only-name`
 restricts the selection to names containing SUBSTR. Both are repeatable and
@@ -101,9 +106,12 @@ def containers(state, toks):
 def main(argv):
     flags = {a for a in argv if a.startswith('--') and '=' not in a}
     keep, only, module = [], [], None
+    only_gpid = set()
     for a in argv:
         if a.startswith('--keep-name='): keep.append(a.split('=', 1)[1].lower())
         elif a.startswith('--only-name='): only.append(a.split('=', 1)[1].lower())
+        elif a.startswith('--only-gpid='):
+            only_gpid.update(g.strip() for g in a.split('=', 1)[1].split(',') if g.strip())
         elif a.startswith('--module='): module = a.split('=', 1)[1]
     csv_out = None
     for a in argv:
@@ -139,6 +147,8 @@ def main(argv):
             if only and not any(o in low for o in only):
                 continue
             gpid = bs.split(';')[3] if bs.count(';') >= 3 else ''
+            if only_gpid and gpid not in only_gpid:
+                continue
             arch = owner.get(gpid, '(unmatchable)') if module else ''
             where = inside.get(pid, 'loose')
             key = (name, arch, where)

@@ -1,5 +1,21 @@
 # Changes
 
+## 1.0.16
+
+Command-line tooling only; the application itself is unchanged from 1.0.15.
+
+### Added
+
+- **`tools/missing_counters.py` — report counters a saved game does not contain.** Some scenarios are meant to be complete: every counter of certain extensions should be somewhere in them, on a map or in a force pool, so a player can reach any unit those extensions add. Nothing in VASSAL answers that, and the failure is silent — the unit simply cannot be found in play. Presence is decided by Piece Id, the key VASSAL itself matches on, over every `AddPiece` command in the save, so a counter is found wherever it sits.
+
+  Two columns say *why* a counter is absent, which is what decides the remedy: `extension_listed_in_save` distinguishes a scenario that never loaded the extension at all — where the fix is to add the extension, not to place counters — and `name_found_elsewhere` flags a unit that is present under a different Piece Id, i.e. a bookkeeping mismatch rather than an absent unit. Counters whose only copies are on no map are reported as `off-map-only` rather than counted as present, since they are unreachable in play and beyond the reach of Refresh Counters.
+
+  `--exclude N:WORD[,WORD...]` drops an extension's markers and map furniture from the set to account for — they are placed during play, and counting them as missing buries the real gaps. `--dup-csv` writes the opposite report, the counters a scenario holds more than once, from the same scan.
+
+### Changed
+
+- **`tools/remove_offmap_pieces.py` gained `--only-gpid`.** Restricting a run by Piece Id is exact, where the existing substring name filters are not: removing thirteen named oil markers with `--only-name=oil` would also catch anything else off-map with "oil" in its name. It compounds with the existing rule that only pieces on no map are ever deleted.
+
 ## 1.0.15
 
 Fixes **Download Module from Library** on Windows and macOS, where it could not

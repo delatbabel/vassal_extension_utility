@@ -14,6 +14,7 @@ application and have no dependencies beyond the Python standard library.
 | `remove_placemark_carriers.py` | `.vsav` | delete off-map pieces carrying a stale embedded Place Marker |
 | `remove_offmap_pieces.py` | `.vsav` | report (and optionally delete) every piece that is on no map |
 | `dedupe_pieces.py` | `.vsav` | reduce duplicated counters to one copy each |
+| `missing_counters.py` | — (read-only) | report an extension's counters that a save does not contain |
 | `renumber_gpids.py` | `.vmdx` | clear duplicate Piece Ids |
 | `drop_slots.py` | `.vmdx` | delete piece slots by Piece Id |
 
@@ -236,6 +237,79 @@ existing `.bak` alone, so it stays the pristine original instead of becoming the
 first pass's output. The tool is idempotent — a counter already rewritten no
 longer matches an incorrect slot — so re-running it only picks up what is new.
 
+## missing_counters.py — report counters a save does not contain
+
+```
+tools/missing_counters.py --ext-dir DIR --extensions 10,11,12 \
+                          [--exclude N:WORD[,WORD...]]... \
+                          [--csv OUT.csv] SAVE.vsav [SAVE.vsav...]
+```
+
+Some scenarios are meant to be complete: every counter of certain extensions
+should be somewhere in them, on a map or in a force pool, so a player can reach
+any unit those extensions add. Nothing in VASSAL answers that question, and the
+failure is silent — the unit simply cannot be found in play. This reads only; it
+never writes to a save.
+
+`--extensions` takes the leading numbers of the extension filenames, so `10`
+selects `10-SiF.vmdx`. Every `PieceSlot`/`CardSlot` in each named extension is one
+counter to account for.
+
+**Presence is by Piece Id**, which is what VASSAL itself matches on: each
+`AddPiece` command in the save contributes the GPID in the 4th `;`-field of its
+innermost BasicPiece state, wherever the piece sits — map, force pool, deck or
+stack — so nothing is restricted to a particular map.
+
+| status | meaning |
+|---|---|
+| `missing` | no copy of that Piece Id anywhere in the save |
+| `off-map-only` | every copy has `map == "null"` — on no map at all, so unreachable in play and beyond the reach of Refresh Counters (see [remove_offmap_pieces.py](#remove_offmap_piecespy--audit-pieces-that-are-on-no-map)) |
+
+Two columns say *why* a counter is absent, which decides what to do about it:
+
+| column | meaning |
+|---|---|
+| `extension_listed_in_save` | whether the save loads that extension at all (its `EXT` commands). `no` means the scenario was built without it — every one of its counters is absent for that single reason, and the fix is to add the extension to the scenario, not to place counters |
+| `name_found_elsewhere` | the unit is in the save under a *different* Piece Id — a renumbered slot or a copy from another extension. A bookkeeping mismatch rather than an absent unit |
+
+```bash
+tools/missing_counters.py --ext-dir "data/…2_1_3_ext" \
+    --extensions 10,11,12,13,14,15,16,19,20,21,25,26,27 \
+    --csv data/scenarios/missing-counters-sdx.csv \
+    $(ls data/scenarios/*.vsav | grep -iE "superdeluxe|sdx")
+```
+
+### Counters that are not meant to be placed
+
+Not everything an extension defines belongs in a scenario. `15-TiF` carries road,
+rail, resource and oil markers and `21-PatiF-AmiF-HWs` carries the `T POLMkr`
+political markers — all placed during play, none of them a unit anyone needs to
+find in a force pool. Counted as missing they bury the real gaps, so
+`--exclude N:WORD[,WORD...]` drops them from the set to account for, matching the
+words against the counter name case-insensitively:
+
+```bash
+tools/missing_counters.py --ext-dir "data/…2_1_3_ext" \
+    --extensions 10,11,12,13,14,15,16,19,21,25,26,27 \
+    --exclude 15:road,rail,res,oil --exclude 21:POLMkr \
+    --csv data/scenarios/missing-counters-sdx.csv \
+    $(ls data/scenarios/*.vsav | grep -iE "superdeluxe|sdx")
+```
+
+Each exclusion is reported as a count against its extension (`15-TiF  242
+counters  (49 excluded: road, rail, res, oil)`), so what was set aside stays
+visible rather than silently shrinking the total.
+
+### The opposite report
+
+`--dup-csv OUT.csv` writes the counters a scenario holds **more than once**, from
+the same scan — the copies are already counted to decide presence, so the two
+reports cost one pass together and cannot contradict each other. Columns are
+`scenario, extension, counter_name, gpid, copies, copies_on_map, copies_off_map`.
+
+Per-extension and per-scenario tallies go to stderr as it runs, so a whole
+extension that is absent stands out immediately; the CSV holds the detail.
+
 ## renumber_gpids.py — clear duplicate Piece Ids in an extension
 
 ```
@@ -456,6 +530,18 @@ tools/remove_offmap_pieces.py data/scenarios/103-*.vsav \
 `--module` attributes each piece to the archive defining its GPID, which shows at
 a glance whether a group comes from an extension the scenario no longer uses —
 the signature of map-swap debris.
+
+`--only-gpid=GPID[,GPID...]` restricts a run to exactly those Piece Ids. Use it
+when the pieces to remove come from a report rather than from a name pattern —
+`--only-name=oil` would also catch anything else off-map with "oil" in its name,
+whereas the id list cannot over-reach. It still only ever deletes pieces that are
+on no map, so the two conditions compound:
+
+```bash
+# the 13 TiF oil/resource markers left behind by a map swap
+tools/remove_offmap_pieces.py data/scenarios/101-*.vsav \
+    --only-gpid=2027,2028,2029,2030,2031,2032,2033,2034,2035,2036,2037,2038,7919 --apply
+```
 
 ### The CSV manifest
 
