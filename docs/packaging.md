@@ -270,6 +270,57 @@ make clean-release     # remove tmp/
 
 ---
 
+## The runtime module list — `APP_MODULES`
+
+The Windows and macOS packages carry a runtime that `jlink` builds from exactly
+this list. The Linux `.deb`/`.rpm` do not use it: `jpackage` builds their runtime
+itself, and includes all 64 JDK modules. **That difference is a trap** — a module
+missing from `APP_MODULES` breaks only the cross-built platforms, on the user's
+machine, and nowhere in development.
+
+```make
+APP_MODULES:=java.base,java.desktop,java.xml,java.naming,java.logging,java.sql,jdk.crypto.ec,jdk.charsets
+```
+
+- `java.base`, `java.desktop` (Swing), `java.xml` (DOM), `java.naming`,
+  `java.logging`, `java.sql` — the last three for logback.
+- **`jdk.crypto.ec`** — the SunEC provider. It is loaded as a *service*, so no
+  bytecode mentions it and **`jdeps` cannot find it**. Without it the runtime has
+  no EC key agreement — no x25519, no secp256r1 — leaving only the FFDHE groups,
+  which the library server does not accept. Every HTTPS request then fails with
+  `SSLHandshakeException: (handshake_failure) Received fatal alert:
+  handshake_failure`, which is how **Download Module from Library** came to be
+  broken on Windows and macOS while working everywhere else. It adds no
+  measurable size.
+- **`jdk.charsets`** — the legacy encodings a `buildFile.xml` declaration might
+  name; `java.base` carries only UTF-8/16, US-ASCII, ISO-8859-1 and
+  windows-1252. About 1 MB.
+
+`jdk.localedata` is deliberately excluded: 11 MB, and it only affects date
+formatting outside English locales.
+
+**Do not trust `jdeps` alone** when adding a dependency. It sees static
+references, not services loaded through `ServiceLoader` or the security provider
+mechanism — which is exactly the category that fails silently at run time on a
+user's machine.
+
+### The build checks what it linked
+
+Each `jlink` rule runs `check_runtime_modules` over the runtime it produced,
+comparing the `MODULES=` line of the image's `release` file against
+`APP_MODULES`, and fails the build if any is absent:
+
+```
+runtime modules OK (tmp/windows-x86_64-build/jre): 12 modules
+ERROR: tmp/windows-x86_64-build/jre is missing module jdk.crypto.ec
+```
+
+`jlink` will happily produce an image that cannot open an HTTPS connection, and
+the failure surfaces a long way from anything naming a module, so the assertion
+is made where the runtime is built.
+
+---
+
 ## How it maps to the VASSAL engine build
 
 | VASSAL engine (`../vassal/Makefile`) | Here |

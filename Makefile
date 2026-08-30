@@ -90,7 +90,26 @@ TOOLDIR:=$(DISTDIR)/tools
 JDKDIR:=$(DISTDIR)/jdks
 
 # JVM modules the runtime must contain (Swing, XML/DOM, logging for logback).
-APP_MODULES:=java.base,java.desktop,java.xml,java.naming,java.logging,java.sql
+#
+# jdk.crypto.ec is NOT optional and is not discoverable with jdeps: it supplies
+# the SunEC provider, which is loaded as a service, so nothing in the bytecode
+# refers to it. Without it a runtime has no EC key agreement — no x25519, no
+# secp256r1 — leaving only the FFDHE groups, which the library's server does not
+# accept, and every HTTPS request dies with
+#
+#     javax.net.ssl.SSLHandshakeException: (handshake_failure)
+#                   Received fatal alert: handshake_failure
+#
+# This is what broke Download Module from Library on Windows and macOS while it
+# worked everywhere else: the Linux .deb/.rpm are built by jpackage, whose
+# runtime holds all 64 JDK modules, whereas the Windows and macOS runtimes are
+# jlinked from exactly this list. It costs nothing in size to include.
+#
+# jdk.charsets covers the legacy encodings a buildFile.xml declaration may name
+# (java.base carries only UTF-8/16, US-ASCII, ISO-8859-1 and windows-1252), for
+# about 1 MB. jdk.localedata is deliberately left out: it costs 11 MB and only
+# affects how dates are formatted outside English locales.
+APP_MODULES:=java.base,java.desktop,java.xml,java.naming,java.logging,java.sql,jdk.crypto.ec,jdk.charsets
 
 # JDK used for native packaging: must ship jmods AND jpackage, so jpackage's
 # internal jlink can build a runtime image. Auto-detect the first such JDK;
@@ -131,6 +150,32 @@ GENISOIMAGE:=genisoimage
 # 32-bit Windows target requires a Java 17 host jlink.
 JLINK_OPTS:=--no-header-files --no-man-pages --compress=2 \
             --add-modules $(APP_MODULES)
+
+# Assert a linked runtime really contains every module asked for. jlink is happy
+# to produce an image that cannot make an HTTPS connection, and the resulting
+# failure appears only on the user's machine, in a handshake, a long way from
+# anything that names a module. $(1) is the runtime directory.
+check_runtime_modules=\
+  have="$$(sed -n 's/^MODULES="\(.*\)"$$/\1/p' "$(1)/release")"; \
+  for m in $$(echo "$(APP_MODULES)" | tr ',' ' '); do \
+    case " $$have " in *" $$m "*) ;; \
+      *) echo "ERROR: $(1) is missing module $$m"; exit 1 ;; esac; \
+  done; \
+  echo "runtime modules OK ($(1)): $$(echo "$$have" | wc -w) modules"
+
+# A linked runtime is a directory, so Make considers it up to date forever —
+# change APP_MODULES and the old runtime is repackaged unchanged, which is how a
+# runtime linked before the jdk.crypto.ec fix ended up inside a rebuilt zip. The
+# runtime rules therefore depend on this stamp, whose recipe runs every time but
+# only rewrites the file when the list actually differs, so ordinary rebuilds
+# relink nothing.
+MODULES_STAMP:=$(TMPDIR)/.app-modules
+$(MODULES_STAMP): FORCE | $(TMPDIR)
+	@[ "$$(cat $@ 2>/dev/null)" = "$(APP_MODULES)" ] || { \
+	   echo "module list changed — relinking runtimes"; \
+	   printf '%s' "$(APP_MODULES)" > $@; }
+
+FORCE:
 
 # =======================================================================
 # Common targets
@@ -342,7 +387,7 @@ release-linux: release-linux-deb release-linux-rpm
 
 # jlink a Windows runtime for the given arch from its bootstrapped JDK, using a
 # host jlink whose version matches that arch's JDK (32-bit = Java 17, else 21).
-$(TMPDIR)/windows-%-build/jre: | $(TMPDIR)
+$(TMPDIR)/windows-%-build/jre: $(MODULES_STAMP) | $(TMPDIR)
 	@[ -d $(JDKDIR)/windows-$* ] || { echo "Missing $(JDKDIR)/windows-$* — run 'make bootstrap'"; exit 1; }
 	@jlink="$(JLINK_MAIN)"; ver=$(JDK_MAIN_VER); \
 	  [ "$*" = "x86_32" ] && { jlink="$(JLINK_WIN32)"; ver=$(JDK_WIN32_VER); }; \
@@ -351,6 +396,7 @@ $(TMPDIR)/windows-%-build/jre: | $(TMPDIR)
 	  rm -rf $@; mkdir -p $(TMPDIR)/windows-$*-build; \
 	  echo "$$jlink --module-path $(JDKDIR)/windows-$*/jmods --add-modules $(APP_MODULES) --output $@"; \
 	  "$$jlink" --module-path $(JDKDIR)/windows-$*/jmods $(JLINK_OPTS) --output $@
+	@$(call check_runtime_modules,$@)
 
 # generate the Launch4j config and wrap the JAR into VASSAL-Extension-Utility.exe
 $(TMPDIR)/windows-%-build/VASSAL-Extension-Utility.exe: $(DISTJAR) $(DISTDIR)/windows/launch4j.xml.in $(DISTDIR)/windows/VASSAL-gear.ico
@@ -393,7 +439,7 @@ release-windows: release-windows-x86_64 release-windows-aarch64 release-windows-
 # — the Make target itself (the space-free "image" directory) must not.
 APPDIRNAME:=VASSAL Extension Utility.app
 
-$(TMPDIR)/macos-%-build/image: $(DISTJAR) \
+$(TMPDIR)/macos-%-build/image: $(DISTJAR) $(MODULES_STAMP) \
 		$(DISTDIR)/macos/Info.plist.in $(DISTDIR)/macos/run.sh.in $(DISTDIR)/macos/PkgInfo \
 		$(DISTDIR)/macos/VASSAL-gear.icns
 	@[ -d $(JDKDIR)/macos-$* ] || { echo "Missing $(JDKDIR)/macos-$* — run 'make bootstrap'"; exit 1; }
@@ -411,6 +457,7 @@ $(TMPDIR)/macos-%-build/image: $(DISTJAR) \
 	cp $(DISTJAR) "$@/$(APPDIRNAME)/Contents/Resources/Java/"
 	"$(JLINK_MAIN)" --module-path $(JDKDIR)/macos-$*/jmods $(JLINK_OPTS) \
 	    --output "$@/$(APPDIRNAME)/Contents/MacOS/jre"
+	@$(call check_runtime_modules,$@/$(APPDIRNAME)/Contents/MacOS/jre)
 	ln -sf /Applications "$@/Applications"
 
 $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-macos-%-uncompressed.iso: $(TMPDIR)/macos-%-build/image
@@ -451,7 +498,7 @@ clean: clean-release
 # prevents make from deleting intermediate files (jre/, .app, .iso)
 .SECONDARY:
 
-.PHONY: help build compile test jar run javadoc clean clean-release \
+.PHONY: FORCE help build compile test jar run javadoc clean clean-release \
         version version-print version-set version-bump post-release bootstrap \
         release release-linux release-linux-deb release-linux-rpm \
         release-windows release-windows-x86_64 release-windows-aarch64 release-windows-x86_32 \
