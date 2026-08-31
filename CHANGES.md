@@ -1,5 +1,20 @@
 # Changes
 
+## 1.0.17
+
+Fixes **Download Module from Library** reporting that it downloaded nothing,
+without saying why, when the chosen folder cannot be written to.
+
+### Fixed
+
+- **A download into a protected folder failed silently.** A Windows user pointed the download at `C:\Program Files\VASSAL\modules` — where the VASSAL installer had put their module, so it is where the folder chooser opens — and was told *"Downloaded 0 file(s)"*. Nothing said why. Only an elevated process may create files under `Program Files`, so every download failed the moment it tried to write its temp file, and the reason went nowhere: the per-file messages were written into the progress dialog, which is disposed when the run ends, and the download flow had no logger of its own.
+
+  The folder is now tested **before** anything is downloaded, by creating and deleting a file in it, and the user is asked for another one if it fails. The test cannot be done by asking `File.canWrite()`, which on Windows reports the read-only attribute and ignores ACLs — it answers "yes" for `Program Files`. Where the folder does not exist yet, its nearest existing ancestor is tested instead, so a folder the user may not go on to confirm is never created.
+
+- **Download failures now say what went wrong.** The closing dialog names the first few reasons and points at `~/.vassal-extension-utility/extension-utility.log`, and the download flow logs each failure there. The message for an unwritable destination names the folder, where the JDK's own was a bare *"Permission denied"* — neither file nor folder — which is unusable in a report from a user.
+
+- **A failure in the background half of the download was discarded.** As with Refresh Counters in 1.0.14, `SwingWorker.done()` never called `get()`, so anything thrown outside the per-file `catch` was lost and the run simply reported nothing downloaded. It is now collected and reported.
+
 ## 1.0.16
 
 Command-line tooling only; the application itself is unchanged from 1.0.15.

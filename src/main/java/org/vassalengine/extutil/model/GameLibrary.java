@@ -352,7 +352,15 @@ public final class GameLibrary {
             throw new IOException("cannot create " + dir);
         }
         final java.io.File target = new java.io.File(dir, f.filename);
-        final java.io.File tmp = java.io.File.createTempFile(f.filename + ".", ".part", dir);
+        final java.io.File tmp;
+        try {
+            tmp = java.io.File.createTempFile(f.filename + ".", ".part", dir);
+        }
+        catch (IOException e) {
+            // The JDK's own message here is a bare "Permission denied", naming
+            // neither the file nor the folder — useless in a report from a user.
+            throw new IOException("cannot write to " + dir + ": " + e.getMessage(), e);
+        }
         final HttpURLConnection c = open(f.url, null);
         boolean cancelled = false;
         try (InputStream in = c.getInputStream();

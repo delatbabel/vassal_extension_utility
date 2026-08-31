@@ -7,6 +7,8 @@
  */
 package org.vassalengine.extutil.gui;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.vassalengine.extutil.model.GameLibrary;
 import org.vassalengine.extutil.model.SavedGame;
 
@@ -19,6 +21,8 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Window;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -48,6 +52,8 @@ import java.util.Set;
  * rather than per release.</p>
  */
 public final class DownloadModuleDialog {
+
+    private static final Logger log = LoggerFactory.getLogger(DownloadModuleDialog.class);
 
     private final Window owner;
 
@@ -105,12 +111,42 @@ public final class DownloadModuleDialog {
         }
 
         // --- where to put it ----------------------------------------------
-        final JFileChooser fc = new JFileChooser();
-        fc.setDialogTitle("Choose the folder to download into");
-        fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        if (startDir != null && startDir.isDirectory()) fc.setCurrentDirectory(startDir);
-        if (fc.showSaveDialog(owner) != JFileChooser.APPROVE_OPTION) return null;
-        final File dir = fc.getSelectedFile();
+        // Asked in a loop: a folder that cannot be written to is the commonest
+        // way for this to fail, and the user should be able to pick another
+        // rather than watch every download fail in turn.
+        File chosen = null;
+        File start = startDir;
+        while (chosen == null) {
+            final JFileChooser fc = new JFileChooser();
+            fc.setDialogTitle("Choose the folder to download into");
+            fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            if (start != null && start.isDirectory()) fc.setCurrentDirectory(start);
+            if (fc.showSaveDialog(owner) != JFileChooser.APPROVE_OPTION) return null;
+            final File candidate = fc.getSelectedFile();
+            final String problem = writeProblem(candidate);
+            if (problem == null) {
+                chosen = candidate;
+                break;
+            }
+            log.warn("Download folder {} is not writable: {}", candidate, problem);
+            final int again = JOptionPane.showConfirmDialog(owner,
+                    "<html>Nothing can be written into<br><tt>"
+                    + escape(candidate.getAbsolutePath()) + "</tt><br><br><tt>"
+                    + escape(problem) + "</tt><br><br>"
+                    + "A folder inside <b>Program Files</b> (or any other protected "
+                    + "location) needs administrator rights, which this application does "
+                    + "not run with. Antivirus \"controlled folder access\" can do the "
+                    + "same thing.<br><br>Choose a folder you own \u2014 somewhere under your "
+                    + "user folder, such as <tt>Documents</tt>.<br><br>Pick a different "
+                    + "folder?</html>",
+                    "Folder Not Writable", JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.ERROR_MESSAGE);
+            if (again != JOptionPane.OK_OPTION) {
+                return "Download cancelled: " + candidate + " is not writable.";
+            }
+            start = candidate.getParentFile();
+        }
+        final File dir = chosen;
 
         // --- optional scenario filter -------------------------------------
         List<GameLibrary.RemoteFile> extensions = info.latestExtensions();
@@ -190,6 +226,36 @@ public final class DownloadModuleDialog {
         return downloadAll(library, module, extensions, dir, extDir, missingFromLibrary);
     }
 
+    /**
+     * Whether files can actually be written under {@code dir}.
+     *
+     * <p>By writing a file, not by asking. {@code File.canWrite()} reports the
+     * read-only <em>attribute</em> on Windows and ignores ACLs, so it answers
+     * "yes" for {@code C:\Program Files} — where an unelevated process cannot
+     * create anything. The only trustworthy test is to create a file and remove
+     * it again.</p>
+     *
+     * <p>Probes the nearest existing ancestor when {@code dir} does not exist yet,
+     * so a folder the user may not go on to confirm is never created. Write
+     * permission on that ancestor is what creating {@code dir} needs anyway.</p>
+     *
+     * @return null when writable, else the reason it is not
+     */
+    static String writeProblem(File dir) {
+        File probeIn = dir;
+        while (probeIn != null && !probeIn.isDirectory()) probeIn = probeIn.getParentFile();
+        if (probeIn == null) return "no such folder: " + dir;
+        try {
+            final File probe = File.createTempFile("vassal-write-probe", ".tmp", probeIn);
+            Files.delete(probe.toPath());
+            return null;
+        }
+        catch (IOException e) {
+            final String why = e.getMessage() == null ? e.toString() : e.getMessage();
+            return probeIn.equals(dir) ? why : why + " (in " + probeIn + ")";
+        }
+    }
+
     /** {@code Foo.vmod} → {@code <dir>/Foo_ext}, the convention VASSAL expects. */
     static File extensionsDirFor(File dir, String moduleFilename) {
         String stem = moduleFilename;
@@ -241,6 +307,9 @@ public final class DownloadModuleDialog {
         d.setLocationRelativeTo(owner);
 
         final int[] okFailed = {0, 0};
+        final List<String> failures = new ArrayList<>();
+        log.info("Downloading {} file(s) into {} (extensions into {})",
+                queue.size(), dir, extDir);
         final SwingWorker<Void, String> worker = new SwingWorker<Void, String>() {
             @Override protected Void doInBackground() {
                 int n = 0;
@@ -264,7 +333,11 @@ public final class DownloadModuleDialog {
                     }
                     catch (Exception e) {           // NOPMD - continue with the rest
                         okFailed[1]++;
-                        publish("    FAILED: " + e.getMessage() + "\n");
+                        final String why = e.getMessage() == null
+                                ? e.toString() : e.getMessage();
+                        failures.add(f.filename + ": " + why);
+                        log.warn("Download failed: {} into {}", f.filename, into, e);
+                        publish("    FAILED: " + why + "\n");
                     }
                 }
                 return null;
@@ -273,7 +346,25 @@ public final class DownloadModuleDialog {
                 for (String c : chunks) logArea.append(c);
                 logArea.setCaretPosition(logArea.getDocument().getLength());
             }
-            @Override protected void done() { d.dispose(); }
+            @Override protected void done() {
+                d.dispose();
+                // A SwingWorker keeps what its background half threw until asked.
+                // Nobody asked, so anything escaping the per-file catch above was
+                // discarded and the run looked like it had simply found nothing.
+                if (isCancelled()) return;
+                try {
+                    get();
+                }
+                catch (java.util.concurrent.ExecutionException e) {
+                    final Throwable cause = e.getCause() == null ? e : e.getCause();
+                    log.error("Download run failed", cause);
+                    failures.add("the download stopped: " + cause);
+                    okFailed[1]++;
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
         };
         worker.addPropertyChangeListener(ev -> {
             if ("progress".equals(ev.getPropertyName())) {
@@ -287,7 +378,22 @@ public final class DownloadModuleDialog {
         final StringBuilder done = new StringBuilder("<html>Downloaded <b>")
                 .append(okFailed[0]).append("</b> file(s) into <tt>")
                 .append(escape(dir.getAbsolutePath())).append("</tt>.");
-        if (okFailed[1] > 0) done.append("<br><b>").append(okFailed[1]).append("</b> failed.");
+        if (okFailed[1] > 0) {
+            // Say why, not just how many: the reasons were previously written only
+            // into the progress dialog, which is gone by the time this is read.
+            done.append("<br><b>").append(okFailed[1]).append("</b> failed:<br><tt>");
+            final int shown = Math.min(failures.size(), 3);
+            for (int i = 0; i < shown; i++) {
+                done.append(escape(failures.get(i))).append("<br>");
+            }
+            if (failures.size() > shown) {
+                done.append("\u2026 and ").append(failures.size() - shown).append(" more<br>");
+            }
+            done.append("</tt>Full details are in<br><tt>")
+                .append(escape(new File(new File(System.getProperty("user.home"),
+                        ".vassal-extension-utility"), "extension-utility.log").getPath()))
+                .append("</tt>");
+        }
         if (!unavailable.isEmpty()) {
             done.append("<br><br>Not published by the library: <tt>")
                 .append(escape(String.join(", ", unavailable))).append("</tt>");
