@@ -23,7 +23,9 @@ The saved-game scripts work the way `model/SavedGame` does (see
 [docs/vsav-format.md](../docs/vsav-format.md) and
 [docs/vsav-excess-units.md](../docs/vsav-excess-units.md)):
 
-- the `savedGame` entry is deobfuscated whole (`!VCSK` + 2-hex key + XOR-hex);
+- the `savedGame` entry is deobfuscated whole (`!VCSK` + 2-hex key + XOR-hex; the
+  `!VCSZ` variant additionally inflates the result, and a rewrite re-emits the
+  same format it read — see docs/vsav-format.md);
 - the command log is split at **every** ESC (`0x1B`), recording each token's
   preceding-delimiter bytes separately from its content. Because piece data
   contains no ESC, re-emitting the same delimiter bytes reconstructs the

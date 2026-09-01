@@ -7,15 +7,17 @@ module‑side changes (no engine change needed) are in
 **[wif-module-optimizations.md](wif-module-optimizations.md)**.
 
 These are proposals for the VASSAL engine maintainers. They are ordered by **effort vs. payoff**:
-the first two are small and format‑preserving; the rest are larger and (mostly) require a
-save‑format version bump. All line numbers are from the current `../vassal` checkout and should
-be re‑confirmed before editing.
+the first two are small (A2 is fully format‑compatible; A1 adds a new, backward‑readable
+`savedGame` encoding); the rest are larger and (mostly) require a save‑format version bump.
+**A1 (option 1) and A2 are now implemented** on feature branches in `../vassal` — see each
+section. All line numbers are from the current `../vassal` checkout and should be re‑confirmed
+before editing.
 
 ---
 
 ## Tier A — small, format‑preserving, ship‑anytime
 
-### A1. Compress *then* obfuscate (or make obfuscation optional) — **~1.8× disk**
+### A1. Compress *then* obfuscate — **~1.8× disk** — ✅ IMPLEMENTED (option 1)
 
 **Problem.** The save path obfuscates the command log **before** the ZIP compresses it.
 `ObfuscatingOutputStream` emits **two ASCII hex chars per byte** (`ObfuscatingOutputStream.java:82‑88`),
@@ -30,29 +32,49 @@ gzip‑9 of the 002 sample:
 | Obfuscated form (today) | 33.1 MB ≈ real 34.1 MB `.vsav` |
 | Raw plaintext | **18.8 MB** |
 
-**Options** (all keep anti‑cheat intent, since the ZIP entry is already not human‑readable):
+**What was implemented — option 1, reorder to compress‑then‑obfuscate.** Deflate the plaintext
+first (`Deflater.BEST_COMPRESSION`), then run the small compressed result through the
+obfuscator. The hex‑doubling then applies to ~18 MB instead of ~223 MB, and the ZIP sees
+compressible text. The read path reverses the order.
 
-1. **Reorder to compress‑then‑obfuscate.** Deflate the plaintext first, then run the small
-   compressed result through the obfuscator. The hex‑doubling then applies to ~18 MB instead of
-   ~223 MB, and the ZIP sees compressible text. Requires the read path to reverse the order.
-2. **Drop obfuscation for the ZIP entry.** The `savedGame` entry inside a ZIP is already opaque
-   to casual users; obfuscation adds little over "it's a binary blob." Writing the plaintext
-   directly yields the 18.8 MB result. The read path is **already tolerant** of un‑obfuscated
-   entries — `DeobfuscatingInputStream` passes bytes through unchanged when the `!VCSK` header
-   is absent (`DeobfuscatingInputStream…:42‑56`) — so old readers still load new files **only if**
-   they don't otherwise require the header; gate with a save‑format flag to be safe.
-3. **Make it a preference.** A "compact save" option that skips obfuscation.
+Implemented on branch `feature/compress-then-obfuscate-vsav-file` in `../vassal` (pushed to
+the `delatbabel/vassal` fork; PR against the main VASSAL repository to be raised manually):
 
-**Where.** Save: `GameState.saveGame(File)` wraps the entry in `ObfuscatingOutputStream`
+- `ObfuscatingOutputStream` now writes plaintext → deflate → XOR‑hex, marked with a new
+  **`!VCSZ`** header (the key byte in hex follows, exactly as before). The old `!VCSK`
+  constant remains for reading.
+- `DeobfuscatingInputStream` reads **both** formats (`!VCSK` → deobfuscate only; `!VCSZ` →
+  deobfuscate then inflate) and still passes plain text through unchanged. The `.vsav`
+  remains an ordinary ZIP — the change is confined to the `savedGame` entry's payload, so
+  WinZip‑style tools are unaffected.
+- Compatibility: new engines read old and new saves; **old engines cannot read `!VCSZ`
+  saves**. Whether to gate the new writer behind a version check is left to upstream review.
+
+**Options considered and discarded** — judged unacceptable to the upstream maintainers
+(both remove the obfuscation itself rather than reordering it, abandoning the anti‑cheat
+intent):
+
+2. ~~**Drop obfuscation for the ZIP entry**~~ — writing the plaintext directly (the
+   `DeobfuscatingInputStream` passthrough would have made old readers tolerate it).
+3. ~~**Make it a preference**~~ — a "compact save" option that skips obfuscation.
+
+**This utility** has been updated to match: `model/SavedGame` recognises both headers when
+opening a `.vsav`, and every rewrite (Excess Units, `PreservedState.restore`) re‑emits the
+**same format the file was opened with** — `!VCSK` in, `!VCSK` out; `!VCSZ` in, `!VCSZ` out.
+`tools/swap_maps.py` does the same. (The Refresh Counters feature saves through whatever
+engine is installed, so its output format follows that engine's version.)
+
+**Where (engine).** Save: `GameState.saveGame(File)` wraps the entry in `ObfuscatingOutputStream`
 unconditionally (`GameState.java:1372‑1377`, esp. `:1373`); the refresh path likewise
-(`:1348`). Read: `GameState.decodeSavedGame(InputStream)` (`:1627‑1644`).
+(`:1348`). Read: `GameState.decodeSavedGame(InputStream)` (`:1627‑1644`). All three call
+sites compose the two stream classes, so the whole change lives in `tools/io/`.
 
-**Payoff.** ~1.8× smaller `.vsav` on disk with no module change. **Effort:** small–medium
-(format‑version gate + read‑path symmetry). Also reduces the memory high‑water mark (A5).
+**Payoff.** ~1.8× smaller `.vsav` on disk with no module change. Also reduces the memory
+high‑water mark.
 
 ---
 
-### A2. Raise the interactive‑save deflate level 6 → 9 — small, trivial
+### A2. Raise the interactive‑save deflate level 6 → 9 — small, trivial — ✅ IMPLEMENTED
 
 **Problem.** Two different ZIP writers are used, at different compression levels:
 
@@ -67,6 +89,9 @@ Larger once combined with A1 (level 9 matters more on compressible plaintext).
 **Where.** `ZipWriter.java:62` (add `setLevel(Deflater.BEST_COMPRESSION)`).
 
 **Payoff.** Small. **Effort:** trivial, fully format‑compatible.
+
+Implemented on branch `feature/raise-interactive-save-level` in `../vassal` (pushed to the
+`delatbabel/vassal` fork; PR to be raised manually).
 
 ---
 
@@ -179,8 +204,9 @@ completeness; **C1 + C2 are the better targets.**
 
 ## Recommended sequence
 
-1. **A2** (level 9) — trivial, immediate.
-2. **A1** (compress‑then‑obfuscate / optional obfuscation) — ~1.8× disk, medium effort, format‑gated.
+1. **A2** (level 9) — ✅ done (`feature/raise-interactive-save-level`), PR pending.
+2. **A1** (compress‑then‑obfuscate) — ✅ done, option 1 only
+   (`feature/compress-then-obfuscate-vsav-file`), PR pending; options 2 and 3 discarded.
 3. **B1** (streaming) — removes the OOM ceiling; enables even‑larger games regardless of the above.
 4. **B2 string‑interning increment** — cheap heap win now; full flyweight later.
 5. **C1**, then **C2** — the deep format changes that shrink the 222 MB itself; do together

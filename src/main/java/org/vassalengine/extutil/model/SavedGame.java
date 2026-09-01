@@ -25,6 +25,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.zip.DataFormatException;
+import java.util.zip.Deflater;
+import java.util.zip.DeflaterOutputStream;
+import java.util.zip.Inflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -69,8 +73,17 @@ public class SavedGame {
     public static final String SAVE_DATA_ENTRY  = "savedata";
     public static final String MODULE_DATA_ENTRY = "moduledata";
 
-    /** Obfuscation header written by VASSAL's {@code ObfuscatingOutputStream}. */
+    /**
+     * Obfuscation header written by VASSAL's {@code ObfuscatingOutputStream}
+     * through 3.7.x: the payload is the plaintext, XOR-hex encoded.
+     */
     private static final byte[] HEADER = "!VCSK".getBytes(StandardCharsets.US_ASCII);
+    /**
+     * Header of the compress-then-obfuscate format (VASSAL 3.8+): the payload is
+     * deflated (zlib) <em>before</em> the XOR-hex encoding. Rewrites preserve
+     * whichever format the file was opened with.
+     */
+    private static final byte[] DEFLATED_HEADER = "!VCSZ".getBytes(StandardCharsets.US_ASCII);
     /** Top-level command separator in the deobfuscated log (ESC / {@code KeyEvent.VK_ESCAPE}). */
     private static final byte CMD_DELIM = 0x1b;
     private static final byte ESCAPE = '\\';
@@ -95,6 +108,8 @@ public class SavedGame {
 
     /** Deobfuscated {@code savedGame} plaintext (can be hundreds of MB). */
     private final byte[] state;
+    /** Whether the source file used the deflated ({@code !VCSZ}) format — preserved on rewrite. */
+    private final boolean deflated;
     /**
      * One entry {@code {delimStart, contentStart, contentEnd}} per command token in
      * {@link #state}. {@code [delimStart, contentStart)} is the token's preceding
@@ -108,7 +123,7 @@ public class SavedGame {
 
     private SavedGame(java.io.File file, byte[] moduleData, long moduleDataTime,
                       byte[] saveData, long saveDataTime,
-                      byte[] state, long savedGameTime) {
+                      byte[] state, long savedGameTime, boolean deflated) {
         this.file = file;
         this.moduleData = moduleData;
         this.moduleDataTime = moduleDataTime;
@@ -116,10 +131,14 @@ public class SavedGame {
         this.saveDataTime = saveDataTime;
         this.state = state;
         this.savedGameTime = savedGameTime;
+        this.deflated = deflated;
         this.commandRanges = splitCommands(state);
     }
 
     public java.io.File getFile() { return file; }
+
+    /** Whether the source file used the deflated ({@code !VCSZ}) format. */
+    public boolean isDeflated() { return deflated; }
 
     // -----------------------------------------------------------------------
     // Opening / deobfuscation
@@ -127,10 +146,13 @@ public class SavedGame {
 
     /**
      * Opens a {@code .vsav}, reading the two metadata entries whole and
-     * deobfuscating the {@code savedGame} command log into memory.
+     * deobfuscating the {@code savedGame} command log into memory. Both the
+     * {@code !VCSK} (plaintext) and {@code !VCSZ} (deflated, VASSAL 3.8+) formats
+     * are read; which one the file used is remembered so a rewrite preserves it.
      *
      * @throws IOException if the file is not a ZIP with the expected entries, or
-     *                     the {@code savedGame} entry lacks the {@code !VCSK} header
+     *                     the {@code savedGame} entry has neither the {@code !VCSK}
+     *                     nor the {@code !VCSZ} header
      */
     public static SavedGame open(java.io.File f) throws IOException {
         try (ZipFile zf = new ZipFile(f)) {
@@ -140,12 +162,20 @@ public class SavedGame {
 
             final byte[] sd = saveData  == null ? new byte[0] : readAll(zf, saveData);
             final byte[] md = moduleData == null ? new byte[0] : readAll(zf, moduleData);
-            final byte[] plain = deobfuscate(zf, savedGame, f);
+            final byte[] raw = readAll(zf, savedGame);
+            final boolean deflated = hasHeader(raw, DEFLATED_HEADER);
+            if (!deflated && !hasHeader(raw, HEADER)) {
+                throw new IOException(
+                        "Not an obfuscated VASSAL saved game (missing !VCSK/!VCSZ header): "
+                        + f.getName());
+            }
+            byte[] plain = unhexXor(raw, f);
+            if (deflated) plain = inflate(plain, f);
 
             return new SavedGame(f,
                     md, moduleData == null ? -1L : moduleData.getTime(),
                     sd, saveData == null ? -1L : saveData.getTime(),
-                    plain, savedGame.getTime());
+                    plain, savedGame.getTime(), deflated);
         }
     }
 
@@ -163,24 +193,24 @@ public class SavedGame {
         }
     }
 
-    /**
-     * Streams the obfuscated {@code savedGame} entry and returns its plaintext.
-     * The entry is {@code !VCSK} + a two-hex key byte + two-hex-per-byte payload,
-     * each payload byte XOR-ed with the key (see docs/vsav-format.md).
-     */
-    private static byte[] deobfuscate(ZipFile zf, ZipEntry e, java.io.File f) throws IOException {
-        final byte[] raw;
-        try (InputStream in = zf.getInputStream(e)) {
-            raw = in.readAllBytes();   // the whole (hex-ASCII) entry
+    private static boolean hasHeader(byte[] raw, byte[] header) {
+        if (raw.length < header.length + 2) return false;
+        for (int i = 0; i < header.length; i++) {
+            if (raw[i] != header[i]) return false;
         }
+        return true;
+    }
+
+    /**
+     * Decodes the obfuscated {@code savedGame} entry: a 5-byte header + a two-hex
+     * key byte + two-hex-per-byte payload, each payload byte XOR-ed with the key
+     * (see docs/vsav-format.md). For a {@code !VCSK} entry the result is the
+     * plaintext; for a {@code !VCSZ} entry it is the deflated plaintext, which
+     * {@link #inflate} then expands. Both headers are the same length.
+     */
+    private static byte[] unhexXor(byte[] raw, java.io.File f) throws IOException {
         if (raw.length < HEADER.length + 2) {
             throw new IOException("Not an obfuscated VASSAL saved game (too short): " + f.getName());
-        }
-        for (int i = 0; i < HEADER.length; i++) {
-            if (raw[i] != HEADER[i]) {
-                throw new IOException("Not an obfuscated VASSAL saved game (missing !VCSK header): "
-                        + f.getName());
-            }
         }
         final int key = (hexVal(raw[HEADER.length]) << 4) | hexVal(raw[HEADER.length + 1]);
         final int payload = raw.length - HEADER.length - 2;
@@ -190,6 +220,30 @@ public class SavedGame {
             out[i] = (byte) (((hexVal(raw[j]) << 4) | hexVal(raw[j + 1])) ^ key);
         }
         return out;
+    }
+
+    /** Inflates the deobfuscated payload of a {@code !VCSZ} entry. */
+    private static byte[] inflate(byte[] data, java.io.File f) throws IOException {
+        final Inflater inf = new Inflater();
+        try {
+            inf.setInput(data);
+            final java.io.ByteArrayOutputStream out =
+                    new java.io.ByteArrayOutputStream(Math.max(1 << 16, data.length * 4));
+            final byte[] buf = new byte[1 << 16];
+            while (!inf.finished()) {
+                final int n = inf.inflate(buf);
+                if (n > 0) {
+                    out.write(buf, 0, n);
+                } else if (inf.needsInput() || inf.needsDictionary()) {
+                    throw new IOException("Truncated deflated savedGame entry: " + f.getName());
+                }
+            }
+            return out.toByteArray();
+        } catch (DataFormatException e) {
+            throw new IOException("Corrupt deflated savedGame entry: " + f.getName(), e);
+        } finally {
+            inf.end();
+        }
     }
 
     private static int hexVal(int c) {
@@ -667,24 +721,20 @@ public class SavedGame {
     }
 
     /**
-     * Streams the surviving command tokens through the VASSAL obfuscation
-     * ({@code !VCSK} + random key (2 hex) + 2-hex-per-byte XOR key). Each removed
-     * token is dropped together with its preceding delimiter, and each kept token
-     * is emitted verbatim <em>with</em> its preceding delimiter — so the surviving
-     * bytes (and their ESC nesting) are exactly the original minus the removed
-     * pieces. The very first emitted token drops its (possibly empty) leading
-     * delimiter so the stream never begins with a stray separator.
-     */
-    private void writeObfuscated(OutputStream out, Set<Integer> removeIndices)
-            throws IOException {
-        writeObfuscated(out, removeIndices, -1, Collections.<String>emptyList());
-    }
-
-    /**
-     * As above, additionally emitting {@code insertContents} as top-level command
-     * tokens immediately before the surviving token at index {@code insertBefore}
-     * (ignored when negative). Inserted commands are separated by a bare
-     * {@code <ESC>}, which is what makes them top level.
+     * Streams the surviving command tokens through the VASSAL obfuscation, in the
+     * <em>same format the file was opened with</em>: {@code !VCSK} (header + random
+     * key (2 hex) + 2-hex-per-byte XOR of the plaintext), or {@code !VCSZ} (the
+     * same, but the plaintext is deflated before the XOR-hex encoding — the
+     * compress-then-obfuscate format of VASSAL 3.8+). Each removed token is
+     * dropped together with its preceding delimiter, and each kept token is
+     * emitted verbatim <em>with</em> its preceding delimiter — so the surviving
+     * plaintext bytes (and their ESC nesting) are exactly the original minus the
+     * removed pieces. The very first emitted token drops its (possibly empty)
+     * leading delimiter so the stream never begins with a stray separator.
+     * {@code insertContents} are emitted as top-level command tokens immediately
+     * before the surviving token at index {@code insertBefore} (ignored when
+     * negative), separated by a bare {@code <ESC>} — which is what makes them
+     * top level.
      */
     private void writeObfuscated(OutputStream out, Set<Integer> removeIndices,
                                  int insertBefore, List<String> insertContents)
@@ -693,34 +743,54 @@ public class SavedGame {
         // Accumulate hex output in a large buffer so the deflater sees big chunks
         // rather than 2 bytes at a time (which is dramatically slower).
         final HexSink sink = new HexSink(out, key);
-        for (byte h : HEADER) sink.rawByte(h);
+        for (byte h : (deflated ? DEFLATED_HEADER : HEADER)) sink.rawByte(h);
         sink.rawByte(HEX[(key & 0xF0) >>> 4]);
         sink.rawByte(HEX[key & 0x0F]);
 
+        if (deflated) {
+            final Deflater def = new Deflater(Deflater.BEST_COMPRESSION);
+            try {
+                final DeflaterOutputStream dos = new DeflaterOutputStream(sink, def, 1 << 16);
+                emitCommands(dos, removeIndices, insertBefore, insertContents);
+                dos.finish();   // never close() — that would close the ZIP stream
+            } finally {
+                def.end();
+            }
+        } else {
+            emitCommands(sink, removeIndices, insertBefore, insertContents);
+        }
+        sink.flush();
+    }
+
+    /** Emits the surviving plaintext command bytes (see {@link #writeObfuscated}). */
+    private void emitCommands(OutputStream out, Set<Integer> removeIndices,
+                              int insertBefore, List<String> insertContents)
+            throws IOException {
         boolean firstEmitted = true;
         for (int idx = 0; idx < commandRanges.size(); idx++) {
             if (idx == insertBefore) {
                 for (String content : insertContents) {
-                    if (!firstEmitted) sink.encoded(CMD_DELIM);
+                    if (!firstEmitted) out.write(CMD_DELIM);
                     firstEmitted = false;
-                    for (byte b : content.getBytes(StandardCharsets.UTF_8)) sink.encoded(b);
+                    out.write(content.getBytes(StandardCharsets.UTF_8));
                 }
             }
             if (removeIndices.contains(idx)) continue;
             final int[] r = commandRanges.get(idx);
             final int from = firstEmitted ? r[1] : r[0];   // skip leading delimiter for the first token
             firstEmitted = false;
-            for (int i = from; i < r[2]; i++) sink.encoded(state[i]);
+            out.write(state, from, r[2] - from);
         }
-        sink.flush();
     }
 
     /**
      * Buffers the obfuscated output. {@link #rawByte} writes a byte of the
-     * {@code !VCSK}+key header as-is; {@link #encoded} XORs a plaintext byte with
-     * the key and writes it as two hex digits.
+     * header+key prefix as-is; the {@code OutputStream} write methods XOR each
+     * plaintext (or deflated) byte with the key and write it as two hex digits.
+     * {@code flush()} pushes the buffer downstream but never closes {@code out}
+     * (a ZIP stream with entries still to write).
      */
-    private static final class HexSink {
+    private static final class HexSink extends OutputStream {
         private final OutputStream out;
         private final int key;
         private final byte[] buf = new byte[1 << 16];
@@ -733,14 +803,21 @@ public class SavedGame {
             buf[p++] = b;
         }
 
-        void encoded(byte b) throws IOException {
+        @Override
+        public void write(int b) throws IOException {
             if (p >= buf.length - 1) flush();
             final int x = (b ^ key) & 0xFF;
             buf[p++] = HEX[(x & 0xF0) >>> 4];
             buf[p++] = HEX[x & 0x0F];
         }
 
-        void flush() throws IOException {
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            for (int i = 0; i < len; i++) write(b[off + i]);
+        }
+
+        @Override
+        public void flush() throws IOException {
             if (p > 0) { out.write(buf, 0, p); p = 0; }
         }
     }

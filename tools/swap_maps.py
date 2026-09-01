@@ -7,26 +7,31 @@ Mirrors SavedGame.saveWithout(): verbatim token copy, ESC delimiters re-emitted
 unchanged, fresh obfuscation key, savedata/moduledata copied whole, output via
 temp file + atomic replace.
 """
-import os, random, sys, zipfile
+import os, random, sys, zipfile, zlib
 
 ESC = 0x1B
-HEADER = b'!VCSK'
+HEADER = b'!VCSK'            # payload is the plaintext, XOR-hex encoded
+DEFLATED_HEADER = b'!VCSZ'   # payload is deflated (zlib) before XOR-hex (VASSAL 3.8+)
 SAVED_GAME, SAVE_DATA, MODULE_DATA = 'savedGame', 'savedata', 'moduledata'
 
 
 def read_vsav(path):
-    """-> (plaintext command log, {entry: (bytes, date_time)})"""
+    """-> (plaintext command log, {entry: (bytes, date_time)}, deflated flag)"""
     entries = {}
     with zipfile.ZipFile(path) as z:
         for name in (SAVED_GAME, SAVE_DATA, MODULE_DATA):
             info = z.getinfo(name)
             entries[name] = (z.read(name), info.date_time)
     raw = entries[SAVED_GAME][0]
-    if raw[:5] != HEADER:
-        raise SystemExit(f'{path}: savedGame is not obfuscated (!VCSK missing)')
+    deflated = raw[:5] == DEFLATED_HEADER
+    if not deflated and raw[:5] != HEADER:
+        raise SystemExit(f'{path}: savedGame is not obfuscated (!VCSK/!VCSZ missing)')
     key = int(raw[5:7], 16)
     body = bytes.fromhex(raw[7:].decode('ascii'))
-    return body.translate(bytes(i ^ key for i in range(256))), entries
+    body = body.translate(bytes(i ^ key for i in range(256)))
+    if deflated:
+        body = zlib.decompress(body)
+    return body, entries, deflated
 
 
 def split_commands(state):
@@ -64,29 +69,31 @@ def board_picker_tokens(state, toks):
     return found
 
 
-def obfuscate(plain, key):
-    out = bytearray(HEADER)
+def obfuscate(plain, key, deflated=False):
+    """Re-encodes in the same format the file was read in (!VCSK or !VCSZ)."""
+    payload = zlib.compress(plain, 9) if deflated else plain
+    out = bytearray(DEFLATED_HEADER if deflated else HEADER)
     out += b'%02x' % key
-    out += plain.translate(bytes(i ^ key for i in range(256))).hex().encode('ascii')
+    out += payload.translate(bytes(i ^ key for i in range(256))).hex().encode('ascii')
     return bytes(out)
 
 
-def write_vsav(path, plain, entries, key=None):
+def write_vsav(path, plain, entries, deflated=False, key=None):
     tmp = path + '.tmp'
     key = random.randrange(256) if key is None else key
     with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as z:
         for name in (SAVED_GAME, SAVE_DATA, MODULE_DATA):
             data, when = entries[name]
             if name == SAVED_GAME:
-                data = obfuscate(plain, key)
+                data = obfuscate(plain, key, deflated)
             z.writestr(zipfile.ZipInfo(name, date_time=when), data,
                        zipfile.ZIP_DEFLATED)
     os.replace(tmp, path)
 
 
 def main(target, donor, out, maps):
-    tgt, tgt_entries = read_vsav(target)
-    don, _ = read_vsav(donor)
+    tgt, tgt_entries, tgt_deflated = read_vsav(target)
+    don, _, _ = read_vsav(donor)
     tgt_toks, don_toks = split_commands(tgt), split_commands(don)
     tgt_bp, don_bp = board_picker_tokens(tgt, tgt_toks), board_picker_tokens(don, don_toks)
 
@@ -122,7 +129,7 @@ def main(target, donor, out, maps):
         parts.append(replace.get(idx) or tgt[cs:end])  # content
     plain = b''.join(parts)
 
-    write_vsav(out, plain, tgt_entries)
+    write_vsav(out, plain, tgt_entries, tgt_deflated)
     print(f'\nwrote {out}: {len(tgt_toks)} commands, '
           f'{len(plain)} plaintext bytes ({len(tgt)} before)')
 

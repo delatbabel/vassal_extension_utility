@@ -164,6 +164,28 @@ lowercase.
 Relevant source: `ObfuscatingOutputStream.java:38` (`HEADER = "!VCSK"`), `:62-88`
 (header, key, per-byte XOR + hex).
 
+### The deflated variant (`!VCSZ`, VASSAL 3.8+)
+
+The compress-then-obfuscate change (see
+[wif-engine-optimizations.md §A1](wif-engine-optimizations.md)) adds a second form,
+identical except that the plaintext is **deflated (zlib, level 9) before** the XOR-hex
+encoding, and the header is **`!VCSZ`**:
+
+```
+!VCSZ <KK> <PP><PP><PP>...      payload = hex(XOR(deflate(plaintext), key))
+```
+
+Deflating first is what makes the save small: the XOR-hex doubling then applies to the
+~12× smaller deflate output instead of the raw command log, and obfuscating *after*
+compressing costs nothing (XOR-hex of compressed data still re-compresses ~2:1 inside
+the ZIP). The container is still an ordinary ZIP either way.
+
+Readers must dispatch on the 5-byte header: `!VCSK` → unhex+XOR only; `!VCSZ` →
+unhex+XOR, then inflate. Engines/utilities that only know `!VCSK` cannot read `!VCSZ`
+saves. This utility reads both and **preserves whichever format a file was opened
+with** when rewriting it (`SavedGame.open` / `SavedGame.isDeflated()` /
+`writeObfuscated`; likewise `tools/swap_maps.py`).
+
 **Decoding one, by hand.** Take the start of the real sample's `savedGame`:
 
 ```
@@ -328,8 +350,8 @@ A `.vsav` is not standalone: loading it requires the module named in its `module
 | Entry — game state | `savedGame` | `GameState.java:1264` |
 | Entry — save meta | `savedata` | `SaveMetaData.java:66` |
 | Entry — module meta | `moduledata` | `ModuleMetaData.java:51` |
-| Obfuscation header | `!VCSK` | `ObfuscatingOutputStream.java:38` |
-| Obfuscation | header + 2-hex key + (2-hex-per-byte, each byte XOR key), lowercase | `ObfuscatingOutputStream.java:62-88` |
+| Obfuscation header | `!VCSK` (plaintext) / `!VCSZ` (deflated, 3.8+) | `ObfuscatingOutputStream.java` (`HEADER`/`DEFLATED_HEADER`) |
+| Obfuscation | header + 2-hex key + (2-hex-per-byte, each byte XOR key), lowercase; `!VCSZ` deflates (zlib) the plaintext first | `ObfuscatingOutputStream.java:62-88` |
 | Payload charset | UTF-8 | `GameState.java:1374, 1635` |
 | Command separator | `0x1B` (ESC, `KeyEvent.VK_ESCAPE`) | `GameModule.java:232` |
 | Save-block markers | `begin_save` / `end_save` | `GameState.java:1328-1329` |
