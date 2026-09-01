@@ -64,7 +64,8 @@ public final class DownloadModuleDialog {
         final String input = (String) JOptionPane.showInputDialog(owner,
                 "<html>Paste the library page for the module, or just its project name:<br>"
                 + "<tt>https://vassalengine.org/library/projects/<b>Project_Name</b></tt><br><br>"
-                + "Browse the library at <tt>https://vassalengine.org/library/projects</tt></html>",
+                + "If you do not know the module's URL, you can find it with the search<br>"
+                + "dialog on <tt>https://vassalengine.org/library/projects</tt></html>",
                 "Download Module from Library", JOptionPane.QUESTION_MESSAGE, null, null, "");
         if (input == null || input.trim().isEmpty()) return null;
 
@@ -102,6 +103,8 @@ public final class DownloadModuleDialog {
             module = modules.get(0);
         }
         else {
+            // most recent release at the top of the list
+            GameLibrary.sortNewestFirst(modules);
             final Object[] choices = modules.toArray();
             final Object picked = JOptionPane.showInputDialog(owner,
                     "This project publishes more than one module. Which one?",

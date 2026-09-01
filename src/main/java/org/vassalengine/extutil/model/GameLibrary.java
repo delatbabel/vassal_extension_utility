@@ -181,6 +181,11 @@ public final class GameLibrary {
         }
     }
 
+    /** Sorts newest release first (see {@link #newer}) — for choosers. */
+    public static void sortNewestFirst(List<RemoteFile> files) {
+        files.sort((a, b) -> newer(a, b) ? -1 : (newer(b, a) ? 1 : 0));
+    }
+
     /** Higher release version wins; publication time breaks ties. */
     static boolean newer(RemoteFile a, RemoteFile b) {
         final int c = compareVersions(a.releaseVersion, b.releaseVersion);
