@@ -4,10 +4,11 @@
 # For use on Linux systems. Modelled on ../vassal/Makefile.
 #
 # Native Linux packages (deb, rpm) are built with the system JDK's jpackage,
-# which bundles a jlink runtime automatically. Cross-building Windows (.exe via
-# Launch4j) and macOS (.dmg via libdmg-hfsplus) packages needs extra tools and
-# per-platform JDKs; run `make bootstrap` (or dist/bootstrap.sh) once to fetch
-# them. See docs/packaging.md for the full details and tool requirements.
+# which bundles a jlink runtime automatically. Cross-building Windows
+# (installer .exe via Launch4j + makensis) and macOS (.dmg via libdmg-hfsplus)
+# packages needs extra tools and per-platform JDKs; run `make bootstrap` (or
+# dist/bootstrap.sh) once to fetch them — makensis comes from the system's
+# nsis package. See docs/packaging.md for the full details and requirements.
 #
 
 SHELL:=/bin/bash
@@ -204,7 +205,8 @@ help:
 	@echo "    bootstrap             Fetch Windows/macOS cross-build tools + JDKs"
 	@echo "    release-linux-deb     Linux .deb        (jpackage)"
 	@echo "    release-linux-rpm     Linux .rpm        (jpackage; needs rpmbuild)"
-	@echo "    release-windows       Windows .exe, all three architectures (Launch4j)"
+	@echo "    release-windows       Windows installer .exe, all three architectures"
+	@echo "                          (Launch4j + makensis)"
 	@echo "    release-windows-x86_64 / -aarch64 / -x86_32"
 	@echo "    release-macos         macOS .dmg, both architectures (libdmg-hfsplus)"
 	@echo "    release-macos-x86_64 / -aarch64"
@@ -380,10 +382,16 @@ release-linux-rpm: $(TMPDIR)/jpackage-input/$(notdir $(DISTJAR)) $(TMPDIR)/jpack
 release-linux: release-linux-deb release-linux-rpm
 
 # =======================================================================
-# Windows — .exe via Launch4j, one per architecture
+# Windows — NSIS installer .exe, one per architecture
 # =======================================================================
-# Each build directory holds the wrapped VASSAL-Extension-Utility.exe plus a
-# jlink runtime (jre/) built from that architecture's Windows JDK, then zipped.
+# Each build directory holds the Launch4j-wrapped VASSAL-Extension-Utility.exe
+# (fat JAR embedded) plus a jlink runtime (jre/) built from that architecture's
+# Windows JDK. Those are assembled into a stage/ tree — exactly what lands in
+# the target machine's $INSTDIR — from which the install/uninstall manifests
+# are generated, and makensis packs the lot into an executable installer
+# (dist/windows/nsis/installer.nsi), modelled on ../vassal's.
+
+NSIS:=makensis
 
 # jlink a Windows runtime for the given arch from its bootstrapped JDK, using a
 # host jlink whose version matches that arch's JDK (32-bit = Java 17, else 21).
@@ -412,20 +420,55 @@ $(TMPDIR)/windows-%-build/VASSAL-Extension-Utility.exe: $(DISTJAR) $(DISTDIR)/wi
 	    $(DISTDIR)/windows/launch4j.xml.in > $(TMPDIR)/windows-$*-build/launch4j.xml
 	$(LAUNCH4J) $(CURDIR)/$(TMPDIR)/windows-$*-build/launch4j.xml
 
-$(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-%.zip: \
+# The staging tree: everything under it is installed verbatim into $INSTDIR.
+# The fat JAR is embedded in the .exe by Launch4j, so it is not staged
+# separately; LICENSE gains a .txt suffix so Windows opens it with a click.
+$(TMPDIR)/windows-%-build/stage: \
 		$(TMPDIR)/windows-%-build/VASSAL-Extension-Utility.exe \
-		$(TMPDIR)/windows-%-build/jre
-	cp -a CHANGES.md LICENSE README.md $(TMPDIR)/windows-$*-build/ 2>/dev/null || true
-	rm -f $@
-	pushd $(TMPDIR)/windows-$*-build >/dev/null ; \
-	  zip -9rq $(CURDIR)/$@ VASSAL-Extension-Utility.exe jre $(notdir $(DISTJAR)) \
-	           README.md LICENSE CHANGES.md 2>/dev/null ; \
-	  popd >/dev/null
+		$(TMPDIR)/windows-%-build/jre \
+		CHANGES.md LICENSE README.md
+	rm -rf $@
+	mkdir -p $@
+	cp -a $(TMPDIR)/windows-$*-build/VASSAL-Extension-Utility.exe $@/
+	cp -a $(TMPDIR)/windows-$*-build/jre $@/jre
+	cp -a CHANGES.md README.md $@/
+	cp -a LICENSE $@/LICENSE.txt
+	find $@ -type f -exec chmod 644 \{\} \+
+	find $@ -type d -exec chmod 755 \{\} \+
+	chmod 755 $@/VASSAL-Extension-Utility.exe
+
+# NSIS manifests generated from the staging tree, exactly as ../vassal does:
+# one SetOutPath/File list to install, and its reversal to uninstall.
+$(TMPDIR)/windows-%-build/install_files.inc: $(TMPDIR)/windows-%-build/stage
+	for i in `find $< -type d` ; do \
+		echo SetOutPath \"\$$INSTDIR\\`echo $$i | \
+			sed -e 's|$</\?||' -e 's/\//\\\/g'`\" ; \
+		find $$i -maxdepth 1 -type f -printf 'File "%p"\n' ; \
+	done >$@
+
+$(TMPDIR)/windows-%-build/uninstall_files.inc: $(TMPDIR)/windows-%-build/install_files.inc
+	sed -e 's/^SetOutPath/RMDir/' \
+			-e 's|^File "$(TMPDIR)/windows-$(*)-build/stage|Delete "$$INSTDIR|' \
+			-e 's/\//\\/g' <$< | \
+		tac	>$@
+
+$(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-x86_32.exe: BITS:=32
+$(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-x86_64.exe: BITS:=64
+$(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-aarch64.exe: BITS:=64
+
+$(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-%.exe: \
+		$(TMPDIR)/windows-%-build/stage \
+		$(TMPDIR)/windows-%-build/install_files.inc \
+		$(TMPDIR)/windows-%-build/uninstall_files.inc \
+		$(DISTDIR)/windows/nsis/installer.nsi
+	@command -v $(NSIS) >/dev/null || { echo "$(NSIS) not found — install the 'nsis' package (see docs/packaging.md)"; exit 1; }
+	$(NSIS) -NOCD -DVERSION=$(VERSION) -DNUMVERSION=$(VNUM) -DTMPDIR=$(TMPDIR) \
+	        -DARCH=$* -DBITS=$(BITS) $(DISTDIR)/windows/nsis/installer.nsi
 	@echo "built $@"
 
-release-windows-x86_64:  $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-x86_64.zip
-release-windows-aarch64: $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-aarch64.zip
-release-windows-x86_32:  $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-x86_32.zip
+release-windows-x86_64:  $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-x86_64.exe
+release-windows-aarch64: $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-aarch64.exe
+release-windows-x86_32:  $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-x86_32.exe
 
 release-windows: release-windows-x86_64 release-windows-aarch64 release-windows-x86_32
 
@@ -483,7 +526,7 @@ release: release-linux release-windows release-macos
 
 release-sha256: | $(TMPDIR)
 	pushd $(TMPDIR) >/dev/null ; \
-	  sha256sum *.deb *.rpm *-windows-*.zip *-macos-*.dmg 2>/dev/null \
+	  sha256sum *.deb *.rpm *-windows-*.exe *-macos-*.dmg 2>/dev/null \
 	    > VASSAL-Extension-Utility-$(VERSION).sha256 || true ; \
 	  popd >/dev/null
 	@echo "wrote $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION).sha256"

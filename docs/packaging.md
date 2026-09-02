@@ -12,7 +12,7 @@ package types mirror those on the [VASSAL download page](https://vassalengine.or
 |---|---|---|---|
 | Linux `.deb`   | `release-linux-deb`     | `jpackage`               | native only |
 | Linux `.rpm`   | `release-linux-rpm`     | `jpackage` + `rpmbuild`  | native only |
-| Windows `.exe` (x86_64, aarch64, x86_32) | `release-windows[-<arch>]` | Launch4j + `jlink` | yes, from Linux |
+| Windows installer `.exe` (x86_64, aarch64, x86_32) | `release-windows[-<arch>]` | Launch4j + `jlink` + `makensis` | yes, from Linux |
 | macOS `.dmg` (x86_64, aarch64) | `release-macos[-<arch>]` | `genisoimage` + libdmg-hfsplus + `jlink` | yes, from Linux |
 
 Built packages are written to the `tmp/` directory. `make release` builds them
@@ -31,6 +31,7 @@ per-project tools (downloaded into `dist/`, needing no root).
 | Needed for | Package(s) | Provides |
 |---|---|---|
 | Everything | `openjdk-21-jdk` | `jpackage`, `jlink`, `jmods` (a JDK that can link a runtime) |
+| Windows installer `.exe` | `nsis` | `makensis`, which packs the staged files into an executable installer |
 | Windows **32-bit** `.exe` | `openjdk-17-jdk` *(optional)* | a Java **17** host `jlink` to match the 32-bit Windows JDK; if absent, `make bootstrap` downloads one — no root needed |
 | Building the fat JAR | *(none — uses the bundled `./mvnw`)* | |
 | `.deb` | `fakeroot`, `dpkg` (usually preinstalled) | Debian package assembly |
@@ -229,9 +230,10 @@ override file keeps all of those tokens but hardcodes `Name=$(APPNAME)`
 Exec/Icon/Categories/MimeType are still filled in per-build. This mirrors the
 same technique already used for the `postinst`/`prerm`/`.spec` overrides.
 
-### Windows `.exe`
+### Windows installer `.exe`
 
 ```bash
+sudo apt install nsis      # once, for makensis
 make bootstrap             # once, to fetch Launch4j + Windows JDKs
 make release-windows-x86_64
 make release-windows-aarch64
@@ -239,11 +241,27 @@ make release-windows-x86_32
 make release-windows       # all three
 ```
 
-Each target produces `tmp/VASSAL-Extension-Utility-<VERSION>-windows-<arch>.zip`
-containing `VASSAL-Extension-Utility.exe` (a Launch4j wrapper) alongside a `jre/`
-directory — a `jlink` runtime built from that architecture's Windows JDK — plus
-the JAR, `README.md` and `LICENSE`. The `.exe` launches the bundled runtime, so
-end users need no installed Java.
+Each target produces `tmp/VASSAL-Extension-Utility-<VERSION>-windows-<arch>.exe`,
+an NSIS installer built by `makensis` from
+`dist/windows/nsis/installer.nsi` (modelled on `../vassal`'s installer). The
+build stages what gets installed — `VASSAL-Extension-Utility.exe` (a Launch4j
+wrapper with the fat JAR embedded), a `jre/` directory (a `jlink` runtime built
+from that architecture's Windows JDK), `README.md`, `CHANGES.md` and
+`LICENSE.txt` — into `tmp/windows-<arch>-build/stage/`, generates the
+`install_files.inc`/`uninstall_files.inc` manifests from that tree, and hands
+the lot to `makensis`. The app launches the bundled runtime, so end users need
+no installed Java.
+
+The installer offers Standard/Custom setup, uninstalls older utility versions
+(Custom lets the user pick which), creates optional desktop and Start Menu
+shortcuts, installs to `Program Files\VASSAL-Extension-Utility-<VERSION>`,
+registers an uninstaller in Add/Remove Programs, and refuses to run on the
+wrong architecture. Unlike VASSAL's installer it registers **no file
+associations** — VASSAL itself owns `.vmod`/`.vlog`/`.vsav`. Its uninstall
+registry key is deliberately named `VASSAL-Extension-Utility <version>`
+(hyphenated): VASSAL's installer offers to remove — and in a Standard setup
+silently removes — every uninstall key starting with `VASSAL `(with a space),
+so the utility's key must never match that prefix.
 
 ### macOS `.dmg`
 
