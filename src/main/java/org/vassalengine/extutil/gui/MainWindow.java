@@ -331,23 +331,35 @@ public class MainWindow extends JFrame {
         JFileChooser fc = new JFileChooser();
         fc.setDialogTitle("Open VASSAL Archive");
 
+        // Which last-opened-from directory this chooser belongs to: modules and
+        // extensions are remembered separately; the generic Open (left/right)
+        // follows the panel's usual content (left = modules, right = extensions).
+        final String dirCategory;
         if (Boolean.TRUE.equals(extensionOnly)) {
             fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
                     "VASSAL Extensions (*.vmdx)", "vmdx"));
+            dirCategory = RecentFilesStore.DIR_EXTENSION;
         } else if (Boolean.FALSE.equals(extensionOnly)) {
             fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
                     "VASSAL Modules (*.vmod)", "vmod"));
+            dirCategory = RecentFilesStore.DIR_MODULE;
         } else {
             fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
                     "VASSAL Archives (*.vmod, *.vmdx)", "vmod", "vmdx"));
+            dirCategory = panel == leftPanel ? RecentFilesStore.DIR_MODULE
+                                             : RecentFilesStore.DIR_EXTENSION;
         }
 
-        File defaultDir = new File(System.getProperty("user.home"), "Games/VassalModules");
-        if (!defaultDir.isDirectory()) defaultDir = new File(System.getProperty("user.home"));
+        File defaultDir = recentFiles.getLastDir(dirCategory);
+        if (defaultDir == null) {
+            defaultDir = new File(System.getProperty("user.home"), "Games/VassalModules");
+            if (!defaultDir.isDirectory()) defaultDir = new File(System.getProperty("user.home"));
+        }
         fc.setCurrentDirectory(defaultDir);
 
         if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
 
+        recentFiles.setLastDirFrom(dirCategory, fc.getSelectedFile());
         openArchive(panel, fc.getSelectedFile());
     }
 
@@ -932,11 +944,15 @@ public class MainWindow extends JFrame {
         fc.setDialogTitle("Open Saved Game to Check");
         fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
                 "VASSAL Saved Games (*.vsav)", "vsav"));
-        File startDir = module.getFile() != null ? module.getFile().getParentFile()
-                : new File(System.getProperty("user.home"));
+        File startDir = recentFiles.getLastDir(RecentFilesStore.DIR_SAVED_GAME);
+        if (startDir == null) {
+            startDir = module.getFile() != null ? module.getFile().getParentFile()
+                    : new File(System.getProperty("user.home"));
+        }
         if (startDir != null && startDir.isDirectory()) fc.setCurrentDirectory(startDir);
         if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
         final File vsav = fc.getSelectedFile();
+        recentFiles.setLastDirFrom(RecentFilesStore.DIR_SAVED_GAME, vsav);
 
         status("Analyzing " + vsav.getName() + " …");
         final JDialog progress = makeProgressDialog(
@@ -2193,9 +2209,13 @@ public class MainWindow extends JFrame {
         fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
         fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
                 "VASSAL Saved Games (*.vsav) and folders", "vsav"));
-        final File startDir = moduleFile.getAbsoluteFile().getParentFile();
+        File startDir = recentFiles.getLastDir(RecentFilesStore.DIR_SAVED_GAME);
+        if (startDir == null) startDir = moduleFile.getAbsoluteFile().getParentFile();
         if (startDir != null && startDir.isDirectory()) fc.setCurrentDirectory(startDir);
         if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return null;
+        if (fc.getSelectedFiles().length > 0) {
+            recentFiles.setLastDirFrom(RecentFilesStore.DIR_SAVED_GAME, fc.getSelectedFiles()[0]);
+        }
 
         final Set<File> collected = new java.util.TreeSet<>();
         int skippedBackups = 0;
@@ -2767,7 +2787,7 @@ public class MainWindow extends JFrame {
         File start = loaded != null && loaded.getFile() != null
                 ? loaded.getFile().getAbsoluteFile().getParentFile()
                 : new File(System.getProperty("user.home"));
-        final String result = new DownloadModuleDialog(this).run(start);
+        final String result = new DownloadModuleDialog(this, recentFiles).run(start);
         if (result != null) status(result);
     }
 

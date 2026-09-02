@@ -20,13 +20,20 @@ import java.util.List;
 import java.util.Properties;
 
 /**
- * Persists the most-recently-opened files for the left and right panels.
+ * Persists the most-recently-opened files for the left and right panels, and
+ * the directory each kind of file was last opened from.
  *
  * Each panel keeps its own ordered list (most-recent first), capped at
- * {@link #MAX_RECENT} entries.  The two lists are stored as a Java properties
+ * {@link #MAX_RECENT} entries.  The lists are stored as a Java properties
  * file under the user's home directory:
  * <pre>{@code ~/.vassal-extension-utility/recent-files.properties}</pre>
  * with keys {@code left.0..left.4} and {@code right.0..right.4}.
+ *
+ * The same file also remembers, per file kind, the directory the user last
+ * opened that kind of file from ({@code lastdir.module}, {@code
+ * lastdir.extension}, {@code lastdir.savedGame}), which the file choosers use
+ * as their starting directory the next time — see
+ * {@link #getLastDir(String)} / {@link #setLastDirFrom(String, File)}.
  *
  * All disk operations fail soft: a missing or unreadable store simply yields
  * empty lists, and save errors are logged rather than propagated, so recent-file
@@ -39,14 +46,23 @@ public class RecentFilesStore {
     /** Maximum number of remembered files per panel. */
     public static final int MAX_RECENT = 5;
 
+    /** Last-directory category: opening a module. */
+    public static final String DIR_MODULE = "module";
+    /** Last-directory category: opening an extension. */
+    public static final String DIR_EXTENSION = "extension";
+    /** Last-directory category: opening a saved game. */
+    public static final String DIR_SAVED_GAME = "savedGame";
+
     private static final String CONFIG_DIR  = ".vassal-extension-utility";
     private static final String CONFIG_FILE = "recent-files.properties";
     private static final String LEFT_PREFIX  = "left.";
     private static final String RIGHT_PREFIX = "right.";
+    private static final String LASTDIR_PREFIX = "lastdir.";
 
     private final File storeFile;
     private final List<String> left  = new ArrayList<>();
     private final List<String> right = new ArrayList<>();
+    private final java.util.Map<String, String> lastDirs = new java.util.LinkedHashMap<>();
 
     public RecentFilesStore() {
         this(new File(new File(System.getProperty("user.home"), CONFIG_DIR), CONFIG_FILE));
@@ -81,6 +97,35 @@ public class RecentFilesStore {
         if (changed) save();
     }
 
+    /**
+     * The directory files of the given category were last opened from, or
+     * {@code null} when none is recorded or it no longer exists — callers then
+     * fall back to their own default.
+     *
+     * @param category one of {@link #DIR_MODULE}, {@link #DIR_EXTENSION},
+     *                 {@link #DIR_SAVED_GAME}
+     */
+    public File getLastDir(String category) {
+        String path = lastDirs.get(category);
+        if (path == null || path.isEmpty()) return null;
+        File dir = new File(path);
+        return dir.isDirectory() ? dir : null;
+    }
+
+    /**
+     * Records the directory to start the given category's file chooser in next
+     * time: {@code chosen} itself if it is a directory, else its parent.
+     */
+    public void setLastDirFrom(String category, File chosen) {
+        if (chosen == null) return;
+        File dir = chosen.isDirectory() ? chosen : chosen.getAbsoluteFile().getParentFile();
+        if (dir == null) return;
+        String path = dir.getAbsolutePath();
+        if (path.equals(lastDirs.get(category))) return;
+        lastDirs.put(category, path);
+        save();
+    }
+
     // -----------------------------------------------------------------------
     // Internals
     // -----------------------------------------------------------------------
@@ -103,6 +148,7 @@ public class RecentFilesStore {
     private void load() {
         left.clear();
         right.clear();
+        lastDirs.clear();
         if (!storeFile.isFile()) return;
         Properties props = new Properties();
         try (InputStream in = Files.newInputStream(storeFile.toPath())) {
@@ -113,6 +159,11 @@ public class RecentFilesStore {
         }
         loadList(props, LEFT_PREFIX,  left);
         loadList(props, RIGHT_PREFIX, right);
+        for (String name : props.stringPropertyNames()) {
+            if (name.startsWith(LASTDIR_PREFIX)) {
+                lastDirs.put(name.substring(LASTDIR_PREFIX.length()), props.getProperty(name));
+            }
+        }
     }
 
     private static void loadList(Properties props, String prefix, List<String> into) {
@@ -126,6 +177,9 @@ public class RecentFilesStore {
         Properties props = new Properties();
         storeList(props, LEFT_PREFIX,  left);
         storeList(props, RIGHT_PREFIX, right);
+        for (java.util.Map.Entry<String, String> e : lastDirs.entrySet()) {
+            props.setProperty(LASTDIR_PREFIX + e.getKey(), e.getValue());
+        }
         try {
             Files.createDirectories(storeFile.getParentFile().toPath());
             try (OutputStream out = Files.newOutputStream(storeFile.toPath())) {

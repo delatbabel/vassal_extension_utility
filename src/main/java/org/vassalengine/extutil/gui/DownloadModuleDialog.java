@@ -10,6 +10,7 @@ package org.vassalengine.extutil.gui;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vassalengine.extutil.model.GameLibrary;
+import org.vassalengine.extutil.model.RecentFilesStore;
 import org.vassalengine.extutil.model.SavedGame;
 
 import javax.swing.*;
@@ -56,8 +57,17 @@ public final class DownloadModuleDialog {
     private static final Logger log = LoggerFactory.getLogger(DownloadModuleDialog.class);
 
     private final Window owner;
+    private final RecentFilesStore recentFiles;
 
-    public DownloadModuleDialog(Window owner) { this.owner = owner; }
+    /**
+     * @param recentFiles store supplying (and recording) the directory saved
+     *                    games were last opened from, for the scenario-filter
+     *                    chooser; may be {@code null}, disabling the memory
+     */
+    public DownloadModuleDialog(Window owner, RecentFilesStore recentFiles) {
+        this.owner = owner;
+        this.recentFiles = recentFiles;
+    }
 
     /** Runs the whole flow. Returns a short summary for the status bar. */
     public String run(File startDir) {
@@ -170,8 +180,14 @@ public final class DownloadModuleDialog {
                 sc.setDialogTitle("Choose a saved game");
                 sc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
                         "VASSAL Saved Games (*.vsav)", "vsav"));
-                if (startDir != null && startDir.isDirectory()) sc.setCurrentDirectory(startDir);
+                File scStart = recentFiles == null ? null
+                        : recentFiles.getLastDir(RecentFilesStore.DIR_SAVED_GAME);
+                if (scStart == null) scStart = startDir;
+                if (scStart != null && scStart.isDirectory()) sc.setCurrentDirectory(scStart);
                 if (sc.showOpenDialog(owner) != JFileChooser.APPROVE_OPTION) return null;
+                if (recentFiles != null) {
+                    recentFiles.setLastDirFrom(RecentFilesStore.DIR_SAVED_GAME, sc.getSelectedFile());
+                }
                 final Set<String> needed;
                 try {
                     needed = SavedGame.open(sc.getSelectedFile()).getExtensionNames();
