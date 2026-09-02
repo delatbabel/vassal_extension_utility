@@ -239,6 +239,21 @@ public class MainWindow extends JFrame {
         toolsMenu.add(refreshCounters);
         bar.add(toolsMenu);
 
+        JMenu helpMenu = new JMenu("Help");
+        helpMenu.setMnemonic('H');
+
+        JMenuItem usersGuide = new JMenuItem("Users Guide");
+        usersGuide.setAccelerator(KeyStroke.getKeyStroke("F1"));
+        usersGuide.addActionListener(e -> HelpDialogs.showUsersGuide(this));
+
+        JMenuItem about = new JMenuItem("About");
+        about.addActionListener(e -> HelpDialogs.showAbout(this));
+
+        helpMenu.add(usersGuide);
+        helpMenu.addSeparator();
+        helpMenu.add(about);
+        bar.add(helpMenu);
+
         return bar;
     }
 

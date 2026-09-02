@@ -96,6 +96,34 @@
 
 
     <build>
+        <!--
+          Resources for the Help menu: version.properties is filtered so the
+          running application can show its own version (Help > About), and the
+          README is bundled at classpath:/help/README.md so Help > Users Guide
+          displays the same text the repository ships.
+        -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <excludes>
+                    <exclude>version.properties</exclude>
+                </excludes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <includes>
+                    <include>version.properties</include>
+                </includes>
+                <filtering>true</filtering>
+            </resource>
+            <resource>
+                <directory>${project.basedir}</directory>
+                <includes>
+                    <include>README.md</include>
+                </includes>
+                <targetPath>help</targetPath>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
