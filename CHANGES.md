@@ -1,5 +1,24 @@
 # Changes
 
+## 1.0.19
+
+The Windows packages become real installers, and the file choosers remember
+where you keep your files.
+
+### Added
+
+- **The Windows packages are now executable installers.** `make release-windows` builds an NSIS installer per architecture (x86_64, aarch64, x86_32) with `makensis`, in place of the previous zip files. The installer offers Standard/Custom setup, removes older versions of the utility (Custom setup lets you choose which), creates optional desktop and Start Menu shortcuts, and registers an uninstaller in Add/Remove Programs. It registers no file associations — VASSAL itself owns `.vmod`/`.vlog`/`.vsav` — and its uninstall registry key is deliberately named so that VASSAL's own installer, which removes every key beginning `VASSAL `, never mistakes the utility for an old VASSAL. See `docs/packaging.md`.
+
+- **File choosers remember where you last opened each kind of file.** Opening a module (left panel), an extension (right panel), or a saved game (Excess Units, the Refresh Counters scenario picker, or the Download-from-Library scenario filter) now starts the chooser in the folder that kind of file was last opened from, falling back to the old defaults when nothing is remembered. The locations persist in `~/.vassal-extension-utility/recent-files.properties` alongside the recent-files lists.
+
+- **`tools/migrate_15_to_21.py` — migrate a WiF 1.5.93 scenario to the 2.1.3 deluxe module.** Replaces board layouts and the extension list from a donor 2.1.3 scenario, renames the restructured charts on every piece, stack and deck, removes counters the deluxe extension set does not define, repoints renamed counters at their new slots, and replaces the old module's decks with the 2.1.3 module's own. The old per-nation control markers are recreated as the layered `Hex Control Marker` via an `AddCountersRunner` job: its `add=` lines now take `layer:<name>=<level>` fields, setting a Layer trait to a 1-based level before placing. See `tools/README.md`.
+
+### Changed
+
+- **Saved games written by VASSAL 3.8+ (the deflated `!VCSZ` format) now open**, in the application and the command-line tools alike, and each file is rewritten in whichever format it was read in.
+
+- **The Download-from-Library prompt** now points at the library's search page for finding a module's project name, and when a project publishes more than one module the newest is listed first.
+
 ## 1.0.17
 
 Fixes **Download Module from Library** reporting that it downloaded nothing,
