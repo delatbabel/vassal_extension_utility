@@ -53,6 +53,22 @@ covered in the **[Developer's Guide](DEVELOPERS-GUIDE.md)**.
 9. **Tools → Remove Unused Images** (left or right panel) lists the images in that archive that no component references. Review the list — deselect any you want to keep (they could be used by custom code) — and confirm to mark the rest for removal. The images are deleted when you save.
 10. **File → Save All** (or Ctrl+S) writes all modified archives back to disk.
 
+## Downloading a module from the library
+
+**File → Download Module from Library…** fetches a module and its extensions from the [VASSAL game library](https://vassalengine.org/library/projects), placing everything where this utility and VASSAL expect to find it. The flow is a short sequence of prompts:
+
+1. **Name the project.** Paste the module's library page URL (`https://vassalengine.org/library/projects/Project_Name`) or type just the project name. If you do not know it, find the module with the search dialog on the [library page](https://vassalengine.org/library/projects) and copy the address of its project page.
+2. **Choose the module**, if the project publishes more than one `.vmod` file (some projects also publish placeholders or older editions). The list is sorted newest first.
+3. **Choose the folder to download into.** The folder is tested for writability *before* anything is downloaded — a folder under **Program Files** (or any other protected location) needs administrator rights, which this application does not run with, so choose a folder you own, such as somewhere under **Documents**. If the test fails you are told why and asked for another folder.
+4. **Choose which extensions to fetch**, if the project publishes any:
+   - **All of them** — the usual choice for a first download; or
+   - **Only what one saved game needs** — point the dialog at a `.vsav` file and only the extensions that game lists are fetched. Extensions the game needs but the library does not publish are listed for confirmation rather than silently skipped, so you know what to obtain elsewhere.
+5. **Confirm.** The dialog shows what will be downloaded and the total size, then fetches everything with a progress display.
+
+Where things land: the module goes into the chosen folder, and the extensions into a sibling `<module>_ext/` folder named after the module file (e.g. `MyGame.vmod` → `MyGame_ext/`) — the same convention VASSAL itself loads extensions from, so the module is ready to play or open in this utility immediately. When the same extension appears in several library releases, the newest copy of each file is chosen. Every download is verified against the library's SHA-256 checksum and written via a temporary file, so a failed or cancelled download never leaves a truncated module behind.
+
+Afterwards, open the module with **File → Open Module (left)** and manage its extensions with **Show Extensions**. If a download fails, the closing dialog names the first few reasons, and the full detail is in `~/.vassal-extension-utility/extension-utility.log`.
+
 ## Logs
 
 Both live in `~/.vassal-extension-utility/`:
