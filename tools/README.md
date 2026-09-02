@@ -15,6 +15,7 @@ application and have no dependencies beyond the Python standard library.
 | `remove_offmap_pieces.py` | `.vsav` | report (and optionally delete) every piece that is on no map |
 | `dedupe_pieces.py` | `.vsav` | reduce duplicated counters to one copy each |
 | `copy_counter_positions.py` | `.vsav` | give counters the positions they hold in a reference save |
+| `migrate_15_to_21.py` | `.vsav` | migrate a WiF 1.5.93 scenario to the 2.1.3 deluxe module |
 | `missing_counters.py` | — (read-only) | report an extension's counters that a save does not contain |
 | `renumber_gpids.py` | `.vmdx` | clear duplicate Piece Ids |
 | `drop_slots.py` | `.vmdx` | delete piece slots by Piece Id |
@@ -361,6 +362,66 @@ you want — without it, *any* counter at the anchor that the reference also hol
 is moved to the reference's position for it, including ones that were never part
 of the exercise. A counter the reference does not hold stays where it is, which
 is how a target may keep extras the reference never had.
+
+## migrate_15_to_21.py — migrate a 1.5.93 scenario to the 2.1.3 deluxe module
+
+```
+tools/migrate_15_to_21.py OLD.vsav DONOR.vsav MODULE.vmod OUT.vsav
+                          [--jobs=OUT.job] [--csv=OUT.csv] [--dry-run]
+```
+
+Rewrites a scenario built with the monolithic 1.5.93 module ("WiF CE Maps and
+Units Combo") so it loads under 2.1.3 ("WiF CE Official Combo") with the deluxe
+extension set — base module plus 10-SiF through 16-PiF and 18-Production-FiF,
+plus the map extensions 01/02/03. `DONOR` is an empty 2.1.3 scenario supplying
+every board layout and the `moduledata` entry (the donor's World Maps layout
+had `ASIA Main Insert` doubled into column 4; the layout written uses `PACIFIC
+Main Insert` there). `OUT` must be new; `OLD` is never touched.
+
+What migrates it, in one pass (the module docstring has the full rulebook):
+
+- board layouts and `EXT` registrations are replaced wholesale with the donor's;
+- maps are renamed on every piece, stack and deck — `Allied TFs` → `CW TFs &
+  Ports`, `Axis TFs` → `Japan TFs & Ports`, `Game MGT` → `Impulse and Weather`
+  — coordinates kept, because the World Maps insert boards reassemble the old
+  single-board columns exactly (verified: identical column widths and heights);
+- counters defined only in the non-deluxe extensions (09, 19–27) are removed,
+  as is everything on the discarded `Resourcesetc`/`Trade Agreements` charts
+  (replaced by the empty Build Points chart) and on maps 2.1.3 no longer has;
+- renamed counters are repointed at their new slots (16 ` Mod` convoy/oiler
+  pairs, 8 `…BPs` → `…BPsDisplay` pairs) by innermost name **and** gpid, so a
+  later Refresh Counters rebuilds their full 2.1.3 definitions;
+- the old per-nation `X Control` markers became one layered `Hex Control
+  Marker`; byte surgery cannot expand its prototypes, so they are removed here
+  and written to an [`AddCountersRunner`](../docs/refresh-counters.md#adding-counters--addcountersrunner)
+  job (`--jobs`, default `OUT.hexctl.job`) whose `layer:majorhexcontroller=<n>`
+  fields have the engine place each marker with the right nation showing;
+- pieces on the redrawn `FF Display` (and the one counter from the vanished
+  `Minors FiF Chart`, sent to `CW FiF Chart`) are laid out in a grid at the
+  top-left of their map, since their old coordinates mean nothing on the new
+  artwork;
+- **no old deck survives**: a deck's identity (internal key, position, piece
+  id) belongs to the module that defined it, and the old force-pool boxes sit
+  where the *old* chart art had them. The donor's own deck commands are copied
+  in verbatim instead — ids, keys, positions, face-down flags — so the boxes
+  align with the 2.1.3 art and `Return to Deck` traits find the keys they
+  name. On the charts both modules share the positions are identical, so kept
+  counters still sit on their pools.
+
+GPIDs were preserved between the two modules (5225 of 6955 pieces in the
+reference scenario match by GPID and name), which is what makes the keep test —
+gpid **or** name known to the deluxe set — reliable. `--csv` writes a manifest
+row for every removed, renamed or relocated piece.
+
+Afterwards: run the `.hexctl.job` through `AddCountersRunner`, then **Refresh
+Counters** against the 2.1.3 module with options **pieces + counter names +
+layer names + rotate names + labeler names**, so every kept piece is rebuilt to
+its 2.1.3 definition, stacking is reknit and the save metadata restamped. The
+name-matching options are load-bearing: the refresher copies a trait's state
+only when old and new trait type strings match exactly, and 2.1.3 changed the
+keystrokes inside nearly every Layer — without `UseLayerName` no Flip state
+transfers, and since the 2.1.3 palette pieces are saved face-*down*, every
+migrated counter comes out face down.
 
 ## renumber_gpids.py — clear duplicate Piece Ids in an extension
 

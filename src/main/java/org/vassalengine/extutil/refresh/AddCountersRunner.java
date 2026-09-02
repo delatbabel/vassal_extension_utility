@@ -18,6 +18,8 @@ import VASSAL.build.module.GameState;
 import VASSAL.build.module.Map;
 import VASSAL.build.module.metadata.SaveMetaData;
 import VASSAL.build.widget.PieceSlot;
+import VASSAL.counters.Decorator;
+import VASSAL.counters.Embellishment;
 import VASSAL.counters.GamePiece;
 import VASSAL.counters.PieceCloner;
 import VASSAL.counters.Properties;
@@ -68,8 +70,16 @@ import java.util.List;
  * <pre>
  * module=/path/to/Module.vmod
  * save=/path/to/scenario.vsav
- * add=&lt;gpid&gt;\t&lt;map identifier&gt;\t&lt;x&gt;\t&lt;y&gt;
+ * add=&lt;gpid&gt;\t&lt;map identifier&gt;\t&lt;x&gt;\t&lt;y&gt;[\tlayer:&lt;name&gt;=&lt;level&gt;]...
  * </pre>
+ *
+ * <p>An optional {@code layer:<name>=<level>} field sets the Layer trait
+ * (Embellishment) named {@code <name>} to the given <b>1-based</b> level
+ * before the piece is placed — how a nation is chosen on a shared layered
+ * marker such as the WiF {@code Hex Control Marker} (its
+ * {@code majorhexcontroller} layer has one level per major power). The level
+ * is state, not type, so the piece stays byte-identical to a hand-placed one
+ * cycled to that level.</p>
  *
  * <p>As in {@code RefreshRunner}, the scenario's own extension list and board
  * layouts are captured before and reapplied after, since saving rebuilds both
@@ -86,12 +96,14 @@ public final class AddCountersRunner {
         @Override public MenuBarProxy getMenuBarProxyFor(JFrame f) { return bar; }
     }
 
-    /** One counter to add: which slot, and where to drop it. */
+    /** One counter to add: which slot, where to drop it, and any layer levels. */
     private static final class Add {
         final String gpid, mapId;
         final int x, y;
-        Add(String gpid, String mapId, int x, int y) {
+        final List<String[]> layers;    // {layer name, 1-based level}
+        Add(String gpid, String mapId, int x, int y, List<String[]> layers) {
             this.gpid = gpid; this.mapId = mapId; this.x = x; this.y = y;
+            this.layers = layers;
         }
     }
 
@@ -126,7 +138,19 @@ public final class AddCountersRunner {
             else if ("add".equals(key)) {
                 final String[] f = val.split("\t", -1);
                 if (f.length < 4) { say("SKIP", "malformed add: " + val); continue; }
-                adds.add(new Add(f[0], f[1], Integer.parseInt(f[2]), Integer.parseInt(f[3])));
+                final List<String[]> layers = new ArrayList<>();
+                for (int i = 4; i < f.length; i++) {
+                    final int sep = f[i].indexOf('=');
+                    if (f[i].startsWith("layer:") && sep > 6) {
+                        layers.add(new String[]{
+                                f[i].substring(6, sep), f[i].substring(sep + 1) });
+                    }
+                    else if (!f[i].isEmpty()) {
+                        say("SKIP", "unknown add field: " + f[i]);
+                    }
+                }
+                adds.add(new Add(f[0], f[1],
+                        Integer.parseInt(f[2]), Integer.parseInt(f[3]), layers));
             }
         }
         if (module == null || save == null || adds.isEmpty()) {
@@ -188,6 +212,11 @@ public final class AddCountersRunner {
                     final GamePiece piece =
                             PieceCloner.getInstance().clonePiece(slot.getPiece());
                     piece.setProperty(Properties.PIECE_ID, slot.getGpId());
+                    for (String[] spec : a.layers) {
+                        if (!setLayer(piece, spec[0], Integer.parseInt(spec[1]))) {
+                            say("WARN", a.gpid + "\tno Layer trait named " + spec[0]);
+                        }
+                    }
                     map.placeOrMerge(piece, new Point(a.x, a.y));
                     say("ADDED", a.gpid + "\t" + slot.getConfigureName() + "\t" + a.mapId
                             + "\t" + a.x + "," + a.y);
@@ -214,6 +243,27 @@ public final class AddCountersRunner {
         }
         say("SUMMARY", placed + "\t" + failed);
         return failed == 0 ? 0 : 1;
+    }
+
+    /**
+     * Sets every Layer trait (Embellishment) named {@code layerName} in the
+     * piece's decorator chain to the given 1-based level.
+     * {@link Embellishment#setValue(int)} takes a 0-based level and leaves the
+     * activation status alone, which is what a shared always-active layered
+     * marker needs.
+     *
+     * @return whether any matching layer was found
+     */
+    private static boolean setLayer(GamePiece piece, String layerName, int level) {
+        boolean found = false;
+        for (GamePiece p = piece; p instanceof Decorator; p = ((Decorator) p).getInner()) {
+            if (p instanceof Embellishment
+                    && layerName.equals(((Embellishment) p).getLayerName())) {
+                ((Embellishment) p).setValue(level - 1);
+                found = true;
+            }
+        }
+        return found;
     }
 
     private static void move(File from, File to) throws IOException {

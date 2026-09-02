@@ -129,6 +129,17 @@ line per counter; resolving *which* stack a counter belongs in is left to the
 caller, since that is a judgement about names rather than something the engine
 knows.
 
+An `add=` line may carry trailing `layer:<name>=<level>` fields, each setting
+the Layer trait (Embellishment) named `<name>` to the given **1-based** level
+before the piece is placed — how a nation is chosen on a shared layered marker
+such as the WiF `Hex Control Marker`, whose `majorhexcontroller` layer has one
+level per major power. The runner walks the cloned piece's decorator chain and
+calls `Embellishment.setValue(level - 1)` (its parameter is 0-based) on every
+matching layer, which changes state only, so the piece stays byte-identical to
+a hand-placed one cycled to that level; a name matching no layer is a `WARN`,
+not a failure. `tools/migrate_15_to_21.py` writes these jobs to recreate the
+old per-nation control markers as layered ones.
+
 **Look up maps with `getAllDescendantComponentsOf(Map.class)`, not
 `getComponentsOf`.** The latter returns only the module's direct children: in the
 WiF module it finds 7 maps where there are 51, because the force-pool maps are
