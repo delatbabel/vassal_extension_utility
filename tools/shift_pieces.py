@@ -12,7 +12,7 @@ from swap_maps import read_vsav, split_commands, write_vsav
 
 
 def main(path, out, map_name, x_lo, x_hi, dx, dy):
-    state, entries = read_vsav(path)
+    state, entries, deflated = read_vsav(path)
     toks = split_commands(state)
     prefix = (map_name + ';').encode('utf-8')
 
@@ -38,7 +38,7 @@ def main(path, out, map_name, x_lo, x_hi, dx, dy):
         parts.append(content[:tab + 1] + b';'.join(f))
         moved.append((f[3].decode(), x, y, x + dx, y + dy))
 
-    write_vsav(out, b''.join(parts), entries)
+    write_vsav(out, b''.join(parts), entries, deflated)
     for gpid, ox, oy, nx, ny in moved:
         print(f'  gpid {gpid}: ({ox},{oy}) -> ({nx},{ny})')
     print(f'\nwrote {out}: {len(moved)} piece(s) moved')

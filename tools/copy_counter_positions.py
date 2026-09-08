@@ -56,7 +56,7 @@ from remove_placemark_carriers import (add_piece_fields, basic_piece, piece_name
 
 def piece_positions(path):
     """gpid -> (name, map, x, y) for every counter with exactly one copy."""
-    state, _ = read_vsav(path)
+    state, _, _ = read_vsav(path)
     seen = {}
     for _, cs, end in split_commands(state):
         f = add_piece_fields(state[cs:end].decode('utf-8', 'replace'))
@@ -121,7 +121,7 @@ def main(argv):
     for path in saves:
         if os.path.abspath(path) == os.path.abspath(ref):
             continue
-        state, entries = read_vsav(path)
+        state, entries, deflated = read_vsav(path)
         toks = split_commands(state)
         drop, moves, skipped = set(), [], []
         for idx, (ds, cs, end) in enumerate(toks):
@@ -169,7 +169,7 @@ def main(argv):
             bak = backup_path(path)
             shutil.copy2(path, bak)
             print('    backed up as %s' % os.path.basename(bak))
-        write_vsav(path, bytes(out), entries)
+        write_vsav(path, bytes(out), entries, deflated)
         print('    wrote %s: %d of %d commands kept'
               % (name, len(toks) - len(drop), len(toks)))
 

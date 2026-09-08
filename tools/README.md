@@ -14,6 +14,7 @@ application and have no dependencies beyond the Python standard library.
 | `remove_placemark_carriers.py` | `.vsav` | delete off-map pieces carrying a stale embedded Place Marker |
 | `remove_offmap_pieces.py` | `.vsav` | report (and optionally delete) every piece that is on no map |
 | `dedupe_pieces.py` | `.vsav` | reduce duplicated counters to one copy each |
+| `global_properties.py` | `.vsav` | report (and optionally rewrite) the Global Property values a save carries |
 | `copy_counter_positions.py` | `.vsav` | give counters the positions they hold in a reference save |
 | `migrate_15_to_21.py` | `.vsav` | migrate a WiF 1.5.93 scenario to the 2.1.3 deluxe module |
 | `missing_counters.py` | — (read-only) | report an extension's counters that a save does not contain |
@@ -731,6 +732,73 @@ tools/dedupe_pieces.py "data/…2_1_2.vmod" data/scenarios/003-*.vsav \
 Stacks are left with dangling member ids, which `Stack.setState()` skips; a later
 Refresh Counters rebuilds the stacking.
 
+## global_properties.py — the values no counter accounts for
+
+```
+tools/global_properties.py SAVE.vsav [SAVE.vsav...]
+                           [--grep=SUBSTR]... [--changed] [--module=MODULE.vmod]
+                           [--set=NAME=VALUE]... [--reset=SUBSTR]...
+                           [--apply] [--no-backup] [--csv=OUT.csv]
+```
+
+A module's **Global Properties are game state**. `GlobalProperty.getRestoreCommand()`
+writes one command per property into the save —
+`GlobalProperty\t;<name>;<value>;<container>` — and loading restores that value.
+
+Nothing ties a property to the counter that set it. Delete that counter, move it
+to a map the module no longer has, or let a migration rebuild it, and the value
+stays exactly where the last change left it. No other tool here can see the
+problem: every piece is fine, so `remove_offmap_pieces.py` and
+`missing_counters.py` report nothing, and Refresh Counters rebuilds pieces, not
+properties.
+
+### The symptom
+
+A chart or overlay that keeps displaying a number nothing on the table accounts
+for. In WiF the `German BP Overlay` reads BUILD POINTS / TRADE from a Calculated
+Property, `{Germantradebps - Germantradebpsnotrecd}`; the `MajP Lending Strip`
+counters set `Germantradebps` (and the borrower's `Italytradebps`) through
+**Set Global Property** traits. So a loan of 24 BPs from Germany to Italy lives
+in the two properties, not in the strip — zero or delete every strip and the
+overlay still reads −24, forever, because nothing else ever writes those
+properties.
+
+### Finding it
+
+`--module` reads each property's `initialValue` from the module and its active
+extensions; `--changed` then shows only the properties that differ from it,
+which is the whole of a save's altered global state — usually a short list:
+
+```bash
+tools/global_properties.py data/scenarios/094-*.vsav \
+    --module="data/WiF CE Official Combo ver 2_1_3.vmod" --grep=trade
+```
+
+```
+Germantradebps       '-24'   (default '0')
+Italytradebps        '24'    (default '0')
+```
+
+The pairing is the tell: a loan is recorded twice, once negative on the lender
+and once positive on the borrower, and both must be cleared together — zeroing
+only the lender's side leaves the borrower spending BPs it is no longer owed.
+
+### Clearing it
+
+`--reset=SUBSTR` puts every property whose name contains SUBSTR back to the
+module's `initialValue`; `--set=NAME=VALUE` sets one by exact name. Reports by
+default, writes with `--apply`, and keeps a `-backup.vsav`:
+
+```bash
+tools/global_properties.py data/scenarios/094-*.vsav \
+    --module="data/WiF CE Official Combo ver 2_1_3.vmod" \
+    --reset=germantrade --reset=italytrade --apply
+```
+
+Only the changed `GlobalProperty` commands are re-encoded — with
+`SequenceEncoder`'s own escaping, so an untouched value re-encodes to the same
+bytes it was read as — and every other command in the log is copied verbatim.
+
 ## Checking the result
 
 ```bash
@@ -743,7 +811,7 @@ the token lists — a correct run differs in exactly the tokens you targeted:
 
 ```python
 from swap_maps import read_vsav, split_commands
-a, _ = read_vsav('before.vsav'); b, _ = read_vsav('after.vsav')
+a, _, _ = read_vsav('before.vsav'); b, _, _ = read_vsav('after.vsav')
 ta, tb = split_commands(a), split_commands(b)
 assert len(ta) == len(tb)
 print([i for i in range(len(ta)) if a[ta[i][0]:ta[i][2]] != b[tb[i][0]:tb[i][2]]])

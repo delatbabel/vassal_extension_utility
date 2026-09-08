@@ -99,7 +99,7 @@ def read_save_pieces(path):
     placed. The first needs the extension adding to the scenario; the second
     needs the counter putting somewhere.
     """
-    state, _ = read_vsav(path)
+    state, _, _ = read_vsav(path)
     counts, names, listed = {}, set(), set()
     for _, content_start, end in split_commands(state):
         content = state[content_start:end].decode('utf-8', 'replace')
