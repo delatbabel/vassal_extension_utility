@@ -1,5 +1,13 @@
 # Changes
 
+## 1.0.20
+
+Windows and macOS downloads get names short enough to read on the releases page.
+
+### Changed
+
+- **Shorter Windows and macOS package file names.** The installers are now named `VASSAL-Extension-Utility-<version>-<arch>.exe` / `.dmg`, dropping the git commit and branch that the build version appends and the redundant platform tag. The GitHub releases page truncates long file names from the end — cutting off the very `x86_64`/`aarch64` suffix that tells you which download is yours. The full build version is still recorded inside each package (the `.exe` version resource, the installer's product version, its install directory and its Add/Remove Programs entry) and still names the `.sha256` checksum file.
+
 ## 1.0.19
 
 The Windows packages become real installers, and the file choosers remember

@@ -119,11 +119,21 @@ Versioning mirrors `../vassal/Makefile`.
   the line directly or with `make version-bump` (see below).
 - **`MAVEN_VERSION`** is the pom version — normally `VNUM`, or `VNUM-SNAPSHOT`
   between releases (uncomment the alternative line).
-- **`VERSION`** is the full, unique build identifier derived from git and used
-  in artifact filenames:
+- **`VERSION`** is the full, unique build identifier derived from git:
   - on a release tag equal to `MAVEN_VERSION` → just the version (e.g. `1.0.0`);
   - on a `release-*` branch → `VERSION-<commit>`;
   - anywhere else → `VERSION-<commit>-<branch>` (e.g. `1.0.0-6153f9b-main`).
+- **`PKGVERSION`** is the version used in the Windows and macOS package
+  **filenames**, and is always plain `MAVEN_VERSION` — never the commit or
+  branch `VERSION` may append. Those names also drop the redundant platform
+  tag, since `.exe`/`.dmg` already says which platform it is. The GitHub
+  releases page truncates long file names from the end, which is exactly where
+  the architecture suffix lives, so `VASSAL-Extension-Utility-1.0.20-x86_64.exe`
+  stays readable where
+  `VASSAL-Extension-Utility-1.0.20-6153f9b-main-windows-x86_64.exe` did not.
+  The full `VERSION` is still recorded inside the package (the `.exe` version
+  resource, the installer's product version, its install directory and its
+  Add/Remove Programs entry) and still names the `.sha256` checksum file.
 
 Useful targets:
 
@@ -241,7 +251,7 @@ make release-windows-x86_32
 make release-windows       # all three
 ```
 
-Each target produces `tmp/VASSAL-Extension-Utility-<VERSION>-windows-<arch>.exe`,
+Each target produces `tmp/VASSAL-Extension-Utility-<PKGVERSION>-<arch>.exe`,
 an NSIS installer built by `makensis` from
 `dist/windows/nsis/installer.nsi` (modelled on `../vassal`'s installer). The
 build stages what gets installed — `VASSAL-Extension-Utility.exe` (a Launch4j
@@ -275,7 +285,7 @@ make release-macos         # both
 Each target assembles a `VASSAL Extension Utility.app` bundle (with a `jlink`
 runtime under `Contents/MacOS/jre` and the JAR under `Contents/Resources/Java`),
 builds an Apple-format ISO with `genisoimage`, and compresses it into
-`tmp/VASSAL-Extension-Utility-<VERSION>-macos-<arch>.dmg` with the libdmg-hfsplus
+`tmp/VASSAL-Extension-Utility-<PKGVERSION>-<arch>.dmg` with the libdmg-hfsplus
 `dmg` tool. Dragging the app to the `/Applications` shortcut installs it.
 
 ### Checksums / everything

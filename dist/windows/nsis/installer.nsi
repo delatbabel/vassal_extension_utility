@@ -26,9 +26,10 @@
 Unicode true
 CRCCheck on
 
-; Note: VERSION, NUMVERSION, ARCH, BITS, and TMPDIR are defined from the
-; command line in the Makefile. These are here as a reminder only.
+; Note: VERSION, PKGVERSION, NUMVERSION, ARCH, BITS, and TMPDIR are defined from
+; the command line in the Makefile. These are here as a reminder only.
 ;!define VERSION "1.0.18-abc1234"
+;!define PKGVERSION "1.0.18"
 ;!define NUMVERSION "1.0.18"
 ;!define ARCH x86_64
 ;!define BITS 64
@@ -46,7 +47,11 @@ CRCCheck on
 !define KEYPREFIX "VASSAL-Extension-Utility "
 
 Name "VASSAL Extension Utility"
-OutFile "${TMPDIR}/VASSAL-Extension-Utility-${VERSION}-windows-${ARCH}.exe"
+; The installer file name carries only PKGVERSION and the architecture: the
+; GitHub releases page truncates long names, cutting off the very suffix that
+; tells a user which download is theirs. VERSION still names the install
+; directory and the product version below.
+OutFile "${TMPDIR}/VASSAL-Extension-Utility-${PKGVERSION}-${ARCH}.exe"
 
 !if ${BITS} == 64
   InstallDir "$PROGRAMFILES64\VASSAL-Extension-Utility-${VERSION}"

@@ -18,7 +18,7 @@ SHELL:=/bin/bash
 # =======================================================================
 
 # The numeric version — the single source of truth. Bump this for a release.
-VNUM:=1.0.19
+VNUM:=1.0.20
 # major.minor part
 V_MAJ_MIN:=$(shell echo "$(VNUM)" | cut -f1,2 -d'.')
 # four-part form required by the Windows .exe version resource
@@ -41,6 +41,15 @@ else ifeq ($(patsubst release-%,release,$(GITBRANCH)),release)
 else
   VERSION:=$(MAVEN_VERSION)-$(GITCOMMIT)-$(GITBRANCH)
 endif
+
+# The version used in package FILENAMES — deliberately just MAVEN_VERSION, with
+# none of the commit/branch $(VERSION) may append, and the Windows/macOS names
+# drop the redundant platform tag too (the .exe/.dmg suffix already says it).
+# GitHub's releases page truncates long file names, and what gets cut is the
+# tail — precisely the architecture suffix ("-x86_64.exe") a user needs to pick
+# the right download. The full $(VERSION) still goes inside the packages (the
+# .exe version resource, the installer's product version and install directory).
+PKGVERSION:=$(MAVEN_VERSION)
 
 YEAR:=$(shell date +%Y)
 
@@ -452,23 +461,23 @@ $(TMPDIR)/windows-%-build/uninstall_files.inc: $(TMPDIR)/windows-%-build/install
 			-e 's/\//\\/g' <$< | \
 		tac	>$@
 
-$(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-x86_32.exe: BITS:=32
-$(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-x86_64.exe: BITS:=64
-$(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-aarch64.exe: BITS:=64
+$(TMPDIR)/VASSAL-Extension-Utility-$(PKGVERSION)-x86_32.exe: BITS:=32
+$(TMPDIR)/VASSAL-Extension-Utility-$(PKGVERSION)-x86_64.exe: BITS:=64
+$(TMPDIR)/VASSAL-Extension-Utility-$(PKGVERSION)-aarch64.exe: BITS:=64
 
-$(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-%.exe: \
+$(TMPDIR)/VASSAL-Extension-Utility-$(PKGVERSION)-%.exe: \
 		$(TMPDIR)/windows-%-build/stage \
 		$(TMPDIR)/windows-%-build/install_files.inc \
 		$(TMPDIR)/windows-%-build/uninstall_files.inc \
 		$(DISTDIR)/windows/nsis/installer.nsi
 	@command -v $(NSIS) >/dev/null || { echo "$(NSIS) not found — install the 'nsis' package (see docs/packaging.md)"; exit 1; }
-	$(NSIS) -NOCD -DVERSION=$(VERSION) -DNUMVERSION=$(VNUM) -DTMPDIR=$(TMPDIR) \
+	$(NSIS) -NOCD -DVERSION=$(VERSION) -DPKGVERSION=$(PKGVERSION) -DNUMVERSION=$(VNUM) -DTMPDIR=$(TMPDIR) \
 	        -DARCH=$* -DBITS=$(BITS) $(DISTDIR)/windows/nsis/installer.nsi
 	@echo "built $@"
 
-release-windows-x86_64:  $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-x86_64.exe
-release-windows-aarch64: $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-aarch64.exe
-release-windows-x86_32:  $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-windows-x86_32.exe
+release-windows-x86_64:  $(TMPDIR)/VASSAL-Extension-Utility-$(PKGVERSION)-x86_64.exe
+release-windows-aarch64: $(TMPDIR)/VASSAL-Extension-Utility-$(PKGVERSION)-aarch64.exe
+release-windows-x86_32:  $(TMPDIR)/VASSAL-Extension-Utility-$(PKGVERSION)-x86_32.exe
 
 release-windows: release-windows-x86_64 release-windows-aarch64 release-windows-x86_32
 
@@ -503,18 +512,18 @@ $(TMPDIR)/macos-%-build/image: $(DISTJAR) $(MODULES_STAMP) \
 	@$(call check_runtime_modules,$@/$(APPDIRNAME)/Contents/MacOS/jre)
 	ln -sf /Applications "$@/Applications"
 
-$(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-macos-%-uncompressed.iso: $(TMPDIR)/macos-%-build/image
+$(TMPDIR)/VASSAL-Extension-Utility-$(PKGVERSION)-%-uncompressed.iso: $(TMPDIR)/macos-%-build/image
 	$(GENISOIMAGE) -V "VASSAL Ext Util" -D -R -apple -no-pad -quiet -o $@ "$<"
 
-$(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-macos-%.dmg: \
-		$(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-macos-%-uncompressed.iso
+$(TMPDIR)/VASSAL-Extension-Utility-$(PKGVERSION)-%.dmg: \
+		$(TMPDIR)/VASSAL-Extension-Utility-$(PKGVERSION)-%-uncompressed.iso
 	@[ -x "$(DMG)" ] || { echo "dmg tool missing — run 'make bootstrap'"; exit 1; }
 	rm -f $@
 	$(DMG) $< $@
 	@echo "built $@"
 
-release-macos-x86_64:  $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-macos-x86_64.dmg
-release-macos-aarch64: $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION)-macos-aarch64.dmg
+release-macos-x86_64:  $(TMPDIR)/VASSAL-Extension-Utility-$(PKGVERSION)-x86_64.dmg
+release-macos-aarch64: $(TMPDIR)/VASSAL-Extension-Utility-$(PKGVERSION)-aarch64.dmg
 
 release-macos: release-macos-x86_64 release-macos-aarch64
 
@@ -526,7 +535,7 @@ release: release-linux release-windows release-macos
 
 release-sha256: | $(TMPDIR)
 	pushd $(TMPDIR) >/dev/null ; \
-	  sha256sum *.deb *.rpm *-windows-*.exe *-macos-*.dmg 2>/dev/null \
+	  sha256sum *.deb *.rpm *.exe *.dmg 2>/dev/null \
 	    > VASSAL-Extension-Utility-$(VERSION).sha256 || true ; \
 	  popd >/dev/null
 	@echo "wrote $(TMPDIR)/VASSAL-Extension-Utility-$(VERSION).sha256"
