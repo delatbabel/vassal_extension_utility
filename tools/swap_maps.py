@@ -10,28 +10,40 @@ temp file + atomic replace.
 import os, random, sys, zipfile, zlib
 
 ESC = 0x1B
-HEADER = b'!VCSK'            # payload is the plaintext, XOR-hex encoded
-DEFLATED_HEADER = b'!VCSZ'   # payload is deflated (zlib) before XOR-hex (VASSAL 3.8+)
+# The three obfuscation formats of the savedGame entry, identified by header.
+# The header bytes double as the format token that read_vsav returns and
+# obfuscate()/write_vsav() take, so a rewrite re-emits the format it read.
+RAW = b'VOBS'            # 1 raw key byte, then XOR(plaintext, key) raw (VASSAL 3.8+)
+HEX = b'!VCSK'           # 2-hex key, then hex(XOR(plaintext, key)) (through 3.7.x)
+HEX_DEFLATED = b'!VCSZ'  # as HEX, but the plaintext is deflated first (abandoned)
+FORMATS = (RAW, HEX, HEX_DEFLATED)
 SAVED_GAME, SAVE_DATA, MODULE_DATA = 'savedGame', 'savedata', 'moduledata'
 
 
 def read_vsav(path):
-    """-> (plaintext command log, {entry: (bytes, date_time)}, deflated flag)"""
+    """-> (plaintext command log, {entry: (bytes, date_time)}, format token)
+
+    The format token is one of RAW / HEX / HEX_DEFLATED; pass it back to
+    write_vsav() so the save is rewritten in the format it was read in.
+    """
     entries = {}
     with zipfile.ZipFile(path) as z:
         for name in (SAVED_GAME, SAVE_DATA, MODULE_DATA):
             info = z.getinfo(name)
             entries[name] = (z.read(name), info.date_time)
     raw = entries[SAVED_GAME][0]
-    deflated = raw[:5] == DEFLATED_HEADER
-    if not deflated and raw[:5] != HEADER:
-        raise SystemExit(f'{path}: savedGame is not obfuscated (!VCSK/!VCSZ missing)')
-    key = int(raw[5:7], 16)
-    body = bytes.fromhex(raw[7:].decode('ascii'))
+    fmt = next((f for f in FORMATS if raw[:len(f)] == f), None)
+    if fmt is None:
+        raise SystemExit(
+            f'{path}: savedGame is not obfuscated (VOBS/!VCSK/!VCSZ missing)')
+    if fmt == RAW:
+        key, body = raw[4], raw[5:]
+    else:
+        key, body = int(raw[5:7], 16), bytes.fromhex(raw[7:].decode('ascii'))
     body = body.translate(bytes(i ^ key for i in range(256)))
-    if deflated:
+    if fmt == HEX_DEFLATED:
         body = zlib.decompress(body)
-    return body, entries, deflated
+    return body, entries, fmt
 
 
 def split_commands(state):
@@ -69,30 +81,37 @@ def board_picker_tokens(state, toks):
     return found
 
 
-def obfuscate(plain, key, deflated=False):
-    """Re-encodes in the same format the file was read in (!VCSK or !VCSZ)."""
-    payload = zlib.compress(plain, 9) if deflated else plain
-    out = bytearray(DEFLATED_HEADER if deflated else HEADER)
-    out += b'%02x' % key
-    out += payload.translate(bytes(i ^ key for i in range(256))).hex().encode('ascii')
+def obfuscate(plain, key, fmt=RAW):
+    """Encodes the command log in one of RAW / HEX / HEX_DEFLATED."""
+    payload = zlib.compress(plain, 9) if fmt == HEX_DEFLATED else plain
+    payload = payload.translate(bytes(i ^ key for i in range(256)))
+    out = bytearray(fmt)
+    if fmt == RAW:
+        out.append(key)
+        out += payload
+    else:
+        out += b'%02x' % key
+        out += payload.hex().encode('ascii')
     return bytes(out)
 
 
-def write_vsav(path, plain, entries, deflated=False, key=None):
+def write_vsav(path, plain, entries, fmt=RAW, key=None):
     tmp = path + '.tmp'
-    key = random.randrange(256) if key is None else key
+    # Keys are in 1-255, as in VASSAL's ObfuscatingOutputStream: XORing with 0
+    # would leave the data in plain text.
+    key = random.randrange(1, 256) if key is None else key
     with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as z:
         for name in (SAVED_GAME, SAVE_DATA, MODULE_DATA):
             data, when = entries[name]
             if name == SAVED_GAME:
-                data = obfuscate(plain, key, deflated)
+                data = obfuscate(plain, key, fmt)
             z.writestr(zipfile.ZipInfo(name, date_time=when), data,
                        zipfile.ZIP_DEFLATED)
     os.replace(tmp, path)
 
 
 def main(target, donor, out, maps):
-    tgt, tgt_entries, tgt_deflated = read_vsav(target)
+    tgt, tgt_entries, tgt_fmt = read_vsav(target)
     don, _, _ = read_vsav(donor)
     tgt_toks, don_toks = split_commands(tgt), split_commands(don)
     tgt_bp, don_bp = board_picker_tokens(tgt, tgt_toks), board_picker_tokens(don, don_toks)
@@ -129,7 +148,7 @@ def main(target, donor, out, maps):
         parts.append(replace.get(idx) or tgt[cs:end])  # content
     plain = b''.join(parts)
 
-    write_vsav(out, plain, tgt_entries, tgt_deflated)
+    write_vsav(out, plain, tgt_entries, tgt_fmt)
     print(f'\nwrote {out}: {len(tgt_toks)} commands, '
           f'{len(plain)} plaintext bytes ({len(tgt)} before)')
 

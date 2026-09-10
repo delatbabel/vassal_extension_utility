@@ -286,7 +286,7 @@ def main(argv):
         if new not in name_gpid:
             raise SystemExit(f'rename target {new!r} not in the deluxe set')
 
-    old_state, old_entries, old_deflated = read_vsav(old_path)
+    old_state, old_entries, old_fmt = read_vsav(old_path)
     donor_state, donor_entries, _ = read_vsav(donor_path)
     old_toks = split_commands(old_state)
     donor_toks = split_commands(donor_state)
@@ -489,13 +489,13 @@ def main(argv):
     entries = dict(old_entries)
     entries[MODULE_DATA] = donor_entries[MODULE_DATA]
     import random
-    key = random.randrange(256)
+    key = random.randrange(1, 256)   # 0 would leave the data in plain text
     tmp = out_path + '.tmp'
     with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as z:
         for name in (SAVED_GAME, SAVE_DATA, MODULE_DATA):
             data, when = entries[name]
             if name == SAVED_GAME:
-                data = obfuscate(plain, key, old_deflated)
+                data = obfuscate(plain, key, old_fmt)
             z.writestr(zipfile.ZipInfo(name, date_time=when), data,
                        zipfile.ZIP_DEFLATED)
     os.replace(tmp, out_path)

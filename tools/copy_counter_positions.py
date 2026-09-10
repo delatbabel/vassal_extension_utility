@@ -121,7 +121,7 @@ def main(argv):
     for path in saves:
         if os.path.abspath(path) == os.path.abspath(ref):
             continue
-        state, entries, deflated = read_vsav(path)
+        state, entries, fmt = read_vsav(path)
         toks = split_commands(state)
         drop, moves, skipped = set(), [], []
         for idx, (ds, cs, end) in enumerate(toks):
@@ -169,7 +169,7 @@ def main(argv):
             bak = backup_path(path)
             shutil.copy2(path, bak)
             print('    backed up as %s' % os.path.basename(bak))
-        write_vsav(path, bytes(out), entries, deflated)
+        write_vsav(path, bytes(out), entries, fmt)
         print('    wrote %s: %d of %d commands kept'
               % (name, len(toks) - len(drop), len(toks)))
 

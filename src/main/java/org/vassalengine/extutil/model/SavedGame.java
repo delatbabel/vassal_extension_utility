@@ -74,16 +74,50 @@ public class SavedGame {
     public static final String MODULE_DATA_ENTRY = "moduledata";
 
     /**
-     * Obfuscation header written by VASSAL's {@code ObfuscatingOutputStream}
-     * through 3.7.x: the payload is the plaintext, XOR-hex encoded.
+     * The obfuscation format of a {@code savedGame} entry. A rewrite always
+     * re-emits the format the file was opened with (see docs/vsav-format.md).
      */
-    private static final byte[] HEADER = "!VCSK".getBytes(StandardCharsets.US_ASCII);
-    /**
-     * Header of the compress-then-obfuscate format (VASSAL 3.8+): the payload is
-     * deflated (zlib) <em>before</em> the XOR-hex encoding. Rewrites preserve
-     * whichever format the file was opened with.
-     */
-    private static final byte[] DEFLATED_HEADER = "!VCSZ".getBytes(StandardCharsets.US_ASCII);
+    public enum Obfuscation {
+        /**
+         * {@code VOBS} + a one-byte key + the plaintext XOR-ed with it, all raw —
+         * what VASSAL's {@code ObfuscatingOutputStream} writes from 3.8. The ZIP
+         * entry's own deflate then compresses it, which is the point of the change:
+         * the old hex encoding doubled the payload into 16 symbols the ZIP could do
+         * little with.
+         */
+        RAW("VOBS", 1),
+        /**
+         * {@code !VCSK} + a two-hex-digit key + two-hex-digits-per-byte XOR of the
+         * plaintext — the format written through VASSAL 3.7.x, still read by 3.8.
+         */
+        HEX("!VCSK", 2),
+        /**
+         * {@code !VCSZ} + a two-hex-digit key + two-hex-digits-per-byte XOR of the
+         * <em>deflated</em> plaintext. A pre-release 3.8 format that was abandoned
+         * in favour of {@link #RAW}, never shipped in a VASSAL release — but saves
+         * in it exist (written by a build of that branch, or by this utility and
+         * the {@code tools/} scripts rewriting one), and VASSAL still reads it, so
+         * this utility reads and preserves it too.
+         */
+        HEX_DEFLATED("!VCSZ", 2);
+
+        /** The entry's leading magic bytes. */
+        final byte[] header;
+        /** Bytes of key following the header (1 raw byte, or 2 hex digits). */
+        final int keyLength;
+
+        Obfuscation(String header, int keyLength) {
+            this.header = header.getBytes(StandardCharsets.US_ASCII);
+            this.keyLength = keyLength;
+        }
+
+        /** Whether the key and payload are hex-encoded rather than raw bytes. */
+        boolean isHex() { return this != RAW; }
+
+        /** Whether the plaintext is deflated inside the obfuscation. */
+        boolean isDeflated() { return this == HEX_DEFLATED; }
+    }
+
     /** Top-level command separator in the deobfuscated log (ESC / {@code KeyEvent.VK_ESCAPE}). */
     private static final byte CMD_DELIM = 0x1b;
     private static final byte ESCAPE = '\\';
@@ -108,8 +142,8 @@ public class SavedGame {
 
     /** Deobfuscated {@code savedGame} plaintext (can be hundreds of MB). */
     private final byte[] state;
-    /** Whether the source file used the deflated ({@code !VCSZ}) format — preserved on rewrite. */
-    private final boolean deflated;
+    /** The obfuscation format the source file used — preserved on rewrite. */
+    private final Obfuscation obfuscation;
     /**
      * One entry {@code {delimStart, contentStart, contentEnd}} per command token in
      * {@link #state}. {@code [delimStart, contentStart)} is the token's preceding
@@ -123,7 +157,7 @@ public class SavedGame {
 
     private SavedGame(java.io.File file, byte[] moduleData, long moduleDataTime,
                       byte[] saveData, long saveDataTime,
-                      byte[] state, long savedGameTime, boolean deflated) {
+                      byte[] state, long savedGameTime, Obfuscation obfuscation) {
         this.file = file;
         this.moduleData = moduleData;
         this.moduleDataTime = moduleDataTime;
@@ -131,14 +165,14 @@ public class SavedGame {
         this.saveDataTime = saveDataTime;
         this.state = state;
         this.savedGameTime = savedGameTime;
-        this.deflated = deflated;
+        this.obfuscation = obfuscation;
         this.commandRanges = splitCommands(state);
     }
 
     public java.io.File getFile() { return file; }
 
-    /** Whether the source file used the deflated ({@code !VCSZ}) format. */
-    public boolean isDeflated() { return deflated; }
+    /** The obfuscation format the source file used (preserved on rewrite). */
+    public Obfuscation getObfuscation() { return obfuscation; }
 
     // -----------------------------------------------------------------------
     // Opening / deobfuscation
@@ -146,13 +180,15 @@ public class SavedGame {
 
     /**
      * Opens a {@code .vsav}, reading the two metadata entries whole and
-     * deobfuscating the {@code savedGame} command log into memory. Both the
-     * {@code !VCSK} (plaintext) and {@code !VCSZ} (deflated, VASSAL 3.8+) formats
-     * are read; which one the file used is remembered so a rewrite preserves it.
+     * deobfuscating the {@code savedGame} command log into memory. Every
+     * obfuscation format VASSAL has written is read — {@link Obfuscation#RAW}
+     * ({@code VOBS}, 3.8+), {@link Obfuscation#HEX} ({@code !VCSK}, through 3.7.x)
+     * and {@link Obfuscation#HEX_DEFLATED} ({@code !VCSZ}) — and which one the file
+     * used is remembered so a rewrite preserves it.
      *
      * @throws IOException if the file is not a ZIP with the expected entries, or
-     *                     the {@code savedGame} entry has neither the {@code !VCSK}
-     *                     nor the {@code !VCSZ} header
+     *                     the {@code savedGame} entry carries none of the
+     *                     {@code VOBS}, {@code !VCSK} or {@code !VCSZ} headers
      */
     public static SavedGame open(java.io.File f) throws IOException {
         try (ZipFile zf = new ZipFile(f)) {
@@ -163,19 +199,19 @@ public class SavedGame {
             final byte[] sd = saveData  == null ? new byte[0] : readAll(zf, saveData);
             final byte[] md = moduleData == null ? new byte[0] : readAll(zf, moduleData);
             final byte[] raw = readAll(zf, savedGame);
-            final boolean deflated = hasHeader(raw, DEFLATED_HEADER);
-            if (!deflated && !hasHeader(raw, HEADER)) {
+            final Obfuscation fmt = obfuscationOf(raw);
+            if (fmt == null) {
                 throw new IOException(
-                        "Not an obfuscated VASSAL saved game (missing !VCSK/!VCSZ header): "
+                        "Not an obfuscated VASSAL saved game (missing VOBS/!VCSK/!VCSZ header): "
                         + f.getName());
             }
-            byte[] plain = unhexXor(raw, f);
-            if (deflated) plain = inflate(plain, f);
+            byte[] plain = deobfuscate(raw, fmt, f);
+            if (fmt.isDeflated()) plain = inflate(plain, f);
 
             return new SavedGame(f,
                     md, moduleData == null ? -1L : moduleData.getTime(),
                     sd, saveData == null ? -1L : saveData.getTime(),
-                    plain, savedGame.getTime(), deflated);
+                    plain, savedGame.getTime(), fmt);
         }
     }
 
@@ -193,8 +229,21 @@ public class SavedGame {
         }
     }
 
-    private static boolean hasHeader(byte[] raw, byte[] header) {
-        if (raw.length < header.length + 2) return false;
+    /**
+     * Identifies the entry's obfuscation format from its leading bytes, or returns
+     * {@code null} for anything else (plain text, or not a saved game at all).
+     * The three headers share no prefix, so the order of the test is immaterial.
+     */
+    private static Obfuscation obfuscationOf(byte[] raw) {
+        for (Obfuscation fmt : Obfuscation.values()) {
+            if (hasHeader(raw, fmt)) return fmt;
+        }
+        return null;
+    }
+
+    private static boolean hasHeader(byte[] raw, Obfuscation fmt) {
+        final byte[] header = fmt.header;
+        if (raw.length < header.length + fmt.keyLength) return false;
         for (int i = 0; i < header.length; i++) {
             if (raw[i] != header[i]) return false;
         }
@@ -202,20 +251,30 @@ public class SavedGame {
     }
 
     /**
-     * Decodes the obfuscated {@code savedGame} entry: a 5-byte header + a two-hex
-     * key byte + two-hex-per-byte payload, each payload byte XOR-ed with the key
-     * (see docs/vsav-format.md). For a {@code !VCSK} entry the result is the
-     * plaintext; for a {@code !VCSZ} entry it is the deflated plaintext, which
-     * {@link #inflate} then expands. Both headers are the same length.
+     * Decodes the obfuscated {@code savedGame} entry: the header, the key, then the
+     * payload XOR-ed byte-by-byte with it (see docs/vsav-format.md). For
+     * {@link Obfuscation#RAW} ({@code VOBS}) the key is one raw byte and the payload
+     * raw bytes; for the two hex formats the key is two hex digits and each payload
+     * byte two more. The result is the plaintext, except for
+     * {@link Obfuscation#HEX_DEFLATED}, where it is the deflated plaintext that
+     * {@link #inflate} then expands.
      */
-    private static byte[] unhexXor(byte[] raw, java.io.File f) throws IOException {
-        if (raw.length < HEADER.length + 2) {
+    private static byte[] deobfuscate(byte[] raw, Obfuscation fmt, java.io.File f) throws IOException {
+        final int start = fmt.header.length + fmt.keyLength;
+        if (raw.length < start) {
             throw new IOException("Not an obfuscated VASSAL saved game (too short): " + f.getName());
         }
-        final int key = (hexVal(raw[HEADER.length]) << 4) | hexVal(raw[HEADER.length + 1]);
-        final int payload = raw.length - HEADER.length - 2;
-        final byte[] out = new byte[payload / 2];
-        int j = HEADER.length + 2;
+        if (!fmt.isHex()) {
+            final int key = raw[fmt.header.length] & 0xFF;
+            final byte[] out = new byte[raw.length - start];
+            for (int i = 0; i < out.length; i++) {
+                out[i] = (byte) (raw[start + i] ^ key);
+            }
+            return out;
+        }
+        final int key = (hexVal(raw[fmt.header.length]) << 4) | hexVal(raw[fmt.header.length + 1]);
+        final byte[] out = new byte[(raw.length - start) / 2];
+        int j = start;
         for (int i = 0; i < out.length; i++, j += 2) {
             out[i] = (byte) (((hexVal(raw[j]) << 4) | hexVal(raw[j + 1])) ^ key);
         }
@@ -722,10 +781,10 @@ public class SavedGame {
 
     /**
      * Streams the surviving command tokens through the VASSAL obfuscation, in the
-     * <em>same format the file was opened with</em>: {@code !VCSK} (header + random
-     * key (2 hex) + 2-hex-per-byte XOR of the plaintext), or {@code !VCSZ} (the
-     * same, but the plaintext is deflated before the XOR-hex encoding — the
-     * compress-then-obfuscate format of VASSAL 3.8+). Each removed token is
+     * <em>same format the file was opened with</em>: {@code VOBS} (header + a
+     * random one-byte key + the plaintext XOR-ed with it, raw), {@code !VCSK} (the
+     * key as 2 hex digits and each plaintext byte as 2 more), or {@code !VCSZ} (the
+     * hex encoding of the <em>deflated</em> plaintext). Each removed token is
      * dropped together with its preceding delimiter, and each kept token is
      * emitted verbatim <em>with</em> its preceding delimiter — so the surviving
      * plaintext bytes (and their ESC nesting) are exactly the original minus the
@@ -739,15 +798,21 @@ public class SavedGame {
     private void writeObfuscated(OutputStream out, Set<Integer> removeIndices,
                                  int insertBefore, List<String> insertContents)
             throws IOException {
-        final int key = new Random().nextInt(256);
-        // Accumulate hex output in a large buffer so the deflater sees big chunks
-        // rather than 2 bytes at a time (which is dramatically slower).
-        final HexSink sink = new HexSink(out, key);
-        for (byte h : (deflated ? DEFLATED_HEADER : HEADER)) sink.rawByte(h);
-        sink.rawByte(HEX[(key & 0xF0) >>> 4]);
-        sink.rawByte(HEX[key & 0x0F]);
+        // Keys are in 1-255, as in VASSAL's ObfuscatingOutputStream: XORing with 0
+        // would leave the data in plain text.
+        final int key = new Random().nextInt(255) + 1;
+        // Accumulate output in a large buffer so the downstream stream sees big
+        // chunks rather than a byte or two at a time (dramatically slower).
+        final XorSink sink = obfuscation.isHex() ? new HexSink(out, key) : new RawSink(out, key);
+        for (byte h : obfuscation.header) sink.rawByte(h);
+        if (obfuscation.isHex()) {
+            sink.rawByte(HEX[(key & 0xF0) >>> 4]);
+            sink.rawByte(HEX[key & 0x0F]);
+        } else {
+            sink.rawByte((byte) key);
+        }
 
-        if (deflated) {
+        if (obfuscation.isDeflated()) {
             final Deflater def = new Deflater(Deflater.BEST_COMPRESSION);
             try {
                 final DeflaterOutputStream dos = new DeflaterOutputStream(sink, def, 1 << 16);
@@ -786,29 +851,21 @@ public class SavedGame {
     /**
      * Buffers the obfuscated output. {@link #rawByte} writes a byte of the
      * header+key prefix as-is; the {@code OutputStream} write methods XOR each
-     * plaintext (or deflated) byte with the key and write it as two hex digits.
-     * {@code flush()} pushes the buffer downstream but never closes {@code out}
-     * (a ZIP stream with entries still to write).
+     * plaintext (or deflated) byte with the key and encode it as the format
+     * requires. {@code flush()} pushes the buffer downstream but never closes
+     * {@code out} (a ZIP stream with entries still to write).
      */
-    private static final class HexSink extends OutputStream {
-        private final OutputStream out;
-        private final int key;
-        private final byte[] buf = new byte[1 << 16];
-        private int p;
+    private abstract static class XorSink extends OutputStream {
+        final OutputStream out;
+        final int key;
+        final byte[] buf = new byte[1 << 16];
+        int p;
 
-        HexSink(OutputStream out, int key) { this.out = out; this.key = key; }
+        XorSink(OutputStream out, int key) { this.out = out; this.key = key; }
 
         void rawByte(byte b) throws IOException {
             if (p >= buf.length) flush();
             buf[p++] = b;
-        }
-
-        @Override
-        public void write(int b) throws IOException {
-            if (p >= buf.length - 1) flush();
-            final int x = (b ^ key) & 0xFF;
-            buf[p++] = HEX[(x & 0xF0) >>> 4];
-            buf[p++] = HEX[x & 0x0F];
         }
 
         @Override
@@ -819,6 +876,30 @@ public class SavedGame {
         @Override
         public void flush() throws IOException {
             if (p > 0) { out.write(buf, 0, p); p = 0; }
+        }
+    }
+
+    /** The {@code VOBS} payload: one XOR-ed byte out per byte in. */
+    private static final class RawSink extends XorSink {
+        RawSink(OutputStream out, int key) { super(out, key); }
+
+        @Override
+        public void write(int b) throws IOException {
+            if (p >= buf.length) flush();
+            buf[p++] = (byte) (b ^ key);
+        }
+    }
+
+    /** The {@code !VCSK}/{@code !VCSZ} payload: two hex digits out per byte in. */
+    private static final class HexSink extends XorSink {
+        HexSink(OutputStream out, int key) { super(out, key); }
+
+        @Override
+        public void write(int b) throws IOException {
+            if (p >= buf.length - 1) flush();
+            final int x = (b ^ key) & 0xFF;
+            buf[p++] = HEX[(x & 0xF0) >>> 4];
+            buf[p++] = HEX[x & 0x0F];
         }
     }
 

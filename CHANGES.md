@@ -2,11 +2,12 @@
 
 ## 1.0.21
 
-The command-line tools run again, and gain one for the game state that no
-counter accounts for.
+Saved games in VASSAL 3.8's new obfuscation format open; the command-line tools
+run again, and gain one for the game state that no counter accounts for.
 
 ### Added
 
+- **Saved games written by VASSAL 3.8 (the `VOBS` obfuscation format) open, and rewrites preserve it.** VASSAL stopped writing the `savedGame` command log in hex ([vassal#15060](https://github.com/vassalengine/vassal/pull/15060), merged to `master`): the entry now starts with a `VOBS` header followed by a single raw key byte and the plaintext XOR-ed with it, raw — the ZIP entry's own deflate does the compressing, which the two-hex-digits-per-byte encoding had been defeating. Such a save previously failed to open with *"Not an obfuscated VASSAL saved game"*, which took out Excess Units, the extension-list and board-layout preservation around Refresh Counters, the download flow's scenario filter, and every script in `tools/`. All of them now read it — and the two older formats, `!VCSK` (through VASSAL 3.7.x) and the unreleased `!VCSZ` (the abandoned compress-then-obfuscate attempt) — and a rewrite re-emits whichever format the file was opened with, so the utility never converts a save between formats. On a 1.51 MB command log the `VOBS` entry stores in 150,832 bytes against 253,459 for `!VCSK`.
 - **`tools/global_properties.py` — report and rewrite the Global Property values a save carries.** A module's Global Properties are game state, saved as one `GlobalProperty` command each, and nothing ties a value to the counter that set it: delete that counter, move it to a map the module no longer has, or let a migration rebuild it, and the value stays where the last change left it. Nothing else finds this — every piece is intact, so `remove_offmap_pieces.py` reports nothing, and Refresh Counters rebuilds pieces, not properties. The symptom is a chart reading a number no counter accounts for (a WiF `BP Overlay` showing a trade balance of −24 with every `MajP Lending Strip` at zero, because the loan lives in `Germantradebps`/`Italytradebps`). With `--module` the report shows each property's `initialValue` beside the saved value and `--changed` lists only what differs; `--reset=SUBSTR` puts matching properties back to the default and `--set=NAME=VALUE` sets one by name, writing only with `--apply`. See `tools/README.md`.
 
 ### Fixed

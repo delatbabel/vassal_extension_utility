@@ -28,7 +28,7 @@ writing the tidied game to a **new** file and leaving the original in place.
 
 > This is a companion to the file-format reference in
 > [vsav-format.md](vsav-format.md); read that first for the ZIP container, the
-> `!VCSK` obfuscation, and the command-log grammar. The logic below is implemented
+> obfuscation formats (`VOBS`/`!VCSK`/`!VCSZ`), and the command-log grammar. The logic below is implemented
 > in `model/SavedGame` and `gui/MainWindow` (see **[../AGENTS.md](../AGENTS.md)** →
 > *Excess units in a saved game*).
 

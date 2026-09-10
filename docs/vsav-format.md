@@ -137,11 +137,65 @@ The `savedGame` entry holds the actual game state: a single serialized VASSAL
 usually by far the largest entry (hundreds of MB is possible for a large game — the
 example above is ~465 MB).
 
-### Obfuscation (`!VCSK`)
+### Obfuscation
 
 The payload is wrapped by `VASSAL.tools.io.ObfuscatingOutputStream` (read back by
 `DeobfuscatingInputStream`). This is *obfuscation, not encryption* — its only purpose
-is to discourage casual hand-editing (cheating). The scheme:
+is to discourage casual hand-editing (cheating).
+
+Three forms exist, told apart by the entry's leading magic bytes:
+
+| Header | Key | Payload | Written by |
+|---|---|---|---|
+| `VOBS` | 1 raw byte | plaintext XOR key, raw | VASSAL 3.8+ |
+| `!VCSK` | 2 hex digits | 2 hex digits per XOR-ed byte | VASSAL through 3.7.x |
+| `!VCSZ` | 2 hex digits | as `!VCSK`, but the plaintext is deflated first | never released — see below |
+
+A reader dispatches on the header, and anything else is passed through unchanged as
+plain text (`DeobfuscatingInputStream`'s backward compatibility). This utility reads
+all three and **preserves whichever format a file was opened with** when rewriting it
+(`SavedGame.Obfuscation`, `SavedGame.open()` / `getObfuscation()` /
+`writeObfuscated()`; likewise `tools/swap_maps.py`).
+
+#### `VOBS` — the current format (VASSAL 3.8+)
+
+```
+VOBS <K> <P><P><P>...
+└─┬┘ └┬┘ └───┬────┘
+head key  payload
+```
+
+1. The literal ASCII header **`VOBS`** (4 bytes).
+2. A single random **key byte**, written **raw** (1 byte). The key is chosen in
+   1–255: XOR-ing with 0 would leave the data in plain text.
+3. The plaintext (the UTF-8 command-log string) byte by byte, each byte
+   **XOR-ed with the key** and written **raw**.
+
+Total length is `4 + 1 + N` for an `N`-byte plaintext — the payload is the same size
+as the plaintext, and (unlike the hex forms) it is 8-bit binary. Nothing else is done
+to it: the compression comes from the ZIP entry's own DEFLATE, which is precisely
+what the hex encoding used to defeat. On the same 1.51 MB command log, the
+`savedGame` entry stores as:
+
+| Format | Entry size | Size inside the ZIP |
+|---|---:|---:|
+| `!VCSK` | 3,021,755 | 253,459 |
+| `!VCSZ` | 296,237 | 162,150 |
+| `VOBS` | 1,510,879 | **150,832** |
+
+Relevant source: `ObfuscatingOutputStream.java` (`HEADER_BYTES = { 'V', 'O', 'B', 'S' }`,
+constructor + `write`), `DeobfuscatingInputStream.DeobfuscatingInputStreamImpl`.
+
+**Decoding one, by hand:**
+
+```python
+data = open("savedGame", "rb").read()          # the raw ZIP entry
+assert data[:4] == b"VOBS"
+key = data[4]
+plaintext = bytes(b ^ key for b in data[5:]).decode("utf-8")
+```
+
+#### `!VCSK` — the legacy hex format (through VASSAL 3.7.x)
 
 ```
 !VCSK <KK> <PP><PP><PP>...
@@ -151,40 +205,14 @@ is to discourage casual hand-editing (cheating). The scheme:
 
 1. The literal ASCII header **`!VCSK`** (5 bytes).
 2. A single random **key byte**, written as **two lowercase hex characters** (`<KK>`).
-   A fresh random key (0–255) is chosen for each save.
-3. The plaintext (the UTF-8 command-log string), byte by byte: each byte is
-   **XOR-ed with the key** and written as **two lowercase hex characters**.
+3. The plaintext, byte by byte: each byte **XOR-ed with the key** and written as
+   **two lowercase hex characters**.
 
-So the whole entry is 7-bit ASCII. Total length is `5 + 2 + 2·N` for an `N`-byte
-plaintext. `DeobfuscatingInputStream` reverses it (and, for backward compatibility,
-passes the stream through unchanged if the first five bytes are not `!VCSK`). Its
-`unhex` accepts upper- or lower-case hex on read, though the writer only ever emits
-lowercase.
-
-Relevant source: `ObfuscatingOutputStream.java:38` (`HEADER = "!VCSK"`), `:62-88`
-(header, key, per-byte XOR + hex).
-
-### The deflated variant (`!VCSZ`, VASSAL 3.8+)
-
-The compress-then-obfuscate change (see
-[wif-engine-optimizations.md §A1](wif-engine-optimizations.md)) adds a second form,
-identical except that the plaintext is **deflated (zlib, level 9) before** the XOR-hex
-encoding, and the header is **`!VCSZ`**:
-
-```
-!VCSZ <KK> <PP><PP><PP>...      payload = hex(XOR(deflate(plaintext), key))
-```
-
-Deflating first is what makes the save small: the XOR-hex doubling then applies to the
-~12× smaller deflate output instead of the raw command log, and obfuscating *after*
-compressing costs nothing (XOR-hex of compressed data still re-compresses ~2:1 inside
-the ZIP). The container is still an ordinary ZIP either way.
-
-Readers must dispatch on the 5-byte header: `!VCSK` → unhex+XOR only; `!VCSZ` →
-unhex+XOR, then inflate. Engines/utilities that only know `!VCSK` cannot read `!VCSZ`
-saves. This utility reads both and **preserves whichever format a file was opened
-with** when rewriting it (`SavedGame.open` / `SavedGame.isDeflated()` /
-`writeObfuscated`; likewise `tools/swap_maps.py`).
+So the whole entry is 7-bit ASCII, of length `5 + 2 + 2·N`. Doubling the payload into
+a 16-symbol alphabet is what left the ZIP so little to compress (see the size table
+above), and is why the format was replaced. VASSAL 3.8 still **reads** it
+(`DeobfuscatingInputStream.LegacyDeobfuscatingInputStreamImpl`); its `unhex` accepts
+upper- or lower-case hex, though the writer only ever emitted lowercase.
 
 **Decoding one, by hand.** Take the start of the real sample's `savedGame`:
 
@@ -198,8 +226,6 @@ XOR each subsequent byte with `0x81`: `0xe3^0x81 = 0x62 = 'b'`, `0xe4^0x81 = 'e'
 `0xf2^0x81 = 's'`, `0xe0^0x81 = 'a'`, `0xf7^0x81 = 'v'`, `0xe4^0x81 = 'e'` →
 **`begin_save`**.
 
-A throwaway decoder (not part of the utility):
-
 ```python
 data = open("savedGame", "rb").read()          # the raw ZIP entry
 assert data[:5] == b"!VCSK"
@@ -208,6 +234,22 @@ hexpayload = data[7:]
 plaintext = bytes(int(hexpayload[i:i+2], 16) ^ key
                   for i in range(0, len(hexpayload), 2)).decode("utf-8")
 ```
+
+#### `!VCSZ` — a pre-release form that never shipped
+
+```
+!VCSZ <KK> <PP><PP><PP>...      payload = hex(XOR(deflate(plaintext), key))
+```
+
+Identical to `!VCSK` except that the plaintext is **deflated (zlib, level 9) before**
+the XOR-hex encoding, so the hex doubling applies to the ~12× smaller deflate output
+instead of the raw command log. This was the first attempt at the problem (see
+[wif-engine-optimizations.md §A1](wif-engine-optimizations.md)) and was **abandoned in
+favour of `VOBS`**, which gets the same saving — a little more of it — by letting the
+ZIP compress a payload it can actually read, with no second compression pass and no
+hex at all. It reached no VASSAL release, but saves in it exist (written by a build of
+that branch, or by this utility rewriting one), and VASSAL still reads it, so this
+utility reads and preserves it too.
 
 ### The deobfuscated command log
 
@@ -350,8 +392,8 @@ A `.vsav` is not standalone: loading it requires the module named in its `module
 | Entry — game state | `savedGame` | `GameState.java:1264` |
 | Entry — save meta | `savedata` | `SaveMetaData.java:66` |
 | Entry — module meta | `moduledata` | `ModuleMetaData.java:51` |
-| Obfuscation header | `!VCSK` (plaintext) / `!VCSZ` (deflated, 3.8+) | `ObfuscatingOutputStream.java` (`HEADER`/`DEFLATED_HEADER`) |
-| Obfuscation | header + 2-hex key + (2-hex-per-byte, each byte XOR key), lowercase; `!VCSZ` deflates (zlib) the plaintext first | `ObfuscatingOutputStream.java:62-88` |
+| Obfuscation header | `VOBS` (3.8+) / `!VCSK` (through 3.7.x) / `!VCSZ` (unreleased) | `ObfuscatingOutputStream.java` (`HEADER_BYTES`/`HEADER`) |
+| Obfuscation | `VOBS`: header + 1 raw key byte + each byte XOR key, raw. `!VCSK`/`!VCSZ`: header + 2-hex key + 2-hex-per-byte XOR, lowercase (`!VCSZ` deflates the plaintext first) | `ObfuscatingOutputStream.java`, `DeobfuscatingInputStream.java` |
 | Payload charset | UTF-8 | `GameState.java:1374, 1635` |
 | Command separator | `0x1B` (ESC, `KeyEvent.VK_ESCAPE`) | `GameModule.java:232` |
 | Save-block markers | `begin_save` / `end_save` | `GameState.java:1328-1329` |

@@ -98,7 +98,7 @@ def main(argv):
 
     grand = 0
     for path in saves:
-        state, entries, deflated = read_vsav(path)
+        state, entries, fmt = read_vsav(path)
         toks = split_commands(state)
         drop, names, onmap, freed = set(), {}, {}, 0
         for idx, (ds, cs, end) in enumerate(toks):
@@ -145,7 +145,7 @@ def main(argv):
                 continue
             parts.append(state[cs:end] if first else state[ds:end])
             first = False
-        write_vsav(path, b''.join(parts), entries, deflated)
+        write_vsav(path, b''.join(parts), entries, fmt)
         print('    wrote %s: %d of %d commands kept'
               % (os.path.basename(path), len(toks) - len(drop), len(toks)))
 
