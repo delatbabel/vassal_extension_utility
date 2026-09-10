@@ -1,9 +1,10 @@
 # Command-line tools
 
 Standalone Python 3 scripts for editing VASSAL files outside the GUI — useful for
-building a series of pre-setup scenario files from one another, and for repairs
-the application does not (yet) offer. They are **not** part of the Java
-application and have no dependencies beyond the Python standard library.
+building a series of pre-setup scenario files from one another, for repairs the
+application does not (yet) offer, and for publishing the result to the game
+library. They are **not** part of the Java application and have no dependencies
+beyond the Python standard library.
 
 | script | edits | what it does |
 |---|---|---|
@@ -20,6 +21,7 @@ application and have no dependencies beyond the Python standard library.
 | `missing_counters.py` | — (read-only) | report an extension's counters that a save does not contain |
 | `renumber_gpids.py` | `.vmdx` | clear duplicate Piece Ids |
 | `drop_slots.py` | `.vmdx` | delete piece slots by Piece Id |
+| `upload_scenarios.py` | — (uploads) | publish a directory of scenarios to one release on vassalengine.org |
 
 The saved-game scripts work the way `model/SavedGame` does (see
 [docs/vsav-format.md](../docs/vsav-format.md) and
@@ -801,6 +803,116 @@ tools/global_properties.py data/scenarios/094-*.vsav \
 Only the changed `GlobalProperty` commands are re-encoded — with
 `SequenceEncoder`'s own escaping, so an untouched value re-encodes to the same
 bytes it was read as — and every other command in the log is copied verbatim.
+
+## upload_scenarios.py — publish a directory of scenarios to the library
+
+```
+tools/upload_scenarios.py DIR [DIR...] --project=PROJ --package=PKG
+                          [--release=X.Y.Z] [--apply] [--skip-bad]
+                          [--token=JWT | --token-file=PATH]
+                          [--api=URL] [--ums-api=URL]
+tools/upload_scenarios.py --project=PROJ --list
+```
+
+The library website uploads one file at a time through a file picker, so
+publishing a release of the WiF scenarios means 47 trips through the same
+dialog — and one mis-click leaves a release quietly missing a file. This uploads
+a whole directory to one release of one package, over the same REST API the
+website itself uses (`https://vassalengine.org/api/gls/v1`, the API
+`model/GameLibrary` reads):
+
+```
+POST /projects/{proj}/packages/{pkg}/{version}             create the release
+POST /projects/{proj}/packages/{pkg}/{version}/{filename}  upload one file
+```
+
+`--project` accepts the module page URL or the bare project name; `--package`
+matches a package by slug, by name, or by any unambiguous fragment of either, so
+`--package=Scenarios` finds "Module Version 2.x Scenarios". `--list` prints the
+project's packages and their releases and needs no credentials. A directory
+contributes its `.vsav` files, minus any `*-backup*.vsav`; a file named directly
+is uploaded whatever its type.
+
+Like every other tool here it **reports by default and uploads only with
+`--apply`**, and the report is the point: it lists each file with its size and
+what would happen to it, so the release can be checked before a byte leaves the
+machine.
+
+```
+$ tools/upload_scenarios.py ~/WiFScenarios/2.1.3_Scenarios \
+      --project=World_in_Flames_Official_CE_and_Extensions_DonHarris \
+      --package=Scenarios
+project World_in_Flames_Official_CE_and_Extensions_DonHarris — owners: delatbabel, palad0n
+package 'Module Version 2.x Scenarios' (slug Module-Version-2.x-Scenarios)
+release 2.1.3 — taken from the files' module version
+release 2.1.3 — 46 file(s) already published
+
+47 file(s), 915.8 MB
+    118-presetup-ce-maps-fascist-tide-deluxe-fif.vsav       19.4 MB  upload
+    003-presetup-ce-maps-everything.vsav                    31.9 MB  already published, identical — skip
+    …
+    404-aif-maps-empty.vsav                                246.3 KB  CONFLICT: differs from the published copy
+        published 252,189 bytes sha256 d118b113… — local 252,175 bytes sha256 05f149e4…
+
+1 to upload (19.4 MB), 45 skipped, 1 conflict(s), 0 problem(s)
+REPORT ONLY — pass --apply to create the release and upload
+```
+
+### The release version is not free
+
+The service validates every uploaded save (`prod_core.rs::add_file`) and a
+rejection costs the whole upload of that file, so each of its checks is made
+locally first:
+
+- the file must be a ZIP holding a `moduledata` entry;
+- `moduledata`'s `<version>` must parse as **semver** — `2.1.3` is fine, `2.1`
+  and `1.63` are not, because the service parses with the `semver` crate, which
+  requires all three components;
+- that version must **equal the release version** (an extension is the one
+  exception: a `.vmdx` needs only a valid version);
+- the filename must satisfy `upload.rs::safe_filename`: no control characters,
+  none of `"'*/:<>?|\`, no `..`, no trailing period, no leading or trailing
+  space, 255 characters at most, and not a reserved Windows name.
+
+So a batch of scenarios can only go into the release matching the module they
+were saved from — which is why `--release` can be omitted: the release version
+defaults to the one the files themselves carry, and mixed versions are refused
+rather than half-uploaded.
+
+### Interrupted runs, and files already published
+
+A file already in the release is skipped, because the service holds
+`UNIQUE(release_id, filename)` and re-uploading one fails — so an interrupted or
+partly-failed run is resumed by running the same command again. A local file
+whose name is published but whose SHA-256 differs is reported as a **conflict**:
+the API has no way to replace a file, so either delete the release on the
+website or publish into a new release version.
+
+Every upload is verified afterwards against the project JSON the service
+returns — same filename, same size, same SHA-256 — and a 5xx or dropped
+connection is retried up to three times. The exit status is non-zero if
+anything was left undone.
+
+### Credentials
+
+The library issues short-lived JWTs to the website, so the token comes from a
+browser session: log in at <https://vassalengine.org/library> as an owner of the
+project, then copy the **`refresh`** cookie for `vassalengine.org` (and
+optionally `token`, the access token) out of the browser's cookie inspector.
+Save them as `~/.vassal-extension-utility/library-token`, `chmod 600`:
+
+```
+refresh=eyJhbGciOi...
+token=eyJhbGciOi...
+```
+
+The `refresh` value alone is enough: the tool exchanges it for an access token
+at `POST https://vassalengine.org/api/ums/v1/refresh` — the same call the
+website makes — and does so again whenever the access token is within a minute
+of expiring, so a multi-gigabyte batch that outlasts one token keeps going.
+`--token=`, `--token-file=`, `VASSAL_LIBRARY_TOKEN` and
+`VASSAL_LIBRARY_REFRESH_TOKEN` are all honoured; `--api`/`--ums-api` point the
+tool at a different service (a local instance, for instance).
 
 ## Checking the result
 
