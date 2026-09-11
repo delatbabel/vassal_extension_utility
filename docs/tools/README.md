@@ -133,6 +133,7 @@ print([i for i in range(len(ta)) if a[ta[i][0]:ta[i][2]] != b[tb[i][0]:tb[i][2]]
 ## See also
 
 - [tools/README.md](../../tools/README.md) — the narrative companion to these pages
+- [docs/data_structures/](../data_structures/README.md) — the formats these tools parse, as data structures
 - [docs/vsav-format.md](../vsav-format.md) — the saved-game container and its three obfuscation formats
 - [docs/vmdx-format.md](../vmdx-format.md) — the extension archive
 - [docs/refresh-counters.md](../refresh-counters.md) — `AddCountersRunner`, which consumes the job files two tools write

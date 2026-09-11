@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": ".vsav — Container Structure",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "b0c0",
+      "type": "database",
+      "label": "savedGame",
+      "sublabel": "obfuscated command log",
+      "pos": [
+        40,
+        110
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b0c1",
+      "type": "database",
+      "label": "savedata",
+      "sublabel": "this save's own metadata",
+      "pos": [
+        290,
+        110
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b0c2",
+      "type": "database",
+      "label": "moduledata",
+      "sublabel": "the module it came from",
+      "pos": [
+        540,
+        110
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b1c0",
+      "type": "backend",
+      "label": "plaintext log",
+      "sublabel": "GameState.saveString()",
+      "pos": [
+        40,
+        270
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b1c1",
+      "type": "external",
+      "label": "magic header",
+      "sublabel": "VOBS · !VCSK · !VCSZ",
+      "pos": [
+        290,
+        270
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b1c2",
+      "type": "security",
+      "label": "XOR key",
+      "sublabel": "1 raw byte, or 2 hex digits",
+      "pos": [
+        540,
+        270
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b1c3",
+      "type": "backend",
+      "label": "deflate",
+      "sublabel": "!VCSZ only",
+      "pos": [
+        790,
+        270
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b2c0",
+      "type": "backend",
+      "label": "command token",
+      "sublabel": "one record per 0x1B",
+      "pos": [
+        40,
+        430
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b2c1",
+      "type": "backend",
+      "label": "+/ AddPiece",
+      "sublabel": "id / type / state",
+      "pos": [
+        290,
+        430
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b2c2",
+      "type": "backend",
+      "label": "EXT · BoardPicker",
+      "sublabel": "tab-delimited commands",
+      "pos": [
+        540,
+        430
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b2c3",
+      "type": "backend",
+      "label": "begin_save … end_save",
+      "sublabel": "brackets every log",
+      "pos": [
+        790,
+        430
+      ],
+      "size": [
+        220,
+        76
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "1 · ZIP container — .vsav",
+      "wraps": [
+        "b0c0",
+        "b0c1",
+        "b0c2"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "2 · savedGame — the obfuscation envelope",
+      "wraps": [
+        "b1c0",
+        "b1c1",
+        "b1c2",
+        "b1c3"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "3 · the command log — ESC-delimited records",
+      "wraps": [
+        "b2c0",
+        "b2c1",
+        "b2c2",
+        "b2c3"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "a0",
+      "from": "b0c0",
+      "to": "b1c0",
+      "label": "XOR with the key",
+      "variant": "emphasis",
+      "labelDy": 62
+    },
+    {
+      "id": "a1",
+      "from": "b1c0",
+      "to": "b2c0",
+      "label": "split at every ESC",
+      "variant": "emphasis",
+      "labelDy": 62
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Three levels, three delimiters",
+      "items": [
+        "The ZIP layer is ordinary: three stored entries, no nesting",
+        "The envelope is a header, a key and the plaintext XOR-ed with it",
+        "The log is one long line; its record boundaries are 0x1B bytes, not newlines"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Why the format is preserved",
+      "items": [
+        "VOBS (3.8+) XORs raw so the ZIP deflate can still compress it",
+        "!VCSK (through 3.7.x) hex-encodes, doubling the payload into 16 symbols",
+        "!VCSZ deflates before the hex — a pre-release form that never shipped but is still read"
+      ]
+    }
+  ]
+}

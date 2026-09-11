@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "A game piece in a saved game — Record Layout",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      860,
+      420
+    ]
+  },
+  "stages": [
+    {
+      "label": "The command"
+    },
+    {
+      "label": "Two chains"
+    },
+    {
+      "label": "Trait nesting"
+    },
+    {
+      "label": "The leaf"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a0",
+      "type": "database",
+      "label": "+/ AddPiece",
+      "sublabel": "one ESC-delimited token",
+      "stage": 0,
+      "row": 0
+    },
+    {
+      "id": "b0",
+      "type": "database",
+      "label": "piece id",
+      "sublabel": "field 1, a timestamp",
+      "stage": 0,
+      "row": 1
+    },
+    {
+      "id": "a1",
+      "type": "backend",
+      "label": "type",
+      "sublabel": "the static definition",
+      "stage": 1,
+      "row": 0
+    },
+    {
+      "id": "b1",
+      "type": "backend",
+      "label": "state",
+      "sublabel": "the mutable half",
+      "stage": 1,
+      "row": 1
+    },
+    {
+      "id": "a2",
+      "type": "backend",
+      "label": "outer trait",
+      "sublabel": "a trait, tab-joined",
+      "stage": 2,
+      "row": 0
+    },
+    {
+      "id": "b2",
+      "type": "backend",
+      "label": "its state half",
+      "sublabel": "same shape, same order",
+      "stage": 2,
+      "row": 1
+    },
+    {
+      "id": "a3",
+      "type": "backend",
+      "label": "piece;;;img;name",
+      "sublabel": "the BasicPiece type",
+      "stage": 3,
+      "row": 0
+    },
+    {
+      "id": "b3",
+      "type": "backend",
+      "label": "map;x;y;gpid;…",
+      "sublabel": "the BasicPiece state",
+      "stage": 3,
+      "row": 1
+    }
+  ],
+  "flows": [
+    {
+      "id": "a01",
+      "from": "a0",
+      "to": "a1",
+      "label": "split on / ",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a12",
+      "from": "a1",
+      "to": "a2",
+      "label": "read left to right",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a23",
+      "from": "a2",
+      "to": "a3",
+      "label": "after the last tab",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "b01",
+      "from": "b0",
+      "to": "b1",
+      "label": "split on /",
+      "labelDy": -52
+    },
+    {
+      "id": "b12",
+      "from": "b1",
+      "to": "b2",
+      "label": "read left to right",
+      "labelDy": -52
+    },
+    {
+      "id": "j2",
+      "from": "b2",
+      "to": "a2",
+      "label": "field for field"
+    },
+    {
+      "id": "j3",
+      "from": "a3",
+      "to": "b3",
+      "label": "gpid is field 4",
+      "variant": "emphasis",
+      "labelDy": 40
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Two parallel chains, one shape",
+      "items": [
+        "type is GamePiece.getType() — what the piece is; state is getState() — where it is and how it looks",
+        "Both are tab-joined trait chains in the same order, so trait n of one lines up with trait n of the other",
+        "Prototypes are expanded inline, so a saved type can never be compared to a PieceSlot definition whole"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Reaching the leaf",
+      "items": [
+        "The innermost trait is the substring after the LAST tab — it carries no escaping",
+        "Identity lives there: name is field 5 of the type, gpid field 4 of the state",
+        "Field 5 of the state is a property count, followed by that many key;value pairs"
+      ]
+    }
+  ]
+}

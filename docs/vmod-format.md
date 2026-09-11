@@ -1,5 +1,9 @@
 # VASSAL Module File Format (.vmod)
 
+> **See also [docs/data_structures/vmod.md](data_structures/vmod.md)** — the same format treated as a data
+> structure, with field tables, verified examples and an interactive structure diagram.
+
+
 A `.vmod` file is a standard ZIP archive containing the complete data for a VASSAL game module.
 
 ## Archive Contents

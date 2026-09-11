@@ -1,5 +1,9 @@
 # VASSAL Extension File Format (.vmdx)
 
+> **See also [docs/data_structures/vmdx.md](data_structures/vmdx.md)** — the same format treated as a data
+> structure, with field tables, verified examples and an interactive structure diagram.
+
+
 A `.vmdx` file is a standard ZIP archive that overlays additional components onto an existing `.vmod` module. It shares the same container format as a vmod but has a different internal structure.
 
 ## Relationship to the Module

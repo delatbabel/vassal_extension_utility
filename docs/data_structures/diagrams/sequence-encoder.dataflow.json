@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "SequenceEncoder — Nesting and Escaping",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      860,
+      420
+    ]
+  },
+  "stages": [
+    {
+      "label": "Level 0"
+    },
+    {
+      "label": "Level 1"
+    },
+    {
+      "label": "Level 2"
+    },
+    {
+      "label": "Reading back"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a0",
+      "type": "database",
+      "label": "command log",
+      "sublabel": "delimiter ESC 0x1B",
+      "stage": 0,
+      "row": 0
+    },
+    {
+      "id": "b0",
+      "type": "external",
+      "label": "escape rule",
+      "sublabel": "a backslash goes first",
+      "stage": 0,
+      "row": 1
+    },
+    {
+      "id": "a1",
+      "type": "backend",
+      "label": "AddPiece fields",
+      "sublabel": "delimiter /",
+      "stage": 1,
+      "row": 0
+    },
+    {
+      "id": "b1",
+      "type": "external",
+      "label": "quote rule",
+      "sublabel": "a leading one quotes",
+      "stage": 1,
+      "row": 1
+    },
+    {
+      "id": "a2",
+      "type": "backend",
+      "label": "trait chain",
+      "sublabel": "delimiter tab",
+      "stage": 2,
+      "row": 0
+    },
+    {
+      "id": "b2",
+      "type": "backend",
+      "label": "compounding",
+      "sublabel": "levels re-escape",
+      "stage": 2,
+      "row": 1
+    },
+    {
+      "id": "a3",
+      "type": "backend",
+      "label": "seqDecode()",
+      "sublabel": "unescape, then unquote",
+      "stage": 3,
+      "row": 0
+    },
+    {
+      "id": "b3",
+      "type": "database",
+      "label": "original values",
+      "sublabel": "byte-for-byte",
+      "stage": 3,
+      "row": 1
+    }
+  ],
+  "flows": [
+    {
+      "id": "a01",
+      "from": "a0",
+      "to": "a1",
+      "label": "tokens joined with",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a12",
+      "from": "a1",
+      "to": "a2",
+      "label": "tokens joined with",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a23",
+      "from": "a2",
+      "to": "a3",
+      "label": "is the exact inverse of",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "b01",
+      "from": "b0",
+      "to": "b1",
+      "label": "applies at every level",
+      "labelDy": -52
+    },
+    {
+      "id": "b12",
+      "from": "b1",
+      "to": "b2",
+      "label": "applies at every level",
+      "labelDy": -52
+    },
+    {
+      "id": "j2",
+      "from": "b2",
+      "to": "a2",
+      "label": "why escapes pile up"
+    },
+    {
+      "id": "j3",
+      "from": "a3",
+      "to": "b3",
+      "label": "one level per call",
+      "variant": "emphasis",
+      "labelDy": 40
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "One encoder, three delimiters",
+      "items": [
+        "A literal delimiter inside a token is prefixed with a backslash",
+        "A token that starts with a backslash, or is already quoted, is wrapped in single quotes",
+        "Encoding {A, {B, C}} with delimiter , gives  A,B\\,C"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Why escapes pile up",
+      "items": [
+        "Each nesting level escapes the backslashes the level below already wrote",
+        "A real trait state reads  -1\\t-1\\\\t-1\\\\\\\\t… — the run doubling at every level",
+        "This is the O(traits squared) growth measured in the WiF save-bloat analysis"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Which is why tools copy verbatim",
+      "items": [
+        "Decoding and re-encoding an untouched token is not guaranteed to reproduce its bytes",
+        "Every tool here edits the bytes it targets and copies the rest through unchanged"
+      ]
+    }
+  ]
+}

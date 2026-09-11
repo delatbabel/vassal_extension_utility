@@ -44,6 +44,9 @@ Packages are written to `tmp/` and bundle their own Java runtime. The Linux `.de
 
 ## File Format Documentation
 
+- [docs/data_structures/](docs/data_structures/README.md) — **the data structures in depth**: the shared ZIP container,
+  the `SequenceEncoder` encoding every level is built from, the game-piece record, and a page per format, with
+  interactive structure diagrams
 - [vmod format](docs/vmod-format.md) — VASSAL module file structure
 - [vmdx format](docs/vmdx-format.md) — VASSAL extension file structure
 - [vsav format](docs/vsav-format.md) — VASSAL saved-game file structure (obfuscated command log + metadata)

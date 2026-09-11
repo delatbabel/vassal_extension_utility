@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": ".vmod — Container Structure",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "b0c0",
+      "type": "database",
+      "label": "buildFile.xml",
+      "sublabel": "the component tree",
+      "pos": [
+        40,
+        110
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b0c1",
+      "type": "database",
+      "label": "moduledata",
+      "sublabel": "name, version, VassalVersion",
+      "pos": [
+        290,
+        110
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b0c2",
+      "type": "database",
+      "label": "images/",
+      "sublabel": "every referenced asset",
+      "pos": [
+        540,
+        110
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b0c3",
+      "type": "database",
+      "label": "*.vsav at the root",
+      "sublabel": "PredefinedSetup files",
+      "pos": [
+        790,
+        110
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b1c0",
+      "type": "backend",
+      "label": "GameModule",
+      "sublabel": "the root, one per module",
+      "pos": [
+        40,
+        270
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b1c1",
+      "type": "backend",
+      "label": "Map · PieceWindow",
+      "sublabel": "top-level components",
+      "pos": [
+        290,
+        270
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b1c2",
+      "type": "backend",
+      "label": "PrototypesContainer",
+      "sublabel": "shared trait sets",
+      "pos": [
+        540,
+        270
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b1c3",
+      "type": "backend",
+      "label": "PredefinedSetup",
+      "sublabel": "file= names a root entry",
+      "pos": [
+        790,
+        270
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b2c0",
+      "type": "backend",
+      "label": "PieceSlot · CardSlot",
+      "sublabel": "at any depth in the tree",
+      "pos": [
+        40,
+        430
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b2c1",
+      "type": "backend",
+      "label": "gpid attribute",
+      "sublabel": "the definition identity",
+      "pos": [
+        290,
+        430
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b2c2",
+      "type": "backend",
+      "label": "element text",
+      "sublabel": "+/null/<type>/<state>",
+      "pos": [
+        540,
+        430
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "b2c3",
+      "type": "backend",
+      "label": "images in that text",
+      "sublabel": "not in any attribute",
+      "pos": [
+        790,
+        430
+      ],
+      "size": [
+        220,
+        76
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "1 · ZIP container — .vmod",
+      "wraps": [
+        "b0c0",
+        "b0c1",
+        "b0c2",
+        "b0c3"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "2 · buildFile.xml — the component tree",
+      "wraps": [
+        "b1c0",
+        "b1c1",
+        "b1c2",
+        "b1c3"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "3 · PieceSlot — one counter definition",
+      "wraps": [
+        "b2c0",
+        "b2c1",
+        "b2c2",
+        "b2c3"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "a0",
+      "from": "b0c0",
+      "to": "b1c0",
+      "label": "parses to",
+      "variant": "emphasis",
+      "labelDy": 62
+    },
+    {
+      "id": "a1",
+      "from": "b1c0",
+      "to": "b2c0",
+      "label": "contains, at any depth",
+      "variant": "emphasis",
+      "labelDy": 62
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "The tree is the class hierarchy",
+      "items": [
+        "Every XML tag is a fully-qualified VASSAL class name",
+        "The nesting mirrors the Java object tree built at run time",
+        "A module must never contain a ModuleExtension.ExtensionElement"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Two things live outside the XML",
+      "items": [
+        "A piece definition is element text, so image names are found by scanning it",
+        "A PredefinedSetup's file= is the literal name of a root-level ZIP entry",
+        "Image entry mtimes are the tile cache key — never restamp them"
+      ]
+    }
+  ]
+}

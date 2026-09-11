@@ -1,5 +1,9 @@
 # VASSAL Saved-Game File Format (.vsav)
 
+> **See also [docs/data_structures/vsav.md](data_structures/vsav.md)** — the same format treated as a data
+> structure, with field tables, verified examples and an interactive structure diagram.
+
+
 A `.vsav` file is a VASSAL **saved game** — a snapshot of a game in progress. Like a
 module (`.vmod`) or extension (`.vmdx`), it is a standard ZIP archive, but it holds a
 different set of entries and its main payload is an *obfuscated command log* rather
