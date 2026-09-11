@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "drop_slots.py — Data Flow",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      860,
+      420
+    ]
+  },
+  "stages": [
+    {
+      "label": "Inputs"
+    },
+    {
+      "label": "Parse"
+    },
+    {
+      "label": "Delete"
+    },
+    {
+      "label": "Write"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a0",
+      "type": "database",
+      "label": "EXT.vmdx",
+      "sublabel": "extension archive",
+      "stage": 0,
+      "row": 0
+    },
+    {
+      "id": "b0",
+      "type": "external",
+      "label": "GPID list",
+      "sublabel": "command-line arguments",
+      "stage": 0,
+      "row": 1
+    },
+    {
+      "id": "a1",
+      "type": "backend",
+      "label": "buildFile.xml",
+      "sublabel": "read as text",
+      "stage": 1,
+      "row": 0
+    },
+    {
+      "id": "b1",
+      "type": "backend",
+      "label": "wrapper scan",
+      "sublabel": "ExtensionElement",
+      "stage": 1,
+      "row": 1
+    },
+    {
+      "id": "a2",
+      "type": "backend",
+      "label": "slot spans",
+      "sublabel": "gpid to XML range",
+      "stage": 2,
+      "row": 0
+    },
+    {
+      "id": "b2",
+      "type": "backend",
+      "label": "empty wrappers",
+      "sublabel": "cut with their slot",
+      "stage": 2,
+      "row": 1
+    },
+    {
+      "id": "a3",
+      "type": "backend",
+      "label": "rewrite ZIP",
+      "sublabel": "mtimes preserved",
+      "stage": 3,
+      "row": 0
+    },
+    {
+      "id": "b3",
+      "type": "database",
+      "label": "backups/",
+      "sublabel": "<module>_ext/backups",
+      "stage": 3,
+      "row": 1
+    }
+  ],
+  "flows": [
+    {
+      "id": "a01",
+      "from": "a0",
+      "to": "a1",
+      "label": "ZIP entry",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a12",
+      "from": "a1",
+      "to": "a2",
+      "label": "XML text",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a23",
+      "from": "a2",
+      "to": "a3",
+      "label": "edited XML",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "b01",
+      "from": "b0",
+      "to": "b1",
+      "label": "gpids",
+      "labelDy": -52
+    },
+    {
+      "id": "b12",
+      "from": "b1",
+      "to": "b2",
+      "label": "enclosing tags",
+      "labelDy": -52
+    },
+    {
+      "id": "j2",
+      "from": "b2",
+      "to": "a2",
+      "label": "spans to cut"
+    },
+    {
+      "id": "j3",
+      "from": "a3",
+      "to": "b3",
+      "label": "original copy",
+      "variant": "emphasis",
+      "labelDy": 40
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "The empty-wrapper trap",
+      "items": [
+        "A wrapper left with no component makes VASSAL abort the whole module launch",
+        "ExtensionElement.build() leaves extension null and addTo() then dereferences it",
+        "So a wrapper emptied by a deletion is removed along with the slot"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "What is preserved",
+      "items": [
+        "Only buildFile.xml is rewritten, plus extensiondata when --version bumps it",
+        "Every other entry keeps its original modification time, so image tiles stay fresh"
+      ]
+    }
+  ]
+}

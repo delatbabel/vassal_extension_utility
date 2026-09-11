@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "swap_maps.py — Data Flow",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      860,
+      420
+    ]
+  },
+  "stages": [
+    {
+      "label": "Inputs"
+    },
+    {
+      "label": "Read"
+    },
+    {
+      "label": "Splice"
+    },
+    {
+      "label": "Write"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a0",
+      "type": "database",
+      "label": "TARGET.vsav",
+      "sublabel": "save to re-lay",
+      "stage": 0,
+      "row": 0
+    },
+    {
+      "id": "b0",
+      "type": "database",
+      "label": "DONOR.vsav",
+      "sublabel": "layout source",
+      "stage": 0,
+      "row": 1
+    },
+    {
+      "id": "a1",
+      "type": "backend",
+      "label": "read_vsav()",
+      "sublabel": "deobfuscate savedGame",
+      "stage": 1,
+      "row": 0
+    },
+    {
+      "id": "b1",
+      "type": "backend",
+      "label": "split_commands()",
+      "sublabel": "ESC token ranges",
+      "stage": 1,
+      "row": 1
+    },
+    {
+      "id": "a2",
+      "type": "backend",
+      "label": "token splice",
+      "sublabel": "BoardPicker replaced",
+      "stage": 2,
+      "row": 0
+    },
+    {
+      "id": "b2",
+      "type": "backend",
+      "label": "board_picker()",
+      "sublabel": "matches <map>BoardPicker",
+      "stage": 2,
+      "row": 1
+    },
+    {
+      "id": "a3",
+      "type": "backend",
+      "label": "write_vsav()",
+      "sublabel": "fresh key, temp file",
+      "stage": 3,
+      "row": 0
+    },
+    {
+      "id": "b3",
+      "type": "database",
+      "label": "OUT.vsav",
+      "sublabel": "target + donor layout",
+      "stage": 3,
+      "row": 1
+    }
+  ],
+  "flows": [
+    {
+      "id": "a01",
+      "from": "a0",
+      "to": "a1",
+      "label": "savedGame entry",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a12",
+      "from": "a1",
+      "to": "a2",
+      "label": "command log",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a23",
+      "from": "a2",
+      "to": "a3",
+      "label": "spliced log",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "b01",
+      "from": "b0",
+      "to": "b1",
+      "label": "donor savedGame",
+      "labelDy": -52
+    },
+    {
+      "id": "b12",
+      "from": "b1",
+      "to": "b2",
+      "label": "token ranges",
+      "labelDy": -52
+    },
+    {
+      "id": "j2",
+      "from": "b2",
+      "to": "a2",
+      "label": "donor tokens"
+    },
+    {
+      "id": "j3",
+      "from": "a3",
+      "to": "b3",
+      "label": "os.replace()",
+      "variant": "emphasis",
+      "labelDy": 40
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "What is copied",
+      "items": [
+        "Only the <mapName>BoardPicker token(s) are replaced",
+        "Every other command token is copied byte-for-byte",
+        "savedata and moduledata entries are copied whole"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Shared core",
+      "items": [
+        "read_vsav / split_commands / write_vsav live here and are imported by ten other tools",
+        "Pass ALL instead of map names to swap every BoardPicker command"
+      ]
+    }
+  ]
+}

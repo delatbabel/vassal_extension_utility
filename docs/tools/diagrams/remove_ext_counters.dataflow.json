@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "remove_ext_counters.py — Data Flow",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      860,
+      420
+    ]
+  },
+  "stages": [
+    {
+      "label": "Inputs"
+    },
+    {
+      "label": "Read"
+    },
+    {
+      "label": "Attribute"
+    },
+    {
+      "label": "Write"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a0",
+      "type": "database",
+      "label": "SAVE.vsav",
+      "sublabel": "scenario",
+      "stage": 0,
+      "row": 0
+    },
+    {
+      "id": "b0",
+      "type": "database",
+      "label": "MODULE.vmod",
+      "sublabel": "plus _ext/*.vmdx",
+      "stage": 0,
+      "row": 1
+    },
+    {
+      "id": "a1",
+      "type": "backend",
+      "label": "read_vsav()",
+      "sublabel": "deobfuscate savedGame",
+      "stage": 1,
+      "row": 0
+    },
+    {
+      "id": "b1",
+      "type": "backend",
+      "label": "gpid_owners()",
+      "sublabel": "gpid to archive",
+      "stage": 1,
+      "row": 1
+    },
+    {
+      "id": "a2",
+      "type": "backend",
+      "label": "drop by owner",
+      "sublabel": "AddPiece tokens",
+      "stage": 2,
+      "row": 0
+    },
+    {
+      "id": "b2",
+      "type": "backend",
+      "label": "named extensions",
+      "sublabel": "EXT,EXT,... argument",
+      "stage": 2,
+      "row": 1
+    },
+    {
+      "id": "a3",
+      "type": "backend",
+      "label": "write_vsav()",
+      "sublabel": "fresh key, temp file",
+      "stage": 3,
+      "row": 0
+    },
+    {
+      "id": "b3",
+      "type": "database",
+      "label": "SAVE.vsav.bak",
+      "sublabel": "unless --no-backup",
+      "stage": 3,
+      "row": 1
+    }
+  ],
+  "flows": [
+    {
+      "id": "a01",
+      "from": "a0",
+      "to": "a1",
+      "label": "savedGame entry",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a12",
+      "from": "a1",
+      "to": "a2",
+      "label": "command log",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a23",
+      "from": "a2",
+      "to": "a3",
+      "label": "kept tokens",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "b01",
+      "from": "b0",
+      "to": "b1",
+      "label": "PieceSlots",
+      "labelDy": -52
+    },
+    {
+      "id": "b12",
+      "from": "b1",
+      "to": "b2",
+      "label": "owner map",
+      "labelDy": -52
+    },
+    {
+      "id": "j2",
+      "from": "b2",
+      "to": "a2",
+      "label": "owned gpids"
+    },
+    {
+      "id": "j3",
+      "from": "a3",
+      "to": "b3",
+      "label": "original moved",
+      "variant": "emphasis",
+      "labelDy": 40
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Not an Excess-Units case",
+      "items": [
+        "These pieces match their definitions perfectly, so Refresh Counters leaves them",
+        "They simply belong to an extension the scenario was never meant to list",
+        "Attribution is by GPID, which is exact once GPIDs are unique — check renumber_gpids.py first"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Dropping the listing too",
+      "items": [
+        "--drop-listing also removes the EXT command naming the extension",
+        "Stacks are left alone: dangling member ids are skipped on load"
+      ]
+    }
+  ]
+}

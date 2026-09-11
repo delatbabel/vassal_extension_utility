@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "copy_counter_positions.py — Data Flow",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      860,
+      420
+    ]
+  },
+  "stages": [
+    {
+      "label": "Inputs"
+    },
+    {
+      "label": "Read"
+    },
+    {
+      "label": "Plan"
+    },
+    {
+      "label": "Write"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a0",
+      "type": "database",
+      "label": "SAVE.vsav",
+      "sublabel": "family member",
+      "stage": 0,
+      "row": 0
+    },
+    {
+      "id": "b0",
+      "type": "database",
+      "label": "REF.vsav",
+      "sublabel": "--reference",
+      "stage": 0,
+      "row": 1
+    },
+    {
+      "id": "a1",
+      "type": "backend",
+      "label": "read_vsav()",
+      "sublabel": "deobfuscate savedGame",
+      "stage": 1,
+      "row": 0
+    },
+    {
+      "id": "b1",
+      "type": "backend",
+      "label": "piece_positions()",
+      "sublabel": "unique gpid to map,x,y",
+      "stage": 1,
+      "row": 1
+    },
+    {
+      "id": "a2",
+      "type": "backend",
+      "label": "remove counters",
+      "sublabel": "drop AddPiece",
+      "stage": 2,
+      "row": 0
+    },
+    {
+      "id": "b2",
+      "type": "backend",
+      "label": "anchor + gpids",
+      "sublabel": "--anchor, --gpid-file",
+      "stage": 2,
+      "row": 1
+    },
+    {
+      "id": "a3",
+      "type": "backend",
+      "label": "write_vsav()",
+      "sublabel": "pruned save",
+      "stage": 3,
+      "row": 0
+    },
+    {
+      "id": "b3",
+      "type": "database",
+      "label": "OUT.job",
+      "sublabel": "for AddCountersRunner",
+      "stage": 3,
+      "row": 1
+    }
+  ],
+  "flows": [
+    {
+      "id": "a01",
+      "from": "a0",
+      "to": "a1",
+      "label": "savedGame entry",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a12",
+      "from": "a1",
+      "to": "a2",
+      "label": "command log",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a23",
+      "from": "a2",
+      "to": "a3",
+      "label": "kept tokens",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "b01",
+      "from": "b0",
+      "to": "b1",
+      "label": "reference save",
+      "labelDy": -52
+    },
+    {
+      "id": "b12",
+      "from": "b1",
+      "to": "b2",
+      "label": "positions",
+      "labelDy": -52
+    },
+    {
+      "id": "j2",
+      "from": "b2",
+      "to": "a2",
+      "label": "targets"
+    },
+    {
+      "id": "j3",
+      "from": "a3",
+      "to": "b3",
+      "label": "add= lines",
+      "variant": "emphasis",
+      "labelDy": 40
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Two steps, because stacking belongs to the engine",
+      "items": [
+        "Position is three state fields, but stacking is a separate piece listing members by id",
+        "So each counter is removed here and re-placed by VASSAL at the reference position",
+        "Map.placeOrMerge then merges it into whatever stack is there — as a drag would"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Running the job files",
+      "items": [
+        "The .job files are fed to refresh/AddCountersRunner, not to VASSAL directly",
+        "A dangling id left in an old stack is harmless: setState() skips what it cannot resolve"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "fix_sif_subs.py — Data Flow",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      860,
+      420
+    ]
+  },
+  "stages": [
+    {
+      "label": "Inputs"
+    },
+    {
+      "label": "Pair up"
+    },
+    {
+      "label": "Splice"
+    },
+    {
+      "label": "Write"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a0",
+      "type": "database",
+      "label": "SAVE.vsav",
+      "sublabel": "pre-fix scenario",
+      "stage": 0,
+      "row": 0
+    },
+    {
+      "id": "b0",
+      "type": "database",
+      "label": "10-SiF.vmdx",
+      "sublabel": "plus --slots archives",
+      "stage": 0,
+      "row": 1
+    },
+    {
+      "id": "a1",
+      "type": "backend",
+      "label": "read_vsav()",
+      "sublabel": "deobfuscate savedGame",
+      "stage": 1,
+      "row": 0
+    },
+    {
+      "id": "b1",
+      "type": "backend",
+      "label": "slot pairs",
+      "sublabel": "SUB to S SUB",
+      "stage": 1,
+      "row": 1
+    },
+    {
+      "id": "a2",
+      "type": "backend",
+      "label": "trait splice",
+      "sublabel": "emb2 and piece;;;",
+      "stage": 2,
+      "row": 0
+    },
+    {
+      "id": "b2",
+      "type": "backend",
+      "label": "gpid repoint",
+      "sublabel": "4th state field",
+      "stage": 2,
+      "row": 1
+    },
+    {
+      "id": "a3",
+      "type": "backend",
+      "label": "write_vsav()",
+      "sublabel": "or --in-place",
+      "stage": 3,
+      "row": 0
+    },
+    {
+      "id": "b3",
+      "type": "database",
+      "label": "fixed save",
+      "sublabel": "(subs fixed).vsav",
+      "stage": 3,
+      "row": 1
+    }
+  ],
+  "flows": [
+    {
+      "id": "a01",
+      "from": "a0",
+      "to": "a1",
+      "label": "savedGame entry",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a12",
+      "from": "a1",
+      "to": "a2",
+      "label": "command log",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "a23",
+      "from": "a2",
+      "to": "a3",
+      "label": "edited tokens",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "b01",
+      "from": "b0",
+      "to": "b1",
+      "label": "PieceSlot defs",
+      "labelDy": -52
+    },
+    {
+      "id": "b12",
+      "from": "b1",
+      "to": "b2",
+      "label": "twin lookup",
+      "labelDy": -52
+    },
+    {
+      "id": "j2",
+      "from": "b2",
+      "to": "a2",
+      "label": "replacement"
+    },
+    {
+      "id": "j3",
+      "from": "a3",
+      "to": "b3",
+      "label": "os.replace()",
+      "variant": "emphasis",
+      "labelDy": 40
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Why splice, not rebuild",
+      "items": [
+        "A saved piece type is the expanded trait list, so it never equals a PieceSlot definition",
+        "The two slots of a pair differ in exactly two traits, both free of / and tab",
+        "Those substrings appear verbatim at any nesting depth, so they can be spliced"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Keeping the original",
+      "items": [
+        "--add keeps the mis-named piece and places its twin beside it",
+        "Piece id, map, position, layer and properties are copied verbatim"
+      ]
+    }
+  ]
+}

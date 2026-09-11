@@ -1,0 +1,342 @@
+#!/usr/bin/env python3
+"""Generate one archify data-flow spec per tools/*.py, on a fixed 8-node template.
+
+Row 0 is the artefact being transformed; row 1 is the reference/option side.
+Stage 2 joins row 1 up into row 0 (what the selection is made against); stage 3
+joins row 0 down into row 1 (what is written out).  Offsets are the ones the
+showcase validator accepts for this grid; see docs/tools/README.md.
+"""
+import json, os, sys
+
+T = {}   # file stem -> spec
+
+
+def tool(stem, title, stages, a, b, fa, fb, j2, j3, cards):
+    T[stem] = dict(title=title, stages=stages, a=a, b=b, fa=fa, fb=fb,
+                   j2=j2, j3=j3, cards=cards)
+
+
+tool('swap_maps', 'swap_maps.py — Data Flow',
+     ['Inputs', 'Read', 'Splice', 'Write'],
+     [('TARGET.vsav', 'save to re-lay', 'database'),
+      ('read_vsav()', 'deobfuscate savedGame', 'backend'),
+      ('token splice', 'BoardPicker replaced', 'backend'),
+      ('write_vsav()', 'fresh key, temp file', 'backend')],
+     [('DONOR.vsav', 'layout source', 'database'),
+      ('split_commands()', 'ESC token ranges', 'backend'),
+      ('board_picker()', 'matches <map>BoardPicker', 'backend'),
+      ('OUT.vsav', 'target + donor layout', 'database')],
+     ['savedGame entry', 'command log', 'spliced log'],
+     ['donor savedGame', 'token ranges'],
+     'donor tokens', 'os.replace()',
+     [{'dot': 'cyan', 'title': 'What is copied',
+       'items': ['Only the <mapName>BoardPicker token(s) are replaced',
+                 'Every other command token is copied byte-for-byte',
+                 'savedata and moduledata entries are copied whole']},
+      {'dot': 'emerald', 'title': 'Shared core',
+       'items': ['read_vsav / split_commands / write_vsav live here and are imported by ten other tools',
+                 'Pass ALL instead of map names to swap every BoardPicker command']}])
+
+tool('shift_pieces', 'shift_pieces.py — Data Flow',
+     ['Inputs', 'Read', 'Translate', 'Write'],
+     [('TARGET.vsav', 'save to adjust', 'database'),
+      ('read_vsav()', 'deobfuscate savedGame', 'backend'),
+      ('x / y rewrite', 'BasicPiece state', 'backend'),
+      ('write_vsav()', 'fresh key, temp file', 'backend')],
+     [('CLI arguments', 'MAP X_LO X_HI DX DY', 'external'),
+      ('split_commands()', 'ESC token ranges', 'backend'),
+      ('piece filter', 'map name + x range', 'backend'),
+      ('OUT.vsav', 'pieces translated', 'database')],
+     ['savedGame entry', 'command log', 'edited tokens'],
+     ['map + offsets', 'token ranges'],
+     'selection', 'os.replace()',
+     [{'dot': 'cyan', 'title': 'Scope',
+       'items': ['Only the innermost BasicPiece state x and y fields are touched',
+                 'Every other byte of every command is copied verbatim',
+                 'Run it after swap_maps.py when a board changes grid column']}])
+
+tool('remove_placemark_carriers', 'remove_placemark_carriers.py — Data Flow',
+     ['Inputs', 'Read', 'Select', 'Write'],
+     [('SAVE.vsav', 'one or many', 'database'),
+      ('read_vsav()', 'deobfuscate savedGame', 'backend'),
+      ('drop AddPiece', 'token + delimiter', 'backend'),
+      ('write_vsav()', 'fresh key, temp file', 'backend')],
+     [('carrier rule', 'map=null AND placemark', 'external'),
+      ('split_commands()', 'ESC token ranges', 'backend'),
+      ('on-map carriers', 'reported, never cut', 'backend'),
+      ('SAVE.vsav.bak', 'unless --no-backup', 'database')],
+     ['savedGame entry', 'command log', 'kept tokens'],
+     ['predicate', 'token ranges'],
+     'matches', 'original moved',
+     [{'dot': 'cyan', 'title': 'Why not Refresh Counters',
+       'items': ['Every carrier has map = null, and getRefreshables() walks map contents only',
+                 'So the engine never collects them, never rebuilds them, never warns',
+                 'Each carrier type is about 21 KB of stale embedded Place Marker']},
+      {'dot': 'rose', 'title': 'Left alone',
+       'items': ['A carrier that is on a map is reported and kept — refresh it instead',
+                 'Stacks keep dangling member ids; Stack.setState() skips what it cannot resolve']}])
+
+tool('remove_offmap_pieces', 'remove_offmap_pieces.py — Data Flow',
+     ['Inputs', 'Read', 'Select', 'Report'],
+     [('SAVE.vsav', 'one or many', 'database'),
+      ('read_vsav()', 'deobfuscate savedGame', 'backend'),
+      ('off-map scan', 'innermost map == null', 'backend'),
+      ('write_vsav()', 'only with --apply', 'backend')],
+     [('CLI filters', 'keep-name / only-gpid', 'external'),
+      ('split_commands()', 'ESC token ranges', 'backend'),
+      ('name filter', 'substring, case-free', 'backend'),
+      ('report + CSV', 'stdout, --csv OUT.csv', 'database')],
+     ['savedGame entry', 'command log', 'kept tokens'],
+     ['filters', 'token ranges'],
+     'selection', 'counts per name',
+     [{'dot': 'amber', 'title': 'Read the report first',
+       'items': ['Off-map does not mean unwanted: ~529 ownership markers per WiF save look deliberate',
+                 'That is why it reports by default and writes only with --apply',
+                 'Use --keep-name to decide per counter name, not per save']},
+      {'dot': 'cyan', 'title': 'Why they persist',
+       'items': ['An off-map piece is never collected by GameRefresher, so refresh cannot clear it',
+                 'Decks are never affected — their contents always carry a real map id']}])
+
+tool('dedupe_pieces', 'dedupe_pieces.py — Data Flow',
+     ['Inputs', 'Read', 'Duplicates', 'Write'],
+     [('SAVE.vsav', 'force pools', 'database'),
+      ('read_vsav()', 'deobfuscate savedGame', 'backend'),
+      ('first wins', 'later copies dropped', 'backend'),
+      ('write_vsav()', 'fresh key, temp file', 'backend')],
+     [('MODULE.vmod', 'plus _ext/*.vmdx', 'database'),
+      ('slot_index()', 'gpid to extension', 'backend'),
+      ('gpid tally', 'repeated AddPiece', 'backend'),
+      ('SAVE.vsav.bak', 'unless --no-backup', 'database')],
+     ['savedGame entry', 'command log', 'kept tokens'],
+     ['PieceSlots', 'gpid owners'],
+     'duplicates', 'original moved',
+     [{'dot': 'rose', 'title': 'Always restrict it',
+       'items': ['--extension is required: only counters of the named extensions are considered',
+                 'US Entry Option appears 17 times legitimately — blind deduplication destroys it',
+                 '--only-gpid names counters exactly, which is what a checked list calls for']},
+      {'dot': 'cyan', 'title': 'First, look',
+       'items': ['Pass --list to see what is duplicated before selecting anything',
+                 'A duplicate is two AddPiece commands whose innermost state carries the same GPID']}])
+
+tool('remove_ext_counters', 'remove_ext_counters.py — Data Flow',
+     ['Inputs', 'Read', 'Attribute', 'Write'],
+     [('SAVE.vsav', 'scenario', 'database'),
+      ('read_vsav()', 'deobfuscate savedGame', 'backend'),
+      ('drop by owner', 'AddPiece tokens', 'backend'),
+      ('write_vsav()', 'fresh key, temp file', 'backend')],
+     [('MODULE.vmod', 'plus _ext/*.vmdx', 'database'),
+      ('gpid_owners()', 'gpid to archive', 'backend'),
+      ('named extensions', 'EXT,EXT,... argument', 'backend'),
+      ('SAVE.vsav.bak', 'unless --no-backup', 'database')],
+     ['savedGame entry', 'command log', 'kept tokens'],
+     ['PieceSlots', 'owner map'],
+     'owned gpids', 'original moved',
+     [{'dot': 'cyan', 'title': 'Not an Excess-Units case',
+       'items': ['These pieces match their definitions perfectly, so Refresh Counters leaves them',
+                 'They simply belong to an extension the scenario was never meant to list',
+                 'Attribution is by GPID, which is exact once GPIDs are unique — check renumber_gpids.py first']},
+      {'dot': 'amber', 'title': 'Dropping the listing too',
+       'items': ['--drop-listing also removes the EXT command naming the extension',
+                 'Stacks are left alone: dangling member ids are skipped on load']}])
+
+tool('fix_sif_subs', 'fix_sif_subs.py — Data Flow',
+     ['Inputs', 'Pair up', 'Splice', 'Write'],
+     [('SAVE.vsav', 'pre-fix scenario', 'database'),
+      ('read_vsav()', 'deobfuscate savedGame', 'backend'),
+      ('trait splice', 'emb2 and piece;;;', 'backend'),
+      ('write_vsav()', 'or --in-place', 'backend')],
+     [('10-SiF.vmdx', 'plus --slots archives', 'database'),
+      ('slot pairs', 'SUB to S SUB', 'backend'),
+      ('gpid repoint', '4th state field', 'backend'),
+      ('fixed save', '(subs fixed).vsav', 'database')],
+     ['savedGame entry', 'command log', 'edited tokens'],
+     ['PieceSlot defs', 'twin lookup'],
+     'replacement', 'os.replace()',
+     [{'dot': 'cyan', 'title': 'Why splice, not rebuild',
+       'items': ['A saved piece type is the expanded trait list, so it never equals a PieceSlot definition',
+                 'The two slots of a pair differ in exactly two traits, both free of / and tab',
+                 'Those substrings appear verbatim at any nesting depth, so they can be spliced']},
+      {'dot': 'emerald', 'title': 'Keeping the original',
+       'items': ['--add keeps the mis-named piece and places its twin beside it',
+                 'Piece id, map, position, layer and properties are copied verbatim']}])
+
+tool('missing_counters', 'missing_counters.py — Data Flow',
+     ['Inputs', 'Read', 'Compare', 'Report'],
+     [('SAVE.vsav', 'one or many', 'database'),
+      ('read_vsav()', 'deobfuscate savedGame', 'backend'),
+      ('gpids present', 'innermost state', 'backend'),
+      ('report', 'stdout table', 'backend')],
+     [('_ext/*.vmdx', '--extensions 10,11', 'database'),
+      ('read slots', 'gpid plus name', 'backend'),
+      ('expected set', 'minus --exclude', 'backend'),
+      ('OUT.csv', '--csv', 'database')],
+     ['savedGame entry', 'command log', 'per-save tally'],
+     ['PieceSlots', 'counter list'],
+     'expected gpids', 'rows',
+     [{'dot': 'cyan', 'title': 'Three verdicts, not two',
+       'items': ['missing — no copy of that GPID anywhere in the save',
+                 'off-map-only — every copy has map = null, so it cannot be reached or refreshed',
+                 'found-elsewhere — another piece carries the same name under a different GPID']},
+      {'dot': 'emerald', 'title': 'Read-only',
+       'items': ['Nothing is written to any save; the report goes to stdout or --csv',
+                 'Presence is not restricted to a map: pools, decks and stacks all count']}])
+
+tool('global_properties', 'global_properties.py — Data Flow',
+     ['Inputs', 'Read', 'Compare', 'Report'],
+     [('SAVE.vsav', 'one or many', 'database'),
+      ('read_vsav()', 'deobfuscate savedGame', 'backend'),
+      ('GlobalProperty', 'name, value, container', 'backend'),
+      ('write_vsav()', 'only with --apply', 'backend')],
+     [('MODULE.vmod', '--module, optional', 'database'),
+      ('initial values', 'module and extensions', 'backend'),
+      ('--set / --reset', 'exact or substring', 'backend'),
+      ('report + CSV', 'stdout, --csv OUT.csv', 'database')],
+     ['savedGame entry', 'command log', 'edited tokens'],
+     ['GlobalProperty', 'defaults'],
+     'changed only', 'value table',
+     [{'dot': 'amber', 'title': 'The blind spot this fills',
+       'items': ['Properties are game state but belong to no piece, so every other tool is silent on them',
+                 'Refresh Counters rebuilds pieces, never properties',
+                 'The symptom is a chart showing a number no counter on the table accounts for']},
+      {'dot': 'cyan', 'title': 'Finding the stale one',
+       'items': ['--module plus --changed lists only properties that differ from their initialValue',
+                 '--reset=SUBSTR puts every matching property back to the module default']}])
+
+tool('copy_counter_positions', 'copy_counter_positions.py — Data Flow',
+     ['Inputs', 'Read', 'Plan', 'Write'],
+     [('SAVE.vsav', 'family member', 'database'),
+      ('read_vsav()', 'deobfuscate savedGame', 'backend'),
+      ('remove counters', 'drop AddPiece', 'backend'),
+      ('write_vsav()', 'pruned save', 'backend')],
+     [('REF.vsav', '--reference', 'database'),
+      ('piece_positions()', 'unique gpid to map,x,y', 'backend'),
+      ('anchor + gpids', '--anchor, --gpid-file', 'backend'),
+      ('OUT.job', 'for AddCountersRunner', 'database')],
+     ['savedGame entry', 'command log', 'kept tokens'],
+     ['reference save', 'positions'],
+     'targets', 'add= lines',
+     [{'dot': 'cyan', 'title': 'Two steps, because stacking belongs to the engine',
+       'items': ['Position is three state fields, but stacking is a separate piece listing members by id',
+                 'So each counter is removed here and re-placed by VASSAL at the reference position',
+                 'Map.placeOrMerge then merges it into whatever stack is there — as a drag would']},
+      {'dot': 'emerald', 'title': 'Running the job files',
+       'items': ['The .job files are fed to refresh/AddCountersRunner, not to VASSAL directly',
+                 'A dangling id left in an old stack is harmless: setState() skips what it cannot resolve']}])
+
+tool('drop_slots', 'drop_slots.py — Data Flow',
+     ['Inputs', 'Parse', 'Delete', 'Write'],
+     [('EXT.vmdx', 'extension archive', 'database'),
+      ('buildFile.xml', 'read as text', 'backend'),
+      ('slot spans', 'gpid to XML range', 'backend'),
+      ('rewrite ZIP', 'mtimes preserved', 'backend')],
+     [('GPID list', 'command-line arguments', 'external'),
+      ('wrapper scan', 'ExtensionElement', 'backend'),
+      ('empty wrappers', 'cut with their slot', 'backend'),
+      ('backups/', '<module>_ext/backups', 'database')],
+     ['ZIP entry', 'XML text', 'edited XML'],
+     ['gpids', 'enclosing tags'],
+     'spans to cut', 'original copy',
+     [{'dot': 'rose', 'title': 'The empty-wrapper trap',
+       'items': ['A wrapper left with no component makes VASSAL abort the whole module launch',
+                 'ExtensionElement.build() leaves extension null and addTo() then dereferences it',
+                 'So a wrapper emptied by a deletion is removed along with the slot']},
+      {'dot': 'cyan', 'title': 'What is preserved',
+       'items': ['Only buildFile.xml is rewritten, plus extensiondata when --version bumps it',
+                 'Every other entry keeps its original modification time, so image tiles stay fresh']}])
+
+tool('renumber_gpids', 'renumber_gpids.py — Data Flow',
+     ['Inputs', 'Index', 'Clashes', 'Write'],
+     [('EXT.vmdx', 'the target extension', 'database'),
+      ('slot_gpids()', 'gpid to slot names', 'backend'),
+      ('renumber', 'attribute and piece def', 'backend'),
+      ('rewrite ZIP', 'mtimes preserved', 'backend')],
+     [('sibling archives', 'module and _ext/*', 'database'),
+      ('slot_gpids()', 'every other archive', 'backend'),
+      ('free numbers', 'from --start=N', 'backend'),
+      ('backups/', '<module>_ext/backups', 'database')],
+     ['ZIP entry', 'own gpids', 'edited XML'],
+     ['all archives', 'used gpids'],
+     'clashing ids', 'original copy',
+     [{'dot': 'amber', 'title': 'The misleading error this fixes',
+       'items': ['VASSAL says "module was saved with older vassal version" and refuses to refresh',
+                 'GpIdChecker.testGpId() actually flags an empty, non-numeric or duplicate GPID',
+                 'It never looks at the VASSAL version at all']},
+      {'dot': 'rose', 'title': 'Never leave a spare copy in _ext/',
+       'items': ['ExtensionsManager loads every non-hidden file whose metadata parses as an extension',
+                 'A foo.vmdx.bak sitting there re-creates every duplicate just removed',
+                 'Backups therefore go in <module>_ext/backups/, which is a directory and so skipped']}])
+
+tool('migrate_15_to_21', 'migrate_15_to_21.py — Data Flow',
+     ['Inputs', 'Read', 'Rebuild', 'Write'],
+     [('OLD.vsav', '1.5.93 scenario', 'database'),
+      ('read_vsav()', 'deobfuscate savedGame', 'backend'),
+      ('keep by gpid', 'or by counter name', 'backend'),
+      ('obfuscate()', 'temp file, atomic', 'backend')],
+     [('DONOR.vsav', 'empty 2.1.3 scenario', 'database'),
+      ('collect_slots()', 'MODULE.vmod and _ext', 'backend'),
+      ('board layout', 'donor BoardPickers', 'backend'),
+      ('OUT.vsav', 'plus .hexctl.job, --csv', 'database')],
+     ['savedGame entry', 'command log', 'kept tokens'],
+     ['donor savedGame', 'deluxe gpids'],
+     'kept if known', 'os.replace()',
+     [{'dot': 'cyan', 'title': 'Why matching works at all',
+       'items': ['GPIDs were preserved between 1.5.93 and 2.1.3 — 5225 of 6955 pieces match by GPID and name',
+                 'A piece is kept when its GPID or its name exists in the deluxe set',
+                 'A later Refresh Counters rebuilds every kept piece from the 2.1.3 definitions']},
+      {'dot': 'amber', 'title': 'The donor supplies the table',
+       'items': ['Every BoardPicker command and the moduledata entry come from the donor',
+                 'The donor World Maps layout doubles ASIA Main Insert; this writes PACIFIC Main Insert there',
+                 'Refuses to overwrite an existing OUT.vsav']}])
+
+tool('upload_scenarios', 'upload_scenarios.py — Data Flow',
+     ['Inputs', 'Check', 'Release', 'Upload'],
+     [('DIR/*.vsav', 'minus *-backup*.vsav', 'database'),
+      ('local checks', 'ZIP, moduledata, semver', 'backend'),
+      ('POST release', 'created if absent', 'backend'),
+      ('POST file', 'one call per scenario', 'backend')],
+     [('token file', 'library-token, mode 600', 'security'),
+      ('access token', 'POST {ums}/refresh', 'security'),
+      ('published files', 'name, size, sha256', 'backend'),
+      ('library API', 'vassalengine.org', 'external')],
+     ['file list', 'accepted files', 'upload queue'],
+     ['refresh cookie', 'project JSON'],
+     'skip or conflict', 'HTTPS, bearer',
+     [{'dot': 'rose', 'title': 'Every server check is made locally first',
+       'items': ['A rejection costs the whole upload of that file, so nothing is sent that would fail',
+                 'moduledata <version> must be full semver and must equal the release version',
+                 'Filenames are checked against the object store rules before a byte leaves the machine']},
+      {'dot': 'cyan', 'title': 'Safe to re-run',
+       'items': ['A file already in the release is skipped — UNIQUE(release_id, filename) on the server',
+                 'Same name but different SHA-256 is reported as a conflict, never overwritten silently',
+                 'Each upload is verified against the project JSON the service returns']}])
+
+
+def build(stem, spec):
+    n, f = [], []
+    for i in range(4):
+        for row, lane in ((0, 'a'), (1, 'b')):
+            label, sub, typ = spec[lane][i]
+            n.append({'id': '%s%d' % (lane, i), 'type': typ, 'label': label,
+                      'sublabel': sub, 'stage': i, 'row': row})
+    for i in range(3):
+        f.append({'id': 'a%d%d' % (i, i + 1), 'from': 'a%d' % i, 'to': 'a%d' % (i + 1),
+                  'label': spec['fa'][i], 'variant': 'emphasis', 'labelDy': -30})
+    for i in range(2):
+        f.append({'id': 'b%d%d' % (i, i + 1), 'from': 'b%d' % i, 'to': 'b%d' % (i + 1),
+                  'label': spec['fb'][i], 'labelDy': -52})
+    f.append({'id': 'j2', 'from': 'b2', 'to': 'a2', 'label': spec['j2']})
+    f.append({'id': 'j3', 'from': 'a3', 'to': 'b3', 'label': spec['j3'],
+              'variant': 'emphasis', 'labelDy': 40})
+    return {'schema_version': 1, 'diagram_type': 'dataflow',
+            'meta': {'title': spec['title'], 'locale': 'en',
+                     'quality_profile': 'showcase', 'viewBox': [860, 420]},
+            'stages': [{'label': s} for s in spec['stages']],
+            'nodes': n, 'flows': f, 'cards': spec['cards']}
+
+
+out = sys.argv[1]
+os.makedirs(out, exist_ok=True)
+for stem, spec in T.items():
+    p = os.path.join(out, stem + '.dataflow.json')
+    json.dump(build(stem, spec), open(p, 'w'), indent=2, ensure_ascii=False)
+    print(p)

@@ -1,0 +1,427 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "VASSAL Extension Utility — Runtime Architecture",
+    "locale": "en",
+    "output": "architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/delatbabel/vassal_extension_utility",
+      "provider": "github",
+      "revision": "08d78292360819abc20a13877fb8638f859113d4"
+    },
+    "views": [
+      {
+        "id": "move-copy",
+        "label": "Move / Copy path",
+        "focus": [
+          "user",
+          "mainwindow",
+          "archivepanel",
+          "vassalarchive",
+          "archives"
+        ],
+        "note": "The core feature: select components in one tree, graft them into the other, rewrite the ZIP on save."
+      },
+      {
+        "id": "refresh",
+        "label": "Refresh Counters",
+        "focus": [
+          "mainwindow",
+          "refreshrunner",
+          "vengine",
+          "savedgames"
+        ],
+        "note": "The engine runs in its own JVM because GameModule.init() may only be called once per process."
+      },
+      {
+        "id": "library",
+        "label": "Download from library",
+        "focus": [
+          "mainwindow",
+          "gamelibrary",
+          "libraryapi",
+          "archives"
+        ],
+        "note": "The only outbound network path: a hand-rolled REST client over the public game-library API."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "Module author",
+      "sublabel": "desktop session",
+      "pos": [
+        10,
+        155
+      ],
+      "size": [
+        150,
+        70
+      ]
+    },
+    {
+      "id": "mainwindow",
+      "type": "frontend",
+      "label": "MainWindow",
+      "sublabel": "JFrame · orchestrator",
+      "tag": "every tool dispatches here",
+      "pos": [
+        215,
+        140
+      ],
+      "size": [
+        180,
+        100
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/org/vassalengine/extutil/gui/MainWindow.java",
+          "line": 1297,
+          "label": "performTransfer()"
+        }
+      ]
+    },
+    {
+      "id": "libraryapi",
+      "type": "external",
+      "label": "VASSAL game library",
+      "sublabel": "vassalengine.org/api/gls/v1",
+      "tag": "public HTTPS",
+      "pos": [
+        215,
+        470
+      ],
+      "size": [
+        180,
+        78
+      ]
+    },
+    {
+      "id": "gamelibrary",
+      "type": "backend",
+      "label": "GameLibrary + Json",
+      "sublabel": "hand-rolled REST client",
+      "tag": "no added dependency",
+      "pos": [
+        215,
+        310
+      ],
+      "size": [
+        180,
+        86
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/org/vassalengine/extutil/model/GameLibrary.java",
+          "line": 53,
+          "label": "DEFAULT_API"
+        }
+      ]
+    },
+    {
+      "id": "archivepanel",
+      "type": "frontend",
+      "label": "ArchivePanel ×2",
+      "sublabel": "JTree over buildFile.xml",
+      "tag": "left .vmod · right .vmdx",
+      "pos": [
+        520,
+        140
+      ],
+      "size": [
+        180,
+        88
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/org/vassalengine/extutil/gui/ArchivePanel.java",
+          "label": "tree + selection model"
+        }
+      ]
+    },
+    {
+      "id": "savedgame",
+      "type": "backend",
+      "label": "SavedGame",
+      "sublabel": ".vsav obfuscation codec",
+      "tag": "VOBS · !VCSK · !VCSZ",
+      "pos": [
+        520,
+        290
+      ],
+      "size": [
+        180,
+        86
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/org/vassalengine/extutil/model/SavedGame.java",
+          "label": "saveWithout() / PreservedState"
+        }
+      ]
+    },
+    {
+      "id": "vassalarchive",
+      "type": "backend",
+      "label": "VassalArchive",
+      "sublabel": "ZIP + DOM archive model",
+      "tag": "pending images / files / deletions",
+      "pos": [
+        820,
+        140
+      ],
+      "size": [
+        180,
+        88
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/org/vassalengine/extutil/model/VassalArchive.java",
+          "label": "writeArchive()"
+        }
+      ]
+    },
+    {
+      "id": "refreshrunner",
+      "type": "backend",
+      "label": "RefreshRunner",
+      "sublabel": "subprocess entry point",
+      "tag": "the only VASSAL-linked class",
+      "pos": [
+        1100,
+        140
+      ],
+      "size": [
+        180,
+        90
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/org/vassalengine/extutil/refresh/RefreshRunner.java",
+          "label": "run(jobFile)"
+        }
+      ]
+    },
+    {
+      "id": "vengine",
+      "type": "external",
+      "label": "VASSAL engine",
+      "sublabel": "Vengine.jar · system scope",
+      "tag": "GameRefresher · GpIdChecker",
+      "pos": [
+        1100,
+        290
+      ],
+      "size": [
+        180,
+        88
+      ]
+    },
+    {
+      "id": "savedgames",
+      "type": "database",
+      "label": "Saved games",
+      "sublabel": ".vsav scenarios",
+      "tag": "backups never overwritten",
+      "pos": [
+        520,
+        470
+      ],
+      "size": [
+        180,
+        80
+      ]
+    },
+    {
+      "id": "archives",
+      "type": "database",
+      "label": "Module archives",
+      "sublabel": ".vmod · .vmdx (ZIP)",
+      "tag": "entry mtimes preserved for tiling",
+      "pos": [
+        820,
+        470
+      ],
+      "size": [
+        180,
+        80
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Utility JVM · single process",
+      "wraps": [
+        "mainwindow",
+        "gamelibrary",
+        "archivepanel",
+        "savedgame",
+        "vassalarchive"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "VASSAL engine JVM · subprocess",
+      "wraps": [
+        "refreshrunner",
+        "vengine"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Local filesystem · user game data",
+      "wraps": [
+        "savedgames",
+        "archives"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Public internet",
+      "wraps": [
+        "libraryapi"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "p1",
+      "from": "user",
+      "to": "mainwindow",
+      "label": "menu / toolbar actions",
+      "variant": "emphasis",
+      "labelAt": [
+        190,
+        264
+      ]
+    },
+    {
+      "id": "p2",
+      "from": "mainwindow",
+      "to": "archivepanel",
+      "label": "open archive, build tree",
+      "variant": "emphasis"
+    },
+    {
+      "id": "p3",
+      "from": "archivepanel",
+      "to": "vassalarchive",
+      "label": "Move / Copy selection",
+      "variant": "emphasis"
+    },
+    {
+      "id": "p4",
+      "from": "vassalarchive",
+      "to": "archives",
+      "label": "read + atomic ZIP rewrite",
+      "variant": "emphasis",
+      "labelAt": [
+        910,
+        242
+      ]
+    },
+    {
+      "id": "lib1",
+      "from": "mainwindow",
+      "to": "gamelibrary",
+      "label": "download module",
+      "labelAt": [
+        305,
+        258
+      ]
+    },
+    {
+      "id": "lib2",
+      "from": "gamelibrary",
+      "to": "libraryapi",
+      "label": "GET /projects/{id}",
+      "labelAt": [
+        430,
+        428
+      ]
+    },
+    {
+      "id": "sav1",
+      "from": "mainwindow",
+      "to": "savedgame",
+      "label": "excess-unit scan"
+    },
+    {
+      "id": "sav2",
+      "from": "savedgame",
+      "to": "savedgames",
+      "label": "byte-exact rewrite",
+      "labelAt": [
+        615,
+        420
+      ]
+    },
+    {
+      "id": "ref1",
+      "from": "mainwindow",
+      "to": "refreshrunner",
+      "label": "spawn JVM · job file",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          305,
+          60
+        ],
+        [
+          1050,
+          60
+        ],
+        [
+          1050,
+          185
+        ]
+      ]
+    },
+    {
+      "id": "ref2",
+      "from": "refreshrunner",
+      "to": "vengine",
+      "label": "GameModule.init() once per JVM",
+      "labelAt": [
+        1190,
+        254
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Trees and display",
+      "items": [
+        "ComponentNode reproduces VASSAL's editor label: configure name plus [Component Type]",
+        "An extension panel rebuilds the module hierarchy it grafts into, as grey inherited nodes",
+        "refresh() preserves expansion, selection and scroll across every DOM rebuild"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Archive edits",
+      "items": [
+        "Move / Copy deep-clones DOM subtrees with importNode, one ExtensionElement wrapper each",
+        "Images and setup .vsav entries travel with the source entry's modification time",
+        "Nothing reaches disk until Save; writeArchive() moves a temp file into place"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Saved games and refresh",
+      "items": [
+        "All three obfuscation formats are read and re-emitted in whichever one the file arrived in",
+        "A piece counts as excess only when both its GPID and its name miss every active slot",
+        "RefreshRunner backs up each .vsav, then PreservedState restores its extension list and maps"
+      ]
+    }
+  ]
+}

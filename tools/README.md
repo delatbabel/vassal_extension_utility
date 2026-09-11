@@ -6,6 +6,11 @@ application does not (yet) offer, and for publishing the result to the game
 library. They are **not** part of the Java application and have no dependencies
 beyond the Python standard library.
 
+**Reference guide:** [docs/tools/](../docs/tools/README.md) has a page per script —
+synopsis, option table, worked examples and an interactive data-flow diagram.
+This file is the companion narrative: why each tool exists and what the engine
+does that makes it necessary.
+
 | script | edits | what it does |
 |---|---|---|
 | `swap_maps.py` | `.vsav` | copy a map layout from one save into another |
