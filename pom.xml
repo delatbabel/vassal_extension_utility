@@ -49,6 +49,19 @@
             <artifactId>miglayout-swing</artifactId>
             <version>11.4.3</version>
         </dependency>
+        <!--
+          FlatLaf supplies the application's Light and Dark themes (View > Theme).
+          Core only: FlatLightLaf and FlatDarkLaf are the plain, neutral pair, and
+          the extras/intellij-themes artifacts would add weight for themes this
+          application does not offer. It needs no JDK module beyond the ones the
+          packaged runtimes already link (java.base, java.desktop, java.logging),
+          and its per-platform native libraries travel inside the jar.
+        -->
+        <dependency>
+            <groupId>com.formdev</groupId>
+            <artifactId>flatlaf</artifactId>
+            <version>3.7.2</version>
+        </dependency>
     </dependencies>
 
     <!--

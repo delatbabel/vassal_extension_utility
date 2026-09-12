@@ -220,7 +220,9 @@ final class SwapMapsDialog {
         @Override public java.awt.Component getListCellRendererComponent(
                 JList<?> list, Object value, int index, boolean selected, boolean focus) {
             super.getListCellRendererComponent(list, value, index, false, false);
-            if (value instanceof Row && !((Row) value).change) setForeground(java.awt.Color.GRAY);
+            if (value instanceof Row && !((Row) value).change) {
+                setForeground(UiTheme.secondaryForeground());
+            }
             return this;
         }
     }

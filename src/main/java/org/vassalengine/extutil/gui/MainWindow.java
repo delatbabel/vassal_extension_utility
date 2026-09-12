@@ -37,6 +37,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.EnumMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -75,7 +76,7 @@ import java.util.Set;
  *      current selection (with its whole subtree) from that panel's archive.
  *   6. File > Save All (Ctrl+S) to write changes to disk.
  */
-public class MainWindow extends JFrame {
+public class MainWindow extends JFrame implements UiTheme.ThemeAware {
 
     private static final Logger log = LoggerFactory.getLogger(MainWindow.class);
 
@@ -85,6 +86,9 @@ public class MainWindow extends JFrame {
 
     private final RecentFilesStore recentFiles = new RecentFilesStore();
     private final JMenu recentMenu = new JMenu("Open Recent …");
+    /** View > Theme radio items, so a failed switch can be shown as not taken. */
+    private final Map<UiTheme, JRadioButtonMenuItem> themeItems =
+            new EnumMap<>(UiTheme.class);
 
     public MainWindow() {
         super("VASSAL Extension Utility");
@@ -201,6 +205,7 @@ public class MainWindow extends JFrame {
         fileMenu.add(quit);
 
         bar.add(fileMenu);
+        bar.add(buildViewMenu());
 
         JMenu toolsMenu = new JMenu("Tools");
         toolsMenu.setMnemonic('T');
@@ -259,6 +264,54 @@ public class MainWindow extends JFrame {
         bar.add(helpMenu);
 
         return bar;
+    }
+
+    /**
+     * <b>View &rarr; Theme</b>: the Light / Dark radio group. The item matching the
+     * theme in force is pre-selected, so the menu always shows which one is on.
+     */
+    private JMenu buildViewMenu() {
+        JMenu viewMenu = new JMenu("View");
+        viewMenu.setMnemonic('V');
+
+        JMenu themeMenu = new JMenu("Theme");
+        ButtonGroup group = new ButtonGroup();
+        UiTheme active = UiTheme.current();
+        for (UiTheme theme : UiTheme.values()) {
+            JRadioButtonMenuItem item = new JRadioButtonMenuItem(theme.displayName());
+            item.setSelected(theme == active);
+            item.addActionListener(e -> selectTheme(theme));
+            group.add(item);
+            themeMenu.add(item);
+            themeItems.put(theme, item);
+        }
+        viewMenu.add(themeMenu);
+        return viewMenu;
+    }
+
+    /**
+     * Switches to {@code theme} and remembers it for next time. The change applies
+     * to every open window at once; nothing needs restarting.
+     */
+    private void selectTheme(UiTheme theme) {
+        if (!theme.applyAndRefresh()) {
+            // Clicking the item already moved the tick; put it back on the theme
+            // that is actually in force.
+            final JRadioButtonMenuItem inForce = themeItems.get(UiTheme.current());
+            if (inForce != null) inForce.setSelected(true);
+            status("Could not switch to the " + theme.displayName() + " theme.");
+            return;
+        }
+        theme.save();
+        status(theme.displayName() + " theme.");
+    }
+
+    /**
+     * Rebuilds what a theme change cannot: the panel role borders, whose colours
+     * this window chose rather than the look and feel (see {@link UiTheme}).
+     */
+    @Override public void themeChanged() {
+        updateRoleBorders();
     }
 
     // -----------------------------------------------------------------------
@@ -895,7 +948,7 @@ public class MainWindow extends JFrame {
                         ? entry.file.getName()
                         : entry.file.getName() + "   (Inactive)");
                 if (!entry.active && !isSelected) {
-                    setForeground(Color.GRAY);
+                    setForeground(UiTheme.secondaryForeground());
                 }
             }
             return this;
@@ -1330,7 +1383,7 @@ public class MainWindow extends JFrame {
                 SavedGame.ExcessPiece p = (SavedGame.ExcessPiece) value;
                 setText(p.displayLabel());
                 if (p.inactiveExtension != null && !isSelected) {
-                    setForeground(Color.GRAY);
+                    setForeground(UiTheme.secondaryForeground());
                 }
             }
             return this;
@@ -2220,8 +2273,8 @@ public class MainWindow extends JFrame {
     // -----------------------------------------------------------------------
 
     private void updateRoleBorders() {
-        leftPanel.setRole(ArchivePanel.BORDER_SOURCE);
-        rightPanel.setRole(ArchivePanel.BORDER_TARGET);
+        leftPanel.setRole(UiTheme.borderSource());
+        rightPanel.setRole(UiTheme.borderTarget());
     }
 
 

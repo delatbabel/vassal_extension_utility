@@ -8,6 +8,7 @@
 package org.vassalengine.extutil;
 
 import org.vassalengine.extutil.gui.MainWindow;
+import org.vassalengine.extutil.gui.UiTheme;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
@@ -21,11 +22,9 @@ public class Main {
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
-            try {
-                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-            } catch (Exception ignored) {
-                // fall back to default L&F
-            }
+            // Before any window exists: a look and feel installed later would leave
+            // already-realised components painted in the old one.
+            UiTheme.applySaved();
             setTaskbarIcon();
             MainWindow window = new MainWindow();
             window.setVisible(true);

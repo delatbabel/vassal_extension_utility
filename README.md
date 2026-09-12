@@ -23,6 +23,7 @@ VASSAL's built-in module editor lets you edit a module or extension in isolation
 11. Run VASSAL's own **Refresh Counters** over any number of external saved games (**Tools → Refresh Counters in Saved Games…**), updating each piece to the module's current definitions. The engine does the work in a subprocess; each save is backed up first.
 12. Find and remove "excess" game pieces from a saved game (`.vsav`) — pieces missing from the module's active extensions that otherwise cause *"Image not found"* / *"No such map"* on load and *"Unable to match piece … by name"* on Refresh Counters (**Excess Units…**). The tidied game is written to a new file, leaving the original unchanged.
 13. Swap the maps of one saved game for another's (**Tools → Swap Maps Between Saved Games…**) — every board layout is taken from a second saved game, leaving the first game's pieces and everything else exactly as they were. The result is written to a new file; neither original is changed.
+14. Choose the application's appearance (**View → Theme**) — a clean **Light** or **Dark** theme, or your platform's own **System** look. The choice applies at once and is remembered.
 
 ## Developing
 
@@ -85,6 +86,16 @@ A map's whole layout — which boards, where, and which way round — is a singl
 One thing to know: **pieces do not move with their board.** A piece's position is recorded in map coordinates, not relative to the board it stands on, so if the new layout puts a board somewhere else, the pieces that were on it stay at the old coordinates — nothing is lost, but they may end up off the board or off the map. This matters when the two layouts differ in how the boards are arranged, not merely in which images they use.
 
 Before anything is written you are shown what will happen. Maps whose layout actually changes are listed in normal text; maps that are already identical, and maps only one of the two games has, are greyed and explained. Maps are matched **by name** — if the two saved games have no map names in common they are almost certainly from different modules, and you are told so rather than given a nonsensical result.
+
+## Choosing a theme
+
+**View → Theme** sets how the application looks:
+
+- **Light** — a clean, neutral light theme. This is the default.
+- **Dark** — the same design in dark colours.
+- **System** — your platform's own look and feel (the Windows or macOS native appearance, or whatever your Linux desktop provides), for when you would rather the application matched everything else on your screen.
+
+The change takes effect immediately — no restart — and is remembered for next time in `~/.vassal-extension-utility/ui.properties`. Light and Dark come from [FlatLaf](https://www.formdev.com/flatlaf/); System is what earlier versions of this utility always used.
 
 ## Logs
 

@@ -45,19 +45,14 @@ public class ArchivePanel extends JPanel {
     private JTree tree;
     private DefaultTreeModel treeModel;
     private TitledBorder titledBorder;
-    private Color currentBorderColor = BORDER_DEFAULT;
+    private Color currentBorderColor = UiTheme.borderDefault();
     private Runnable deleteHandler;
-
-    // Role colours: default, source panel, target panel
-    static final Color BORDER_DEFAULT = Color.GRAY;
-    static final Color BORDER_SOURCE  = new Color(0, 100, 200);
-    static final Color BORDER_TARGET  = new Color(0, 150, 50);
 
     public ArchivePanel() {
         setLayout(new BorderLayout(0, 4));
 
         titledBorder = BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(BORDER_DEFAULT, 2),
+                BorderFactory.createLineBorder(currentBorderColor, 2),
                 "(no file open)",
                 TitledBorder.LEFT,
                 TitledBorder.TOP);
@@ -640,7 +635,7 @@ public class ArchivePanel extends JPanel {
             }
             // Grey only when not selected, so the selection highlight stays legible.
             if (inherited && !sel) {
-                setForeground(Color.GRAY);
+                setForeground(UiTheme.secondaryForeground());
             }
             return this;
         }
