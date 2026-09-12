@@ -20,6 +20,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -678,7 +679,8 @@ public class SavedGame {
             }
 
             game.write(file, drop, insertBefore,
-                    extensionsDiffer ? wanted : Collections.<String>emptyList());
+                    extensionsDiffer ? wanted : Collections.<String>emptyList(),
+                    Collections.<Integer, byte[]>emptyMap());
             return new Result(extensionsDiffer ? wanted.size() : 0, strippedMaps,
                               addedExtensions(wanted));
         }
@@ -725,8 +727,153 @@ public class SavedGame {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Swapping the map layout in from another saved game
+    // -----------------------------------------------------------------------
+
+    /**
+     * The board-layout commands of this saved game, {@code map identifier →
+     * command index}. A map has at most one such command — {@code BoardPicker.encode}
+     * puts a map's whole layout (its boards, their grid of positions and any
+     * reversals) into the single {@code <mapIdentifier>BoardPicker<TAB>…} command.
+     */
+    private Map<String, Integer> boardPickerCommands() {
+        final Map<String, Integer> out = new LinkedHashMap<>();
+        for (int i = 0; i < commandRanges.size(); i++) {
+            final String map = boardPickerMap(contentOf(commandRanges.get(i)));
+            if (map != null) out.putIfAbsent(map, i);
+        }
+        return out;
+    }
+
+    /** One map's board layout, as it is now and as the donor records it. */
+    public static final class MapSwap {
+        /** The map identifier (the command's first TAB-token minus "BoardPicker"). */
+        public final String map;
+        /** This saved game's layout command content. */
+        public final String oldLayout;
+        /** The donor's layout command content, which will replace it. */
+        public final String newLayout;
+
+        MapSwap(String map, String oldLayout, String newLayout) {
+            this.map = map;
+            this.oldLayout = oldLayout;
+            this.newLayout = newLayout;
+        }
+
+        /** Whether the donor's layout actually differs from the current one. */
+        public boolean isChange() { return !oldLayout.equals(newLayout); }
+
+        @Override public String toString() { return map; }
+    }
+
+    /**
+     * What {@link #planMapSwap} found: which maps can take the donor's layout, and
+     * which maps only one of the two saved games records. Apply it with
+     * {@link #applyMapSwap}.
+     */
+    public static final class MapSwapPlan {
+        /** Target command index → the donor layout bytes to put there. */
+        private final Map<Integer, byte[]> replacements;
+        /** The maps both saved games record — the ones that will be swapped. */
+        public final List<MapSwap> swaps;
+        /** Maps this saved game records that the donor does not (left untouched). */
+        public final List<String> onlyInTarget;
+        /** Maps the donor records that this saved game does not (nothing to replace). */
+        public final List<String> onlyInDonor;
+
+        MapSwapPlan(Map<Integer, byte[]> replacements, List<MapSwap> swaps,
+                    List<String> onlyInTarget, List<String> onlyInDonor) {
+            this.replacements = replacements;
+            this.swaps = swaps;
+            this.onlyInTarget = onlyInTarget;
+            this.onlyInDonor = onlyInDonor;
+        }
+
+        /** The maps whose layout the donor would actually change. */
+        public List<MapSwap> changes() {
+            final List<MapSwap> out = new ArrayList<>();
+            for (MapSwap sw : swaps) if (sw.isChange()) out.add(sw);
+            return out;
+        }
+
+        public boolean isEmpty() { return swaps.isEmpty(); }
+    }
+
+    /**
+     * Plans replacing <em>every</em> board layout in this saved game with the
+     * matching one from {@code donor} — the maps recorded by both, matched by map
+     * identifier. Nothing is written; see {@link #applyMapSwap}.
+     *
+     * <p>Each replacement is a verbatim byte splice of one command token, so the
+     * pieces, the extension list and every other command are untouched. Both the
+     * token being replaced and its donor must be <em>top level</em> (preceded by a
+     * bare {@code <ESC>} rather than an escaped one) — a nested token belongs to a
+     * deeper {@code SequenceEncoder} level whose content would have to be re-escaped
+     * to move, which is refused rather than guessed at. In practice a
+     * {@code BoardPicker} command is always top level.</p>
+     *
+     * @throws IOException if a layout command cannot be spliced verbatim
+     */
+    public MapSwapPlan planMapSwap(SavedGame donor) throws IOException {
+        final Map<String, Integer> mine = boardPickerCommands();
+        final Map<String, Integer> theirs = donor.boardPickerCommands();
+
+        final Map<Integer, byte[]> replacements = new LinkedHashMap<>();
+        final List<MapSwap> swaps = new ArrayList<>();
+        final List<String> onlyInTarget = new ArrayList<>();
+        final List<String> onlyInDonor = new ArrayList<>();
+
+        for (Map.Entry<String, Integer> e : mine.entrySet()) {
+            final String map = e.getKey();
+            final Integer di = theirs.get(map);
+            if (di == null) {
+                onlyInTarget.add(map);
+                continue;
+            }
+            final int ti = e.getValue();
+            requireTopLevel(this, ti, map);
+            requireTopLevel(donor, di, map);
+
+            final int[] dr = donor.commandRanges.get(di);
+            final byte[] layout = new byte[dr[2] - dr[1]];
+            System.arraycopy(donor.state, dr[1], layout, 0, layout.length);
+
+            replacements.put(ti, layout);
+            swaps.add(new MapSwap(map, contentOf(commandRanges.get(ti)),
+                                  donor.contentOf(dr)));
+        }
+        for (String map : theirs.keySet()) {
+            if (!mine.containsKey(map)) onlyInDonor.add(map);
+        }
+        return new MapSwapPlan(replacements, swaps, onlyInTarget, onlyInDonor);
+    }
+
+    /** Refuses a layout command that is not a top-level (bare-ESC-delimited) token. */
+    private static void requireTopLevel(SavedGame game, int index, String map)
+            throws IOException {
+        final int[] r = game.commandRanges.get(index);
+        if (r[1] - r[0] > 1) {
+            throw new IOException("The board layout for \"" + map + "\" in "
+                    + (game.file == null ? "the saved game" : game.file.getName())
+                    + " is a nested command token and cannot be swapped.");
+        }
+    }
+
+    /**
+     * Writes this saved game to {@code target} with the planned layouts spliced in.
+     * Every other command — the pieces, the extension registrations, everything —
+     * is copied byte-for-byte, and the {@code moduledata} / {@code savedata}
+     * entries are copied whole, as in {@link #saveWithout}.
+     */
+    public void applyMapSwap(MapSwapPlan plan, java.io.File target) throws IOException {
+        write(target, Collections.<Integer>emptySet(), -1, Collections.<String>emptyList(),
+              plan.replacements);
+    }
+
     public void saveWithout(Set<Integer> removeIndices, java.io.File target) throws IOException {
-        write(target, removeIndices, -1, Collections.<String>emptyList());
+        write(target, removeIndices, -1, Collections.<String>emptyList(),
+              Collections.<Integer, byte[]>emptyMap());
     }
 
     /**
@@ -736,7 +883,8 @@ public class SavedGame {
      * byte-for-byte.
      */
     private void write(java.io.File target, Set<Integer> removeIndices,
-                       int insertBefore, List<String> insertContents) throws IOException {
+                       int insertBefore, List<String> insertContents,
+                       Map<Integer, byte[]> replacements) throws IOException {
         final java.io.File parent = target.getParentFile();
         if (parent != null) parent.mkdirs();
 
@@ -753,7 +901,8 @@ public class SavedGame {
                 final ZipEntry sg = new ZipEntry(SAVED_GAME_ENTRY);
                 if (savedGameTime >= 0) sg.setTime(savedGameTime);
                 zos.putNextEntry(sg);
-                writeObfuscated(zos, removeIndices, insertBefore, insertContents);
+                writeObfuscated(zos, removeIndices, insertBefore, insertContents,
+                                replacements);
                 zos.closeEntry();
 
                 writeVerbatim(zos, SAVE_DATA_ENTRY, saveData, saveDataTime);
@@ -772,6 +921,10 @@ public class SavedGame {
 
     private static void writeVerbatim(ZipOutputStream zos, String name, byte[] data, long time)
             throws IOException {
+        // A metadata entry the source did not have (time -1) is not invented here:
+        // an empty "savedata" is not something VASSAL ever writes, and some saved
+        // games legitimately carry only the savedGame entry.
+        if (data.length == 0 && time < 0) return;
         final ZipEntry e = new ZipEntry(name);
         if (time >= 0) e.setTime(time);
         zos.putNextEntry(e);
@@ -796,7 +949,8 @@ public class SavedGame {
      * top level.
      */
     private void writeObfuscated(OutputStream out, Set<Integer> removeIndices,
-                                 int insertBefore, List<String> insertContents)
+                                 int insertBefore, List<String> insertContents,
+                                 Map<Integer, byte[]> replacements)
             throws IOException {
         // Keys are in 1-255, as in VASSAL's ObfuscatingOutputStream: XORing with 0
         // would leave the data in plain text.
@@ -816,20 +970,22 @@ public class SavedGame {
             final Deflater def = new Deflater(Deflater.BEST_COMPRESSION);
             try {
                 final DeflaterOutputStream dos = new DeflaterOutputStream(sink, def, 1 << 16);
-                emitCommands(dos, removeIndices, insertBefore, insertContents);
+                emitCommands(dos, removeIndices, insertBefore, insertContents,
+                             replacements);
                 dos.finish();   // never close() — that would close the ZIP stream
             } finally {
                 def.end();
             }
         } else {
-            emitCommands(sink, removeIndices, insertBefore, insertContents);
+            emitCommands(sink, removeIndices, insertBefore, insertContents, replacements);
         }
         sink.flush();
     }
 
     /** Emits the surviving plaintext command bytes (see {@link #writeObfuscated}). */
     private void emitCommands(OutputStream out, Set<Integer> removeIndices,
-                              int insertBefore, List<String> insertContents)
+                              int insertBefore, List<String> insertContents,
+                              Map<Integer, byte[]> replacements)
             throws IOException {
         boolean firstEmitted = true;
         for (int idx = 0; idx < commandRanges.size(); idx++) {
@@ -842,6 +998,15 @@ public class SavedGame {
             }
             if (removeIndices.contains(idx)) continue;
             final int[] r = commandRanges.get(idx);
+            final byte[] replacement = replacements.get(idx);
+            if (replacement != null) {
+                // Same delimiter bytes, different content: the token's nesting is
+                // unchanged, only what it says.
+                if (!firstEmitted) out.write(state, r[0], r[1] - r[0]);
+                firstEmitted = false;
+                out.write(replacement);
+                continue;
+            }
             final int from = firstEmitted ? r[1] : r[0];   // skip leading delimiter for the first token
             firstEmitted = false;
             out.write(state, from, r[2] - from);

@@ -72,6 +72,10 @@ It refuses to splice a token that is nested (its ESC delimiter was escaped) or
 whose replacement contains an ESC, so a bad match can't corrupt the log. The
 before/after layout of each replaced map is printed.
 
+The `ALL` case is also in the application, as **Tools → Swap Maps Between Saved
+Games…** — same splice, same guards, with the three files chosen in a dialog.
+Use this script when you want to swap only *some* maps, or to script a batch.
+
 Example — give a full-world pre-setup the three-board Eastern-Front layout of an
 empty Barbarossa save:
 

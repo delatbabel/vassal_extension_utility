@@ -22,6 +22,7 @@ VASSAL's built-in module editor lets you edit a module or extension in isolation
 10. Download a module and its extensions from the VASSAL game library (**File → Download Module from Library…**) — paste the library page URL, choose a folder, and the newest copy of each extension is fetched into a correctly-named `<module>_ext` folder. Optionally point it at a saved game to fetch only the extensions that game needs.
 11. Run VASSAL's own **Refresh Counters** over any number of external saved games (**Tools → Refresh Counters in Saved Games…**), updating each piece to the module's current definitions. The engine does the work in a subprocess; each save is backed up first.
 12. Find and remove "excess" game pieces from a saved game (`.vsav`) — pieces missing from the module's active extensions that otherwise cause *"Image not found"* / *"No such map"* on load and *"Unable to match piece … by name"* on Refresh Counters (**Excess Units…**). The tidied game is written to a new file, leaving the original unchanged.
+13. Swap the maps of one saved game for another's (**Tools → Swap Maps Between Saved Games…**) — every board layout is taken from a second saved game, leaving the first game's pieces and everything else exactly as they were. The result is written to a new file; neither original is changed.
 
 ## Developing
 
@@ -68,6 +69,22 @@ covered in the **[Developer's Guide](DEVELOPERS-GUIDE.md)**.
 Where things land: the module goes into the chosen folder, and the extensions into a sibling `<module>_ext/` folder named after the module file (e.g. `MyGame.vmod` → `MyGame_ext/`) — the same convention VASSAL itself loads extensions from, so the module is ready to play or open in this utility immediately. When the same extension appears in several library releases, the newest copy of each file is chosen. Every download is verified against the library's SHA-256 checksum and written via a temporary file, so a failed or cancelled download never leaves a truncated module behind.
 
 Afterwards, open the module with **File → Open Module (left)** and manage its extensions with **Show Extensions**. If a download fails, the closing dialog names the first few reasons, and the full detail is in `~/.vassal-extension-utility/extension-utility.log`.
+
+## Swapping the maps of a saved game
+
+**Tools → Swap Maps Between Saved Games…** gives a scenario a different set of boards: it copies **every** board layout from a second saved game into the first one, and writes the result to a new file. Both originals are left exactly as they are, and no module needs to be open.
+
+This is what you want when a scenario was set up on one edition of the maps and you would rather play it on another — the deluxe boards instead of the classic ones, say, or a map an extension adds. Choose three files:
+
+1. **Scenario to keep** — the saved game whose pieces, extensions, decks and everything else you want.
+2. **Take maps from** — the saved game whose board layout you want instead.
+3. **Save result as** — the new file to write. It is proposed for you as `<scenario> (swapped maps).vsav`, and it cannot be either of the other two.
+
+A map's whole layout — which boards, where, and which way round — is a single entry in a saved game, so the swap is an exact substitution: every other byte of the scenario you are keeping is copied unchanged, and the file stays in whichever format VASSAL wrote it.
+
+One thing to know: **pieces do not move with their board.** A piece's position is recorded in map coordinates, not relative to the board it stands on, so if the new layout puts a board somewhere else, the pieces that were on it stay at the old coordinates — nothing is lost, but they may end up off the board or off the map. This matters when the two layouts differ in how the boards are arranged, not merely in which images they use.
+
+Before anything is written you are shown what will happen. Maps whose layout actually changes are listed in normal text; maps that are already identical, and maps only one of the two games has, are greyed and explained. Maps are matched **by name** — if the two saved games have no map names in common they are almost certainly from different modules, and you are told so rather than given a nonsensical result.
 
 ## Logs
 

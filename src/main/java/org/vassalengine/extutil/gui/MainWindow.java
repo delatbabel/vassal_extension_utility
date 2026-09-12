@@ -226,6 +226,9 @@ public class MainWindow extends JFrame {
         JMenuItem refreshCounters = new JMenuItem("Refresh Counters in Saved Games…");
         refreshCounters.addActionListener(e -> refreshCounters());
 
+        JMenuItem swapMaps = new JMenuItem("Swap Maps Between Saved Games…");
+        swapMaps.addActionListener(e -> swapMaps());
+
         toolsMenu.add(unusedLeft);
         toolsMenu.add(unusedRight);
         toolsMenu.addSeparator();
@@ -237,6 +240,7 @@ public class MainWindow extends JFrame {
         toolsMenu.addSeparator();
         toolsMenu.add(excessUnits);
         toolsMenu.add(refreshCounters);
+        toolsMenu.add(swapMaps);
         bar.add(toolsMenu);
 
         JMenu helpMenu = new JMenu("Help");
@@ -896,6 +900,126 @@ public class MainWindow extends JFrame {
             }
             return this;
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Swapping maps between saved games
+    // -----------------------------------------------------------------------
+
+    /** A planned map swap, with the two saved games it was planned from. */
+    private static final class MapSwapAnalysis {
+        final SavedGame source;
+        final SavedGame.MapSwapPlan plan;
+        MapSwapAnalysis(SavedGame source, SavedGame.MapSwapPlan plan) {
+            this.source = source;
+            this.plan = plan;
+        }
+    }
+
+    /**
+     * Copies every board layout from one saved game into another, writing the
+     * result to a third file — the Java equivalent of {@code tools/swap_maps.py}.
+     *
+     * <p>A map's whole layout (which boards, where, and which way round) is one
+     * {@code <mapIdentifier>BoardPicker} command, so swapping maps is a verbatim
+     * splice of those commands: every other command of the scenario being kept —
+     * its pieces, its extension registrations, its decks — is copied byte-for-byte,
+     * exactly as {@link SavedGame#saveWithout} copies what it does not remove. The
+     * maps are matched by identifier, and <em>all</em> the maps the two saved games
+     * share are swapped.</p>
+     *
+     * <p>Neither original is touched; the result goes to a new file. No module need
+     * be loaded — the swap is entirely within the saved games.</p>
+     */
+    private void swapMaps() {
+        final SwapMapsDialog.Choice choice = new SwapMapsDialog(this, recentFiles).prompt();
+        if (choice == null) return;
+
+        status("Reading " + choice.source.getName() + " and " + choice.donor.getName() + " …");
+        final JDialog progress = makeProgressDialog(
+                "Reading <b>" + choice.source.getName() + "</b><br>and <b>"
+                + choice.donor.getName() + "</b> …<br>"
+                + "This can take a while for large saved games.");
+
+        SwingWorker<MapSwapAnalysis, Void> worker = new SwingWorker<MapSwapAnalysis, Void>() {
+            @Override protected MapSwapAnalysis doInBackground() throws Exception {
+                SavedGame source = SavedGame.open(choice.source);
+                SavedGame donor  = SavedGame.open(choice.donor);
+                return new MapSwapAnalysis(source, source.planMapSwap(donor));
+            }
+
+            @Override protected void done() {
+                progress.dispose();
+                try {
+                    applyMapSwap(choice, get());
+                } catch (Exception ex) {
+                    log.error("Failed to plan a map swap from {} into {}",
+                            choice.donor, choice.source, ex);
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(MainWindow.this,
+                            "Could not read the saved games:\n\n" + cause.getMessage(),
+                            "Swap Maps", JOptionPane.ERROR_MESSAGE);
+                    status("Could not swap maps.");
+                }
+            }
+        };
+        worker.execute();
+        progress.setVisible(true);   // modal; returns when done() disposes it
+    }
+
+    /** Confirms the planned swap and writes the result. */
+    private void applyMapSwap(SwapMapsDialog.Choice choice, MapSwapAnalysis analysis) {
+        final SavedGame.MapSwapPlan plan = analysis.plan;
+        if (plan.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "The two saved games have no maps in common, so there is nothing to swap.\n\n"
+                    + "Board layouts are matched by map name; these two record none of the\n"
+                    + "same maps — are they from the same module?",
+                    "Swap Maps", JOptionPane.WARNING_MESSAGE);
+            status("No maps in common — nothing to swap.");
+            return;
+        }
+        if (!SwapMapsDialog.confirm(this, plan, choice.source, choice.donor)) {
+            status("Map swap cancelled.");
+            return;
+        }
+
+        final int changed = plan.changes().size();
+        status("Writing " + choice.target.getName() + " …");
+        final JDialog progress = makeProgressDialog(
+                "Writing <b>" + choice.target.getName()
+                + "</b> …<br>Please wait — do not close the window.");
+
+        SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
+            @Override protected Void doInBackground() throws Exception {
+                analysis.source.applyMapSwap(plan, choice.target);
+                return null;
+            }
+            @Override protected void done() {
+                progress.dispose();
+                try {
+                    get();
+                    JOptionPane.showMessageDialog(MainWindow.this,
+                            "Swapped the board layout of " + changed + " map(s).\n\n"
+                            + "Saved as: " + choice.target.getName() + "\n"
+                            + "Originals kept: " + choice.source.getName() + ", "
+                            + choice.donor.getName(),
+                            "Swap Maps", JOptionPane.INFORMATION_MESSAGE);
+                    status("Wrote " + choice.target.getName() + " (" + changed
+                            + " map layout(s) swapped).");
+                } catch (Exception ex) {
+                    log.error("Failed to write swapped saved game {}", choice.target, ex);
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(MainWindow.this,
+                            "Could not write the swapped saved game:\n"
+                            + choice.target.getName() + "\n\n" + cause.getMessage(),
+                            "Swap Maps", JOptionPane.ERROR_MESSAGE);
+                    status("Could not write " + choice.target.getName() + ".");
+                }
+            }
+        };
+        worker.execute();
+        progress.setVisible(true);   // modal; returns when done() disposes it
     }
 
     // -----------------------------------------------------------------------
