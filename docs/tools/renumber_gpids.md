@@ -26,7 +26,7 @@ is left alone.
 
 ## How it works
 
-Open [diagrams/renumber_gpids.html](diagrams/renumber_gpids.html).
+View [diagrams/renumber_gpids.md](diagrams/renumber_gpids.md) on GitHub, or open [diagrams/renumber_gpids.html](diagrams/renumber_gpids.html) in a browser for the interactive version.
 
 The target's `PieceSlot` GPIDs are indexed, then every sibling archive — the
 module and the other `_ext/*` files — is indexed the same way. Any id in both

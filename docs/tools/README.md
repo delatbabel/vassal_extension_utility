@@ -97,9 +97,10 @@ Three properties fall out of that design and hold for every tool here:
 
 ## Reading the diagrams
 
-Each page links a standalone interactive diagram under
-[`diagrams/`](diagrams/). Open the `.html` file in a browser — it needs no server
-and no network. All fourteen share one grid:
+Each page links a diagram under [`diagrams/`](diagrams/), in two forms: a
+**`.md`** page that renders here on GitHub, and the **`.html`** viewer to
+download and open in a browser — it needs no server and no network, and adds
+pan, zoom, search and relationship tracing. All fourteen share one grid:
 
 - the **top lane** is the artefact being transformed (the save, or the extension XML);
 - the **bottom lane** is the reference or option side — the module, the extension
@@ -110,7 +111,11 @@ and no network. All fourteen share one grid:
   actually written.
 
 Diagram sources are the `.dataflow.json` specs kept beside the HTML; they were
-rendered with the `archify` skill at its `showcase` quality profile.
+rendered with the `archify` skill at its `showcase` quality profile. The `.md`
+pages and the SVGs they embed are exported from that same HTML by
+[`docs/export-diagrams.py`](../export-diagrams.py), so the three formats cannot
+drift apart — see [`docs/diagrams.md`](../diagrams.md) for every diagram in the
+repository and how to regenerate them.
 
 ## Checking the result
 
@@ -137,4 +142,4 @@ print([i for i in range(len(ta)) if a[ta[i][0]:ta[i][2]] != b[tb[i][0]:tb[i][2]]
 - [docs/vsav-format.md](../vsav-format.md) — the saved-game container and its three obfuscation formats
 - [docs/vmdx-format.md](../vmdx-format.md) — the extension archive
 - [docs/refresh-counters.md](../refresh-counters.md) — `AddCountersRunner`, which consumes the job files two tools write
-- [docs/architecture/architecture.html](../architecture/architecture.html) — runtime architecture of the Java application
+- [docs/architecture/architecture.md](../architecture/architecture.md) — runtime architecture of the Java application ([interactive](../architecture/architecture.html))

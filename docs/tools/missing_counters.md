@@ -27,7 +27,7 @@ tools/missing_counters.py --ext-dir DIR --extensions 10,11,12
 
 ## How it works
 
-Open [diagrams/missing_counters.html](diagrams/missing_counters.html).
+View [diagrams/missing_counters.md](diagrams/missing_counters.md) on GitHub, or open [diagrams/missing_counters.html](diagrams/missing_counters.html) in a browser for the interactive version.
 
 Every `PieceSlot` of the selected extensions contributes an expected `(gpid, name)`
 pair. Every `AddPiece` command in each save contributes the GPID in the 4th

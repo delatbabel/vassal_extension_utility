@@ -27,7 +27,7 @@ There are no options. It writes unconditionally to `OUT`, so give it a new path.
 
 ## How it works
 
-Open [diagrams/swap_maps.html](diagrams/swap_maps.html).
+View [diagrams/swap_maps.md](diagrams/swap_maps.md) on GitHub, or open [diagrams/swap_maps.html](diagrams/swap_maps.html) in a browser for the interactive version.
 
 Both saves are deobfuscated and split into ESC-delimited command tokens. The
 `BoardPicker` tokens are matched by their first tab-token ending in

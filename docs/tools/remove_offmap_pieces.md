@@ -45,7 +45,7 @@ why `--keep-name` exists: **decide per piece name, not per save.**
 
 ## How it works
 
-Open [diagrams/remove_offmap_pieces.html](diagrams/remove_offmap_pieces.html).
+View [diagrams/remove_offmap_pieces.md](diagrams/remove_offmap_pieces.md) on GitHub, or open [diagrams/remove_offmap_pieces.html](diagrams/remove_offmap_pieces.html) in a browser for the interactive version.
 
 Every `AddPiece` command whose innermost state has `map == "null"` is a
 candidate. The name and GPID filters narrow the candidate set; `--module` adds

@@ -42,7 +42,7 @@ for each slot. Verify afterwards that the extension has no empty wrappers.
 
 ## How it works
 
-Open [diagrams/drop_slots.html](diagrams/drop_slots.html).
+View [diagrams/drop_slots.md](diagrams/drop_slots.md) on GitHub, or open [diagrams/drop_slots.html](diagrams/drop_slots.html) in a browser for the interactive version.
 
 `buildFile.xml` is read as text — not parsed into a DOM — and each GPID is
 resolved to the byte span of its slot element and of its enclosing

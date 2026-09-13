@@ -27,7 +27,7 @@ Without `--in-place` each save is written alongside as `<stem> (subs fixed).vsav
 
 ## How it works
 
-Open [diagrams/fix_sif_subs.html](diagrams/fix_sif_subs.html).
+View [diagrams/fix_sif_subs.md](diagrams/fix_sif_subs.md) on GitHub, or open [diagrams/fix_sif_subs.html](diagrams/fix_sif_subs.html) in a browser for the interactive version.
 
 A piece in a save is an `AddPiece` command whose type is the **expanded** trait
 list with prototypes inlined, so it can never be compared to a `PieceSlot`

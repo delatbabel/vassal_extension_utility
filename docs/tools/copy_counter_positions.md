@@ -40,7 +40,7 @@ member up and silently skips what it cannot resolve.
 
 ## How it works
 
-Open [diagrams/copy_counter_positions.html](diagrams/copy_counter_positions.html).
+View [diagrams/copy_counter_positions.md](diagrams/copy_counter_positions.md) on GitHub, or open [diagrams/copy_counter_positions.html](diagrams/copy_counter_positions.html) in a browser for the interactive version.
 
 The reference save is scanned for counters with exactly **one** copy, giving a
 `gpid → (name, map, x, y)` table. Each target save is then scanned for pieces at

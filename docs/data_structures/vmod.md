@@ -3,7 +3,7 @@
 A module is a ZIP whose entire structure lives in one XML document,
 `buildFile.xml`, surrounded by the images it references.
 
-**Diagram:** [diagrams/vmod-structure.html](diagrams/vmod-structure.html)
+**Diagram:** [diagrams/vmod-structure.md](diagrams/vmod-structure.md) (viewable here) · [diagrams/vmod-structure.html](diagrams/vmod-structure.html) (interactive, download and open in a browser)
 
 ```
 Module.vmod  (ZIP)

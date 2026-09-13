@@ -31,6 +31,12 @@ Building from source, packaging installable releases for Linux/Windows/macOS,
 the file-format documentation, and the rest of the technical documentation are
 covered in the **[Developer's Guide](DEVELOPERS-GUIDE.md)**.
 
+Start with the pictures: **[docs/diagrams.md](docs/diagrams.md)** indexes every
+diagram in the repository — the application's runtime architecture, the `.vsav` /
+`.vmod` / `.vmdx` data structures, and one data-flow diagram per command-line
+tool. Each renders on GitHub and can also be downloaded as an interactive page
+that runs in a browser.
+
 ## Usage
 
 1. **File → Open Module** — open a `.vmod` file (appears in the left panel).

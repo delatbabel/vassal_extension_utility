@@ -43,7 +43,7 @@ not in the strip.
 
 ## Finding it
 
-Open [diagrams/global_properties.html](diagrams/global_properties.html).
+View [diagrams/global_properties.md](diagrams/global_properties.md) on GitHub, or open [diagrams/global_properties.html](diagrams/global_properties.html) in a browser for the interactive version.
 
 `--module` plus `--changed` shows the whole of a save's altered global state —
 usually a short list:

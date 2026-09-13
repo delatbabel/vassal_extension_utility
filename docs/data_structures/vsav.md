@@ -4,7 +4,7 @@ A saved game is a ZIP of three entries. Two are small XML metadata documents;
 the third, `savedGame`, is an **obfuscated command log** — the entire game state
 serialised as a flat list of commands.
 
-**Diagram:** [diagrams/vsav-structure.html](diagrams/vsav-structure.html)
+**Diagram:** [diagrams/vsav-structure.md](diagrams/vsav-structure.md) (viewable here) · [diagrams/vsav-structure.html](diagrams/vsav-structure.html) (interactive, download and open in a browser)
 
 ```
 save.vsav  (ZIP)

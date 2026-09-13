@@ -26,7 +26,7 @@ tools/remove_ext_counters.py MODULE.vmod EXT_NAMES SAVE.vsav [SAVE.vsav...]
 
 ## How it works
 
-Open [diagrams/remove_ext_counters.html](diagrams/remove_ext_counters.html).
+View [diagrams/remove_ext_counters.md](diagrams/remove_ext_counters.md) on GitHub, or open [diagrams/remove_ext_counters.html](diagrams/remove_ext_counters.html) in a browser for the interactive version.
 
 Every `PieceSlot` in the module and in each `<module>_ext/*.vmdx` contributes a
 `gpid → archive` entry. A piece is attributed to an extension by the GPID in the

@@ -66,7 +66,7 @@ REPORT ONLY — pass --apply to create the release and upload
 
 ## Every server check is made locally first
 
-Open [diagrams/upload_scenarios.html](diagrams/upload_scenarios.html).
+View [diagrams/upload_scenarios.md](diagrams/upload_scenarios.md) on GitHub, or open [diagrams/upload_scenarios.html](diagrams/upload_scenarios.html) in a browser for the interactive version.
 
 The service validates every uploaded save (`prod_core.rs::add_file`) and a
 rejection costs the whole upload of that file, so each of its checks is made
@@ -135,5 +135,5 @@ and are never printed.
 
 ## See also
 
-- [docs/architecture/architecture.html](../architecture/architecture.html) — where `GameLibrary` sits in the application
+- [docs/architecture/architecture.md](../architecture/architecture.md) — where `GameLibrary` sits in the application ([interactive](../architecture/architecture.html))
 - [tools/README.md](../../tools/README.md#upload_scenariospy--publish-a-directory-of-scenarios-to-the-library)

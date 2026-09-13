@@ -68,21 +68,25 @@ tool here edits the bytes it targets and copies the rest through unchanged.
 
 ## Diagrams
 
-Standalone interactive pages under [`diagrams/`](diagrams/) — open the `.html`
-in a browser; no server, no network.
+Each diagram comes in two forms under [`diagrams/`](diagrams/): a **`.md`** page
+that renders here on GitHub, and the **`.html`** viewer to download and open in a
+browser — no server, no network — for pan, zoom, search and relationship tracing.
 
-| Diagram | Shows |
-|---|---|
-| [vsav-structure.html](diagrams/vsav-structure.html) | `.vsav`: ZIP entries → obfuscation envelope → command log |
-| [vmod-structure.html](diagrams/vmod-structure.html) | `.vmod`: ZIP entries → component tree → a `PieceSlot` |
-| [vmdx-structure.html](diagrams/vmdx-structure.html) | `.vmdx`: ZIP entries → `ModuleExtension` → a target path |
-| [piece-record.html](diagrams/piece-record.html) | The `AddPiece` record: the two parallel chains and the leaf |
-| [sequence-encoder.html](diagrams/sequence-encoder.html) | The three nesting levels, their delimiters and the escaping |
+| Diagram | View here | Interactive | Shows |
+|---|---|---|---|
+| `.vsav` structure | [vsav-structure.md](diagrams/vsav-structure.md) | [.html](diagrams/vsav-structure.html) | `.vsav`: ZIP entries → obfuscation envelope → command log |
+| `.vmod` structure | [vmod-structure.md](diagrams/vmod-structure.md) | [.html](diagrams/vmod-structure.html) | `.vmod`: ZIP entries → component tree → a `PieceSlot` |
+| `.vmdx` structure | [vmdx-structure.md](diagrams/vmdx-structure.md) | [.html](diagrams/vmdx-structure.html) | `.vmdx`: ZIP entries → `ModuleExtension` → a target path |
+| Piece record | [piece-record.md](diagrams/piece-record.md) | [.html](diagrams/piece-record.html) | The `AddPiece` record: the two parallel chains and the leaf |
+| Sequence encoder | [sequence-encoder.md](diagrams/sequence-encoder.md) | [.html](diagrams/sequence-encoder.html) | The three nesting levels, their delimiters and the escaping |
 
 The three `*-structure` diagrams share one grid: three bands, each a container
 level, with column 1 the spine — the entry that decodes into the band below.
 Diagram sources are the `.json` specs kept beside the HTML; they were rendered
-with the `archify` skill at its `showcase` quality profile.
+with the `archify` skill at its `showcase` quality profile. The `.md` pages and
+the SVGs they embed are exported from the delivered HTML by
+[`docs/export-diagrams.py`](../export-diagrams.py) — see
+[`docs/diagrams.md`](../diagrams.md) for the whole set and how to regenerate it.
 
 ## Reading a file yourself
 

@@ -36,7 +36,7 @@ definitions.
 
 ## What it does, in one pass
 
-Open [diagrams/migrate_15_to_21.html](diagrams/migrate_15_to_21.html).
+View [diagrams/migrate_15_to_21.md](diagrams/migrate_15_to_21.md) on GitHub, or open [diagrams/migrate_15_to_21.html](diagrams/migrate_15_to_21.html) in a browser for the interactive version.
 
 - Board layouts and `EXT` registrations are replaced wholesale with the donor's.
 - Maps are renamed on every piece, stack and deck — `Allied TFs` → `CW TFs & Ports`,

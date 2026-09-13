@@ -32,7 +32,7 @@ immune to refresh, and carried in memory and in every save indefinitely.
 
 ## What it selects
 
-Open [diagrams/remove_placemark_carriers.html](diagrams/remove_placemark_carriers.html).
+View [diagrams/remove_placemark_carriers.md](diagrams/remove_placemark_carriers.md) on GitHub, or open [diagrams/remove_placemark_carriers.html](diagrams/remove_placemark_carriers.html) in a browser for the interactive version.
 
 An `AddPiece` command is deleted when **both** hold:
 

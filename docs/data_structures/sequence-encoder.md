@@ -5,7 +5,7 @@ The command log, an `AddPiece`'s fields, a piece's trait chain, an
 `ExtensionElement`'s target path — all the same encoding with different
 delimiters. It is one page of rules, and it makes all three formats readable.
 
-**Diagram:** [diagrams/sequence-encoder.html](diagrams/sequence-encoder.html)
+**Diagram:** [diagrams/sequence-encoder.md](diagrams/sequence-encoder.md) (viewable here) · [diagrams/sequence-encoder.html](diagrams/sequence-encoder.html) (interactive, download and open in a browser)
 
 ## The rules
 

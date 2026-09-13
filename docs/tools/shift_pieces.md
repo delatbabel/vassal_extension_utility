@@ -27,7 +27,7 @@ All seven arguments are required; there are no options.
 
 ## How it works
 
-Open [diagrams/shift_pieces.html](diagrams/shift_pieces.html).
+View [diagrams/shift_pieces.md](diagrams/shift_pieces.md) on GitHub, or open [diagrams/shift_pieces.html](diagrams/shift_pieces.html) in a browser for the interactive version.
 
 Every `AddPiece` command is examined. If the innermost `BasicPiece` state's map
 matches `MAP` and its `x` falls inside `[X_LO, X_HI)`, the `x` and `y` fields of

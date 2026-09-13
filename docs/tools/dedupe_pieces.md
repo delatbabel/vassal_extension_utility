@@ -45,7 +45,7 @@ Use `--list` first.
 
 ## How it works
 
-Open [diagrams/dedupe_pieces.html](diagrams/dedupe_pieces.html).
+View [diagrams/dedupe_pieces.md](diagrams/dedupe_pieces.md) on GitHub, or open [diagrams/dedupe_pieces.html](diagrams/dedupe_pieces.html) in a browser for the interactive version.
 
 Every `PieceSlot` in the module and its `_ext/*.vmdx` siblings gives a
 `gpid → archive` entry. The save's `AddPiece` commands are tallied by GPID; any

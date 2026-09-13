@@ -4,7 +4,7 @@ An extension is a `.vmod` with one structural difference: it holds no components
 directly. Every component sits inside a wrapper that names **where in the parent
 module's tree it grafts**.
 
-**Diagram:** [diagrams/vmdx-structure.html](diagrams/vmdx-structure.html)
+**Diagram:** [diagrams/vmdx-structure.md](diagrams/vmdx-structure.md) (viewable here) · [diagrams/vmdx-structure.html](diagrams/vmdx-structure.html) (interactive, download and open in a browser)
 
 ```
 Extension.vmdx  (ZIP)

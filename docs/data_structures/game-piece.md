@@ -8,7 +8,7 @@ A game piece is the one data structure shared by all three formats. In a
 +/<pieceId>/<type>/<state>
 ```
 
-**Diagram:** [diagrams/piece-record.html](diagrams/piece-record.html)
+**Diagram:** [diagrams/piece-record.md](diagrams/piece-record.md) (viewable here) · [diagrams/piece-record.html](diagrams/piece-record.html) (interactive, download and open in a browser)
 
 | Field | In a saved game | In a `PieceSlot` |
 |---|---|---|
