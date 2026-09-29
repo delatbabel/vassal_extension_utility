@@ -109,7 +109,90 @@ gains a case for the uncompressed `!VOBS` payload and one for the `!VOXZ` header
 existing `!VCSK` cases. Full `vassal-app` suite: 764 tests, the one failure the environmental
 `ProcessCallableTest` that fails on `master` too; Checkstyle, PMD and SpotBugs report nothing new.
 
-## 6. Merging with the other branches
+## 7. Alternatives measured: zstd and brotli
+
+A reviewer asked whether zstd and brotli had been compared. Measured on the same two logs, in
+Java (what the engine would run), with each library's own streams: `XZ for Java` 1.12,
+`zstd-jni` 1.5.7-20 (native zstd, JNI), `aircompressor` 2.0.3 (the one pure-Java zstd encoder),
+`brotli4j` 1.23.0 (native brotli, JNI), and `java.util.zip` deflate for today's baseline. Each
+codec compressed the log into memory and decompressed it back, verified byte for byte;
+single-threaded; the window settings that matter for this data (brotli's largest, 16 MB;
+zstd's long-distance-match mode at 128 MB where marked). The C tools give the same sizes and
+within a factor of 1.5 the same times, except where noted.
+
+### WiF `17-40-JA`, today's nested text, 223.7 MB
+
+| Codec (Java) | Size | Compress | Decompress | Ships as |
+|---|---:|---:|---:|---|
+| deflate 9 (today) | 17.18 MB | 12.0 s | 0.8 s | JDK |
+| **XZ for Java preset 3 (this branch)** | **0.83 MB** | **3.6 s** | 0.8 s | pure Java, 275 KB, in Debian |
+| XZ for Java preset 6 | 0.66 MB | 49.0 s | 0.5 s | |
+| zstd-jni −3 | 1.92 MB | 0.3 s | 0.3 s | native, one jar with 18 platforms (6.8 MB), in Debian |
+| zstd-jni −9 | 1.01 MB | 0.5 s | 0.1 s | |
+| zstd-jni −19 | 0.65 MB | 10.0 s | 0.1 s | |
+| zstd-jni −19 `--long=27` | 0.53 MB | 10.2 s | 0.2 s | |
+| aircompressor zstd (pure Java, one level) | 2.63 MB | 0.5 s | 0.3 s | pure Java; not in Debian |
+| brotli4j q5, window 24 | 0.72 MB | 1.1 s | 0.2 s | native, one artifact per platform (12), not in Debian |
+| brotli4j q9, window 24 | **0.54 MB** | **1.5 s** | 0.2 s | |
+| brotli4j q11, window 24 | 0.47 MB | 82.2 s | 0.2 s | |
+
+### WiF `17-40-JA`, flat text (with PR #15116), 109.7 MB
+
+| Codec (Java) | Size | Compress | Decompress |
+|---|---:|---:|---:|
+| deflate 9 | 7.01 MB | 2.3 s | 0.3 s |
+| **XZ for Java preset 3** | **0.51 MB** | **1.6 s** | 0.3 s |
+| XZ for Java preset 6 | 0.44 MB | 15.9 s | 0.3 s |
+| zstd-jni −9 | 0.54 MB | 0.3 s | 0.1 s |
+| zstd-jni −19 `--long=27` | 0.41 MB | 6.7 s | 0.1 s |
+| aircompressor zstd | 1.13 MB | 0.2 s | 0.1 s |
+| brotli4j q9 | **0.42 MB** | **0.9 s** | 0.1 s |
+| brotli4j q11 | 0.37 MB | 34.1 s | 0.1 s |
+
+Europa `FallOfFrance2004` (4.8 MB text) in one line: deflate 187 KB; xz preset 3 69 KB in
+0.2 s; zstd −9 63 KB; zstd −19 58 KB; brotli q9 57 KB in 0.1 s; brotli q11 56 KB in 1.7 s.
+Everything is instantaneous at that size.
+
+### What it means for load and save time
+
+The codec's share of a save is its compression time, spent after the encoding; its share of a
+load is its decompression time, spent before the decoding. Against the engine measurements
+(`master` save 35 s, of which deflate is 12 s; this branch 20.6 s; load 133–144 s, dominated
+by constructing the pieces):
+
+| Codec | Save, this branch's String path (≈17 s + compress) | Save with streaming (PR #15117, ≈9 s + compress) | Load |
+|---|---:|---:|---:|
+| deflate 9 (today) | 35 s (measured) | ≈ 21 s | 133 s |
+| XZ for Java preset 3 | 20.6 s (measured) | ≈ 13 s | unchanged: +0.8 s |
+| zstd-jni −9 | ≈ 17.5 s | ≈ 9.5 s | +0.1 s |
+| zstd-jni −19 `--long=27` | ≈ 27 s | ≈ 19 s | +0.2 s |
+| brotli4j q9 | ≈ 18.5 s | ≈ 10.5 s | +0.2 s |
+| brotli4j q11 | ≈ 99 s | ≈ 91 s | +0.2 s |
+
+Load time is the same whatever is chosen: every codec decompresses this log in under a second,
+against two minutes of piece construction. Save time differs by at most a few seconds between
+the sensible settings (xz 3, zstd 9, brotli 9), and by a lot for the slow ones (xz 6,
+brotli 11), which buy 20–35 % in size for ten to fifty times the compression time.
+
+### The choice
+
+- **brotli q9 is the best codec for this data**: 35 % smaller than xz preset 3 and twice as
+  fast to compress, in native code. But its encoder is C: `brotli4j` needs a native artifact
+  per platform (twelve of them), extracted at run time, and there is no Debian package, so
+  VASSAL's `.deb` could not be built with it. The pure-Java brotli library (`org.brotli:dec`) is
+  a decoder only.
+- **zstd is the fastest**: at −9 it compresses the log in 0.5 s, but the file is 22 % larger than
+  xz's; at −19 with long-distance matching it is 36 % smaller than xz's, at 10 s. It too is
+  native (`zstd-jni`), though it ships every platform in one jar and *is* in Debian
+  (`libzstd-jni-java`). The only pure-Java zstd encoder, `aircompressor`, has one level and a
+  small window and produces a file three times the size of xz's.
+- **XZ for Java is the one pure-Java option with a long window**, and at preset 3 it is within a
+  factor of 1.5 of brotli's size and time. It adds 275 KB, no native code, no per-platform
+  packaging, and Debian ships it. That is why the branch keeps it. If the project is willing to
+  carry native code, brotli q9 (or zstd −19 with `--long`) is the upgrade; the payload header
+  makes that a later, independent change.
+
+## 8. Merging with the other branches
 
 Trial merges of each open branch into this one, then a four-way union, compiled and tested:
 
