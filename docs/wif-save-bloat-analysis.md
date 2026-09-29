@@ -16,6 +16,28 @@ container format is in **[vsav-format.md](vsav-format.md)**.
 
 ---
 
+## Status — what has been done since (as of 29 September 2026)
+
+The measurements below are the original ones and are kept as the record of the problem. Each
+cause now has a status callout in its section; this table is the summary.
+
+| Cause | Where the fix lives | Status | Measured effect |
+|---|---|---|---|
+| §2 Prototype expansion (~100–200 traits/piece) | **module** — [wif-module-optimizations.md Fix 2](wif-module-optimizations.md#fix-2--reduce-traits-per-piece-the-big-one), detailed in [wif-fix2-trait-reduction.md](wif-fix2-trait-reduction.md) | ⏳ **not started** in the module (2.1.4 still averages 113 traits/piece). In the **engine**, the per-instance *cost* of the expansion is attacked by B2, `feature/share-immutable-trait-data` ([vassal-share-immutable-trait-data.md](vassal-share-immutable-trait-data.md)) | engine: pieces' heap 308 MB → 164 MB, 8.9 M → 4.0 M objects, on the 7 072-piece game |
+| §3 O(N²) escaping | **engine** — `feature/flat-trait-chain-encoding` ([vassal-flat-trait-chain.md](vassal-flat-trait-chain.md)); compared with Joel Uckelman's `fix_sequences` in [vassal-sequence-fix-comparison.md](vassal-sequence-fix-comparison.md) | ✅ **implemented on branch**, PR to be raised | command log 223 MB → 105 MB; compressed 18.8 MB → 6.9 MB; 121.5 MB of backslashes → 3.3 MB |
+| §4 Embedded Place Marker | **module** — [wif-module-optimizations.md Fix 1](wif-module-optimizations.md#fix-1--convert-the-embedded-place-marker-to-a-reference--done-module-212) | ✅ **done in module 2.1.2**; baked copies remain in four older saves (a refresh cannot remove them) | 2 066 embedded definitions gone from new saves |
+| §5 Obfuscation hex-doubling | **engine** — A1 `VOBS` ([wif-engine-optimizations.md A1](wif-engine-optimizations.md#a1-stop-writing-the-obfuscated-data-in-hex--2-disk---merged-vobs)), A2 deflate level 9 (`feature/raise-interactive-save-level`) | ✅ **A1 merged upstream** (PR #15060, VASSAL 3.8); A2 on branch | ~1.8× smaller `.vsav`; this utility reads and re-emits all three formats |
+| §6 No dedup across identical pieces | **engine** — C2 (type table) | ⏳ **not started**; the flyweight (B2) shares the *objects* in memory but the save still repeats the text | — |
+| §7 Memory: the 223 MB `String` on save/load | **engine** — B1 `feature/stream-save-and-load` ([vassal-stream-save-and-load.md](vassal-stream-save-and-load.md)) | ✅ **implemented on branch** | peak heap on load 3.2 GB → 1.2 GB (loads inside 1.5 GB where `master` runs out); save 35 s → 28 s; output byte-identical |
+| §7 Memory: per-piece trait objects | **engine** — B2 (above); the "intern the strings" increment turned out to be in VASSAL since 2021 ([wif-flyweight-analysis.md](wif-flyweight-analysis.md)) | ✅ **implemented on branch** (share the parsed objects; configurer-free Dynamic Property) | as §2 row |
+
+All four engine branches (`feature/flat-trait-chain-encoding`, `feature/stream-save-and-load`,
+`feature/share-immutable-trait-data`, and `fix_sequences`) merge without conflicts; the one
+semantic interaction, between the streaming writer and `fix_sequences`' token form, is described
+in [vassal-share-immutable-trait-data.md §6](vassal-share-immutable-trait-data.md#6-merging-with-the-other-branches).
+
+---
+
 ## 1. Headline numbers
 
 Measured from **`002-presetup-aif-everything.vsav`** (a fully set‑up AIF game), by unzipping
@@ -45,6 +67,11 @@ with ~200 traits**. That 100× inflation is the whole story, and it has three co
 ---
 
 ## 2. Cause #1 — every piece inlines a fully‑expanded prototype chain
+
+> **Status.** Module side (fewer traits per piece): not started; 2.1.4 still averages 113 traits
+> per placed piece. Engine side: `feature/share-immutable-trait-data` shares the parsed type
+> data of the heaviest traits between every instance of a type, so the expansion's cost in the
+> heap is halved without touching the module (see the Status table).
 
 The module is built almost entirely from **prototypes**: 207 `PrototypeDefinition`s, 1 505
 `PieceSlot`s, 100 `CardSlot`s, and **4 155 `prototype;` references** in `buildFile.xml`.
@@ -79,6 +106,14 @@ member's "X + Y bytes" observation (piece + unrolled prototype) — confirmed an
 
 <a id="3-cause-2--sequenceencoder-escaping-is-otraits-per-piece"></a>
 ## 3. Cause #2 — SequenceEncoder escaping is **O(traits²)** per piece
+
+> **Status: ✅ implemented on `feature/flat-trait-chain-encoding`** (PR to be raised). The
+> growth was not in `SequenceEncoder` but in `Decorator.getType()`/`getState()` nesting the
+> whole inner piece as one escaped token per trait; the chain is now framed flat, old data still
+> decodes, `SequenceEncoder` is untouched. On the 002 game: 223 MB → 105 MB plaintext,
+> 18.8 MB → 6.9 MB compressed. See [vassal-flat-trait-chain.md](vassal-flat-trait-chain.md) and,
+> for the comparison with the maintainers' own `fix_sequences` attempt,
+> [vassal-sequence-fix-comparison.md](vassal-sequence-fix-comparison.md).
 
 A piece's `type` (and `state`) is a nested `SequenceEncoder` structure. `Decorator.getType()`
 (`Decorator.java:525‑530`) serialises a trait as:
@@ -170,6 +205,11 @@ there is nothing to remove — which matches the user's own hunt through the mod
 <a id="5-cause-4--obfuscation-hex-doubles-the-bytes-and-defeats-compression"></a>
 ## 5. Cause #4 — obfuscation hex‑doubles the bytes (and defeats compression)
 
+> **Status: ✅ merged upstream** as the `VOBS` format (A1, PR #15060, VASSAL 3.8): the key and
+> the XOR-ed bytes are written raw, so the ZIP compresses them as well as the plaintext. A2
+> (deflate level 9 for interactive saves) is on `feature/raise-interactive-save-level`. This
+> utility reads and re-emits `VOBS`, `!VCSK` and the abandoned `!VCSZ` alike.
+
 VASSAL writes the command log through `ObfuscatingOutputStream` (anti‑cheat only), which XORs
 each byte with a key and emits it as **two ASCII hex characters** (`ObfuscatingOutputStream.java:82‑88`)
 — a flat **2×** size blow‑up (222 MB → 446 MB) *before* the ZIP compresses it. Crucially, the
@@ -190,6 +230,10 @@ problem — both are addressed in [wif-engine-optimizations.md](wif-engine-optim
 
 ## 6. Cause #5 — no deduplication across identical pieces
 
+> **Status: not started** (engine item C2, a type table in the save). In memory the same
+> duplication is now addressed by B2 (`feature/share-immutable-trait-data`), which shares the
+> parsed objects of identical traits; the save file still repeats the text of each piece.
+
 `GameState.getRestorePiecesCommand()` emits **one `AddPiece` per piece with no dedup**
 (`GameState.java:1609`, `new AddPiece(p)` in a bare loop; the `pieces` field is a plain `Map`,
 `:119`). A stack of 100 identical counters writes its ~15 KB definition 100 times. In 002 the
@@ -201,6 +245,14 @@ copies of a smaller set of definitions.
 ---
 
 ## 7. What this means for memory (in the running engine)
+
+> **Status.** The retained 223 MB save `String` and the whole-log `String` on load are gone on
+> `feature/stream-save-and-load` (B1): the command log is streamed both ways and `isModified()`
+> compares a digest; peak heap on load 3.2 GB → 1.2 GB. The per-piece trait objects are halved
+> on `feature/share-immutable-trait-data` (B2): 8.9 M → 4.0 M objects, 308 MB → 164 MB. The
+> "intern the embedded marker strings" idea below was found to be moot: `SequenceEncoder.Decoder`
+> has interned every token since 2021, which is why strings are only 7 % of the piece heap
+> ([wif-flyweight-analysis.md](wif-flyweight-analysis.md)).
 
 The disk numbers mirror the heap cost, because the save is essentially a serialisation of the
 live piece objects:
@@ -228,13 +280,14 @@ not pixels.
 
 ## 8. Summary of leverage
 
-| Cause | Drives | Fixable in… | Rough leverage |
-|---|---|---|---|
-| §2 Prototype expansion (200 traits/piece) | memory **and** disk | module design | **highest** — attacks the base content and (via §3) the escaping |
-| §3 O(N²) escaping | memory (222 MB string), CPU, disk (~3×) | engine format | high (memory/CPU); high (disk, pre‑ZIP) |
-| §4 Embedded Place Marker (`Land6`) | memory **and** disk | **module — one trait** | ✅ done in 2.1.2; leftovers remain in 4 saves |
-| §5 Obfuscate‑before‑zip | disk (~1.8×), memory, CPU | engine | ~2× disk, easy |
-| §6 No dedup | disk | engine format | high, but format change |
+| Cause | Drives | Fixable in… | Rough leverage | Status |
+|---|---|---|---|---|
+| §2 Prototype expansion (200 traits/piece) | memory **and** disk | module design | **highest** — attacks the base content and (via §3) the escaping | ⏳ module: not started; engine heap cost halved by B2 (branch) |
+| §3 O(N²) escaping | memory (222 MB string), CPU, disk (~3×) | engine format | high (memory/CPU); high (disk, pre‑ZIP) | ✅ branch `feature/flat-trait-chain-encoding` |
+| §4 Embedded Place Marker (`Land6`) | memory **and** disk | **module — one trait** | ✅ done in 2.1.2; leftovers remain in 4 saves | ✅ module 2.1.2 |
+| §5 Obfuscate‑before‑zip | disk (~1.8×), memory, CPU | engine | ~2× disk, easy | ✅ merged upstream (`VOBS`, 3.8) |
+| §6 No dedup | disk | engine format | high, but format change | ⏳ not started |
+| §7 Whole-log `String`s and per-piece objects | memory | engine | large | ✅ branches B1 and B2 |
 
 The single highest‑value / lowest‑risk change is the **module‑side** fix in §4 (one Place
 Marker: "Define" → "Select"). The largest *overall* win is reducing **traits per piece** (§2),
