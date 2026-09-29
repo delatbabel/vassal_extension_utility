@@ -13,8 +13,10 @@ LZMA2-compressed. Branch `feature/switch-compressor-to-xz` in `../vassal`, from 
 `ObfuscatingOutputStream` writes a new five-byte header, **`!VOXZ`**, then the one-byte key,
 then the data **XZ-compressed and XORed with the key**: the XZ stream sits between the caller
 and the XOR, so the obfuscation applies to the compressed bytes. `DeobfuscatingInputStream`
-recognises the header and wraps the XOR-undoing stream in an `XZInputStream`; the three earlier
-payloads (`!VCSK` hex, `!VCSZ` deflate-then-hex, `!VOBS` raw) are still read. Every writer of a
+recognises the header and wraps the XOR-undoing stream in an `XZInputStream`; the released
+`!VCSK` hex payload is still read. `!VOBS`, the uncompressed payload of the 3.8 betas, is no
+longer read by the engine at the maintainer's request in review (it was never in a full
+release); this utility keeps reading it, as it keeps reading the abandoned `!VCSZ`. Every writer of a
 save or log goes through `ObfuscatingOutputStream` (`GameState.saveGame`, `saveGameRefresh`,
 `BasicLogger.write`), so nothing else changes; the `.vsav` remains an ordinary ZIP whose
 `savedGame` entry now holds a few hundred kilobytes of already-compressed bytes that the ZIP's
@@ -85,8 +87,9 @@ weeks by a Postgres developer investigating why `sshd` had become slow.
 
 ## 4. Compatibility
 
-- New engines read every format; older engines cannot read `!VOXZ` saves and logs, exactly as
-  they cannot read `!VOBS` — the existing version-mismatch warnings apply.
+- The engine reads `!VOXZ` and the released `!VCSK`; older engines cannot read `!VOXZ` saves
+  and logs — the existing version-mismatch warnings apply. A save written by a 3.8 beta in
+  `!VOBS` can be converted with this utility (open it, rewrite it), which reads all four forms.
 - **This utility and its scripts** read and re-emit `!VOXZ` alongside the other three
   (`SavedGame.Obfuscation.XZ`, with the same `org.tukaani:xz` dependency and preset;
   `tools/swap_maps.py` and the scripts built on it with Python's `lzma`). Verified both ways:
@@ -101,12 +104,17 @@ weeks by a Postgres developer investigating why `sshd` had become slow.
 `debian/control` — the first CI build of the branch failed on exactly that (`package
 org.tukaani.xz does not exist` in the `.deb` step) before it was added.
 
+**Review changes** ([PR #15121](https://github.com/vassalengine/vassal/pull/15121)): the `!VOBS`
+reading path removed (above); `XorOutputStream` made private with a public constructor and
+given one reused 8 KB buffer instead of an allocation per write — measured, `XZOutputStream`
+hands down one compressed chunk at a time, mostly 4–16 KB and never above 64 KB, 250 writes
+for the whole 224 MB game; the original copyright line restored; the pom comment dropped.
+
 ## 5. Tests
 
 `ObfuscatingOutputStreamTest` now expects the XZ layout (computed with `XZOutputStream` at the
 same preset) and checks that repetitive text shrinks by more than 20×; `DeobfuscatingInputStreamTest`
-gains a case for the uncompressed `!VOBS` payload and one for the `!VOXZ` header, alongside the
-existing `!VCSK` cases. Full `vassal-app` suite: 764 tests, the one failure the environmental
+gains a case for the `!VOXZ` header alongside the existing `!VCSK` cases. Full `vassal-app` suite: 764 tests, the one failure the environmental
 `ProcessCallableTest` that fails on `master` too; Checkstyle, PMD and SpotBugs report nothing new.
 
 ## 7. Alternatives measured: zstd and brotli

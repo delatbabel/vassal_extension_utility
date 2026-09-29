@@ -157,8 +157,10 @@ Four forms exist, told apart by the entry's leading magic bytes:
 | `!VCSZ` | 2 hex digits | as `!VCSK`, but the plaintext is deflated first | never released — see below |
 
 A reader dispatches on the header, and anything else is passed through unchanged as
-plain text (`DeobfuscatingInputStream`'s backward compatibility). This utility reads
-all four and **preserves whichever format a file was opened with** when rewriting it
+plain text (`DeobfuscatingInputStream`'s backward compatibility). The engine itself reads
+`!VOXZ` and `!VCSK` (neither `!VOBS`, dropped at review as never released, nor `!VCSZ`);
+this utility reads all four and **preserves whichever format a file was opened with** when
+rewriting it
 (`SavedGame.Obfuscation`, `SavedGame.open()` / `getObfuscation()` /
 `writeObfuscated()`; likewise `tools/swap_maps.py`).
 
