@@ -139,7 +139,14 @@ module.
 
 ---
 
-### B2. Flyweight prototype expansion — share immutable trait data across instances
+### B2. Flyweight prototype expansion — share immutable trait data across instances — 📐 MEASURED
+
+> Measured on a legacy-style (WiF) and a modern-style (Europa) game in
+> **[wif-flyweight-analysis.md](wif-flyweight-analysis.md)**: the string-interning increment is
+> already effective (strings are 7 % of the piece heap; the decoder interns every token); a
+> whole-piece flyweight saves 14 % on WiF and 85 % on Europa; only a trait-level flyweight
+> reaches WiF's 250 MB (80–85 %) and its load time. Cheaper first steps: stop building Swing
+> configurers per trait instance (17 %), share parsed expressions (15 %) and key strokes (16 %).
 
 **Problem.** Each placed piece holds its **own deep clone** of its expanded prototype chain.
 `UsePrototype.buildPrototype()` calls `PieceCloner.clonePiece()` per instance
