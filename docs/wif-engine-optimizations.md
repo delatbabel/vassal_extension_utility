@@ -167,7 +167,18 @@ remain compatible with **live network play** and **log replay**, which use the s
 `BasicCommandEncoder` wire form — the central obstacle. Recommend gating behind a
 `saveFormatVersion` and keeping the old reader.
 
-### C1. Eliminate the O(N²) `SequenceEncoder` escaping
+### C1. Eliminate the O(N²) `SequenceEncoder` escaping — ✅ IMPLEMENTED (`feature/flat-trait-chain-encoding`)
+
+> Implemented on branch `feature/flat-trait-chain-encoding` in `../vassal` (PR to be raised
+> manually). The design, the census of engine code that touches the chain, the compatibility
+> analysis and the measurements are in **[vassal-flat-trait-chain.md](vassal-flat-trait-chain.md)**.
+> The key finding, which changes the "Effort" estimate below from *high, invasive* to *small,
+> contained*: `SequenceEncoder` itself is linear and is **not modified**; the quadratic growth
+> comes solely from `Decorator.getType()`/`getState()` nesting the whole inner piece as one
+> escaped token per trait. Re-framing the chain flat in those two methods, with unified
+> decoders in `Decorator.setState()`/`mergeState()` and `BasicCommandEncoder.createPiece()`,
+> removes the tab-level backslashes entirely; old data still decodes; nothing in any trait or
+> in `SequenceEncoder` changes. The original problem statement follows.
 
 **Problem.** `Decorator.getType()`/`getState()` nest one `SequenceEncoder` per trait
 (`Decorator.java:525‑530`), and `appendEscapedString()` escapes the delimiters **and** escape
@@ -219,8 +230,10 @@ completeness; **C1 + C2 are the better targets.**
    (`feature/compress-then-obfuscate-vsav-file`, `!VCSZ`) and options 2 and 3 discarded.
 3. **B1** (streaming) — removes the OOM ceiling; enables even‑larger games regardless of the above.
 4. **B2 string‑interning increment** — cheap heap win now; full flyweight later.
-5. **C1**, then **C2** — the deep format changes that shrink the 222 MB itself; do together
-   behind one `saveFormatVersion` bump with a compatible legacy reader.
+5. **C1** — ✅ done (`feature/flat-trait-chain-encoding`, see
+   [vassal-flat-trait-chain.md](vassal-flat-trait-chain.md)); it needed no format version:
+   the decoders read both framings, and the one-way compatibility (old engines cannot read
+   new data) is the same as `VOBS`. Then **C2**, which would still need a versioned opcode.
 
 Tiers A–B deliver real wins with no disk‑format break and pair well with the module‑side fixes
 in [wif-module-optimizations.md](wif-module-optimizations.md); Tier C is where the order‑of‑magnitude

@@ -359,6 +359,24 @@ For example, encoding `{A, {B, C}}` with delimiter `,` yields `A,B\,C`. This is 
 encoder used for `.vmdx` `ExtensionElement` target paths (see
 [docs/vmdx-format.md](vmdx-format.md)).
 
+#### The trait chain: two framings
+
+Within an `AddPiece`, the `<type>` and `<state>` are each a tab-joined chain of the piece's
+traits, outermost first, ending with the `BasicPiece`. VASSAL has written it two ways:
+
+- **Nested** (3.7 and earlier): `esc(A)<TAB>esc(esc(B)<TAB>esc(… esc(basic)))` — each trait
+  escaped the *whole* rest of the chain as one token, so the tab after the *i*-th trait carries
+  *i − 1* backslashes and a 200-trait piece is mostly backslashes
+  ([wif-save-bloat-analysis.md §3](wif-save-bloat-analysis.md#3-cause-2--sequenceencoder-escaping-is-otraits-per-piece)).
+- **Flat** (3.8+, `feature/flat-trait-chain-encoding`): `esc(A)<TAB>esc(B)<TAB>…<TAB>esc(basic)`
+  — each segment escaped once. A reader tells them apart by counting top-level tabs: exactly
+  one after the first segment means nested, more means flat; a single trait over a basic piece
+  is identical in both. See [vassal-flat-trait-chain.md](vassal-flat-trait-chain.md).
+
+In both framings the innermost `BasicPiece` segment is the text after the **last** tab, and the
+`/` escaping of the enclosing `AddPiece` is applied once to the whole chain — which is why this
+utility's `SavedGame` and the `tools/*.py` scripts, which take the last tab-token, read either.
+
 ### `.vsav` vs `.vlog` (saved game vs logfile)
 
 A `.vsav` and a `.vlog` share this exact container and obfuscation. The difference is in
