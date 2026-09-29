@@ -131,7 +131,52 @@ empty texts, four levels deep. Full `vassal-app` suite: 770 tests, the only fail
 which fails identically on unmodified `master` in this environment (a `_JAVA_OPTIONS` banner on a
 child process's output). Checkstyle, PMD and SpotBugs report nothing new.
 
-## 6. Not done here
+## 6. Review question: why not a "changed" flag instead of the digest?
+
+A reviewer of the branch asked whether `isModified()` could keep a boolean marking a changed
+state rather than the old `String` or the new digest, recalling having concluded around 2010
+that it would not work but not why. The answer given (posted on the PR):
+
+> A "changed" boolean was the first thing I considered too, and I think the reason it does not
+> work is the same in 2026 as in 2010: `isModified()` has to answer "would the file I write now
+> differ from the one I wrote last?", and only the encoded state itself can answer that without
+> false negatives.
+>
+> **What a flag would have to observe.** The restore command is assembled from the pieces plus
+> 36 `GameComponent`s that implement `getRestoreCommand()` (maps and their `BoardPicker`, decks,
+> global properties, turn tracker, player roster, notes, chess clocks, scenario options, …).
+> Commands reach the state through three entry points (`GameModule.sendAndLog`, `CommandDecoder`
+> for the server, `BasicLogger` for step and undo), so `Command.execute()` would be the natural
+> hook — but not every change to that state is a `Command`. `BoardPicker.getRestoreCommand()`
+> encodes `currentBoards`, which the setup dialog sets directly; several components keep their
+> restore state in their own fields and mutate them locally, and custom module classes do the
+> same. Each such path is a way for the flag to stay `false` while the state has changed, and the
+> consequence of a false negative here is that the close-game prompt is skipped and the player
+> loses the game. The string comparison, and now the digest, cannot be wrong in that direction:
+> they compare what would actually be written.
+>
+> **A flag is also wrong in the other direction.** Undo, a log stepped forward and back, or a
+> command whose effect is nil all leave the state equal to the saved one; the comparison says
+> "unchanged", a flag set in `execute()` says "changed" and prompts for a save that isn't needed.
+> Harmless, but it is a regression from today.
+>
+> **Cost is not the reason to change it.** `isModified()` is called from exactly two places,
+> `maybeSaveGame()` (closing or exiting) and `BugDialog`, never per command. The digest costs one
+> streamed encode, the same work as a save and no memory: 14 s on the 8,855-piece World in Flames
+> game that motivated this branch, well under a second on a normal game, and always paid at the
+> moment the player is about to save anyway. What the branch removes is not that cost but the
+> 446 MB `String` that was retained for the whole session to make the comparison possible.
+>
+> **Where a flag would fit.** As an optimisation on top of the digest, not instead of it: set in
+> `Command.execute()` and cleared on save, so that when no command has run since the last save the
+> digest is skipped. That is safe only if we accept that a non-command mutation would then go
+> undetected, which is the same risk as the flag alone — so I would only add it if that fast path
+> measurably mattered, and I don't think it does.
+>
+> So the recommendation is to keep the digest: it is exact by construction, its cost sits where a
+> save already costs the same, and it keeps nothing between calls but 32 bytes.
+
+## 7. Not done here
 
 - The load's remaining transient, the `Command` tree, could be removed by executing each
   `AddPiece` as it is decoded instead of after the whole tree is built. That changes
