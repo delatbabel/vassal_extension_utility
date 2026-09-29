@@ -95,6 +95,12 @@ weeks by a Postgres developer investigating why `sshd` had become slow.
 - Memory: the decoder needs about the dictionary size, 4 MB; the encoder about 30 MB while a save
   is written.
 
+**Packaging.** The Maven-built packages collect the jar with the other dependencies into
+`release-prepare/target/lib`; the Debian package compiles against the system jars listed in
+`debian/rules`, so `libxz-java` (`/usr/share/java/xz.jar`) is declared there and in
+`debian/control` — the first CI build of the branch failed on exactly that (`package
+org.tukaani.xz does not exist` in the `.deb` step) before it was added.
+
 ## 5. Tests
 
 `ObfuscatingOutputStreamTest` now expects the XZ layout (computed with `XZOutputStream` at the

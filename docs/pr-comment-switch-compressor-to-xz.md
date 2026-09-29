@@ -42,6 +42,10 @@ The name deserves a direct answer, because in March 2024 a backdoor was found in
 - Every commit since (98, from March 2024 through the 1.12 release on 1 March 2026) is by Lasse Collin, the project's founder and its sole maintainer since the incident, and the `v1.12` tag is signed with his key (GitHub reports the signature as verified).
 - The version pinned, **1.12**, post-dates the incident by two years. The jar matches Maven Central's published checksums (SHA-1 `bb9703ba3753ab8665f65e6a25b3ddc7b09b1caf`, SHA-256 `3e158a87bd73d8afb4b6e8239c013b7d049c48563f45860ce99cd2e448cf4a6b`) and contains only class files, a manifest and a `module-info`.
 
+### Packaging
+
+The Maven-built packages pick the jar up from `release-prepare/target/lib` as they do every other dependency (`jdeps` sees it needs only `java.base`). The Debian package builds against the system jars listed in `debian/rules`, so `libxz-java` (`/usr/share/java/xz.jar`, 1.9 on Ubuntu 24.04, which has everything used here) is added there and to `debian/control`'s build and runtime dependencies.
+
 ### Tests
 
 `ObfuscatingOutputStreamTest` now expects the XZ layout (computed with `XZOutputStream` at the same preset) and checks that repetitive text shrinks by more than 20×; `DeobfuscatingInputStreamTest` gains a case for the uncompressed `!VOBS` payload and one for the `!VOXZ` header, beside the existing `!VCSK` cases. Full suite: 764 tests, the one failure the environmental `ProcessCallableTest` that fails on `master` too. Checkstyle, PMD, SpotBugs clean.
