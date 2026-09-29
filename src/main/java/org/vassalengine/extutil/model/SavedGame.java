@@ -80,13 +80,13 @@ public class SavedGame {
      */
     public enum Obfuscation {
         /**
-         * {@code VOBS} + a one-byte key + the plaintext XOR-ed with it, all raw —
+         * {@code !VOBS} + a one-byte key + the plaintext XOR-ed with it, all raw —
          * what VASSAL's {@code ObfuscatingOutputStream} writes from 3.8. The ZIP
          * entry's own deflate then compresses it, which is the point of the change:
          * the old hex encoding doubled the payload into 16 symbols the ZIP could do
          * little with.
          */
-        RAW("VOBS", 1),
+        RAW("!VOBS", 1),
         /**
          * {@code !VCSK} + a two-hex-digit key + two-hex-digits-per-byte XOR of the
          * plaintext — the format written through VASSAL 3.7.x, still read by 3.8.
@@ -183,13 +183,13 @@ public class SavedGame {
      * Opens a {@code .vsav}, reading the two metadata entries whole and
      * deobfuscating the {@code savedGame} command log into memory. Every
      * obfuscation format VASSAL has written is read — {@link Obfuscation#RAW}
-     * ({@code VOBS}, 3.8+), {@link Obfuscation#HEX} ({@code !VCSK}, through 3.7.x)
+     * ({@code !VOBS}, 3.8+), {@link Obfuscation#HEX} ({@code !VCSK}, through 3.7.x)
      * and {@link Obfuscation#HEX_DEFLATED} ({@code !VCSZ}) — and which one the file
      * used is remembered so a rewrite preserves it.
      *
      * @throws IOException if the file is not a ZIP with the expected entries, or
      *                     the {@code savedGame} entry carries none of the
-     *                     {@code VOBS}, {@code !VCSK} or {@code !VCSZ} headers
+     *                     {@code !VOBS}, {@code !VCSK} or {@code !VCSZ} headers
      */
     public static SavedGame open(java.io.File f) throws IOException {
         try (ZipFile zf = new ZipFile(f)) {
@@ -203,7 +203,7 @@ public class SavedGame {
             final Obfuscation fmt = obfuscationOf(raw);
             if (fmt == null) {
                 throw new IOException(
-                        "Not an obfuscated VASSAL saved game (missing VOBS/!VCSK/!VCSZ header): "
+                        "Not an obfuscated VASSAL saved game (missing !VOBS/!VCSK/!VCSZ header): "
                         + f.getName());
             }
             byte[] plain = deobfuscate(raw, fmt, f);
@@ -254,7 +254,7 @@ public class SavedGame {
     /**
      * Decodes the obfuscated {@code savedGame} entry: the header, the key, then the
      * payload XOR-ed byte-by-byte with it (see docs/vsav-format.md). For
-     * {@link Obfuscation#RAW} ({@code VOBS}) the key is one raw byte and the payload
+     * {@link Obfuscation#RAW} ({@code !VOBS}) the key is one raw byte and the payload
      * raw bytes; for the two hex formats the key is two hex digits and each payload
      * byte two more. The result is the plaintext, except for
      * {@link Obfuscation#HEX_DEFLATED}, where it is the deflated plaintext that
@@ -934,7 +934,7 @@ public class SavedGame {
 
     /**
      * Streams the surviving command tokens through the VASSAL obfuscation, in the
-     * <em>same format the file was opened with</em>: {@code VOBS} (header + a
+     * <em>same format the file was opened with</em>: {@code !VOBS} (header + a
      * random one-byte key + the plaintext XOR-ed with it, raw), {@code !VCSK} (the
      * key as 2 hex digits and each plaintext byte as 2 more), or {@code !VCSZ} (the
      * hex encoding of the <em>deflated</em> plaintext). Each removed token is
@@ -1044,7 +1044,7 @@ public class SavedGame {
         }
     }
 
-    /** The {@code VOBS} payload: one XOR-ed byte out per byte in. */
+    /** The {@code !VOBS} payload: one XOR-ed byte out per byte in. */
     private static final class RawSink extends XorSink {
         RawSink(OutputStream out, int key) { super(out, key); }
 

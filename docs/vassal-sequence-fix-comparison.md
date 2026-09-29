@@ -223,7 +223,7 @@ flat branch's result. The combination inherits all of `fix_sequences`'s compatib
 
 1. **Merge `feature/flat-trait-chain-encoding` on its own.** It solves the measured problem
    (the trait chain is where all the quadratic bytes are), with the smallest blast radius, the
-   best compressed result, the same one-way compatibility VASSAL already accepted for `VOBS`,
+   best compressed result, the same one-way compatibility VASSAL already accepted for `!VOBS`,
    and no change to a class the maintainers have said they will not revisit. External tools,
    including this one, keep working.
 2. **Do not merge `fix_sequences` in its current form.** It needs an XML-legal marker (or

@@ -92,7 +92,7 @@ entry is in the legacy `!VCSK` format, and that format writes a 5-byte header, a
 5 + 2 + (7362 × 2) = 14731
 ```
 
-That doubling into a 16-symbol alphabet is exactly what the modern `VOBS` format
+That doubling into a 16-symbol alphabet is exactly what the modern `!VOBS` format
 exists to avoid — see [vsav.md](vsav.md#the-obfuscation-envelope).
 
 ## The two writer rules

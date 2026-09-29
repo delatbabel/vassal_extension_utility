@@ -21,7 +21,7 @@
 | **savedata** | database | this save's own metadata |
 | **moduledata** | database | the module it came from |
 | **plaintext log** | backend | GameState.saveString() |
-| **magic header** | external | VOBS · !VCSK · !VCSZ |
+| **magic header** | external | !VOBS · !VCSK · !VCSZ |
 | **XOR key** | security | 1 raw byte, or 2 hex digits |
 | **deflate** | backend | !VCSZ only |
 | **command token** | backend | one record per 0x1B |
@@ -46,7 +46,7 @@
 
 ### Why the format is preserved
 
-- VOBS (3.8+) XORs raw so the ZIP deflate can still compress it
+- !VOBS (3.8+) XORs raw so the ZIP deflate can still compress it
 - !VCSK (through 3.7.x) hex-encodes, doubling the payload into 16 symbols
 - !VCSZ deflates before the hex — a pre-release form that never shipped but is still read
 

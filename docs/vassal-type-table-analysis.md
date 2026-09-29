@@ -7,7 +7,7 @@ finding that the 8 855 pieces of the WiF game collapse to 5 601 distinct shapes.
 measures what that would buy, against the two module styles, after the changes already made
 on the other branches ([PR #15116](https://github.com/vassalengine/vassal/pull/15116) flat
 chain, [PR #15117](https://github.com/vassalengine/vassal/pull/15117) streaming,
-[PR #15119](https://github.com/vassalengine/vassal/pull/15119) shared trait data; A1 `VOBS`
+[PR #15119](https://github.com/vassalengine/vassal/pull/15119) shared trait data; A1 `!VOBS`
 and A2 level-9 deflate merged) — and against the alternative the measurement itself brought
 up.
 
@@ -61,7 +61,7 @@ property sheets over shared images).
 | flat + trait‑segment table | 0.90 MB | 85 KB | 48 KB | 45 KB |
 
 (The `.vsav` on disk is the deflate column plus a few hundred bytes of metadata; the WiF file
-is 34 MB today only because it was written in the hex `!VCSK` form that `VOBS` has replaced.)
+is 34 MB today only because it was written in the hex `!VCSK` form that `!VOBS` has replaced.)
 
 ## 3. What the numbers say
 
@@ -90,7 +90,7 @@ So the disk payoff attributed to C2 is available three ways, and they are not ad
 | Way to get it | WiF result | Format change |
 |---|---:|---|
 | trait-segment table + deflate | 0.68 MB | new commands, `#n` references in `AddPiece`, decode-session table, version gate, every external reader updated |
-| xz payload, no table | 0.44 MB (0.66 MB even on the nested text) | a new payload header, as `VOBS` was; the command grammar untouched |
+| xz payload, no table | 0.44 MB (0.66 MB even on the nested text) | a new payload header, as `!VOBS` was; the command grammar untouched |
 | both | 0.40 MB | both |
 
 ## 4. What a table would cost
@@ -116,7 +116,7 @@ considering:
   Units, the Refresh Counters bookkeeping), every script in `tools/`, and any third-party tool.
   Unlike the flat chain and streaming changes, which left the grammar alone, this one would break
   all of them until updated.
-- **Compatibility.** Old engines cannot read the new files (as with `VOBS`); the version-mismatch
+- **Compatibility.** Old engines cannot read the new files (as with `!VOBS`); the version-mismatch
   warnings apply. Same one-way story as the other branches, but for a smaller gain.
 - **Memory and time.** None. Peak memory on load is already streamed (B1); the parsed trait
   objects are already shared per segment (B2, keyed by the same segment strings a table would
@@ -156,7 +156,7 @@ memory.
 - **Dependency.** The JDK has no LZMA. `XZ for Java` (Tukaani, public domain, ~120 KB, pure
   Java, no native code, the library `commons-compress` delegates to) is the natural choice. A
   pure-Java dependency does not disturb the `jlink`ed runtimes.
-- **Compatibility.** The same one-way story as `VOBS`: new engines read old and new, old cannot
+- **Compatibility.** The same one-way story as `!VOBS`: new engines read old and new, old cannot
   read new. External readers need the codec, not a new grammar — this utility already switches
   on the payload header and would gain a fourth case.
 - **Generality.** It helps every module, every log, and every save regardless of style, and it
@@ -169,7 +169,7 @@ memory.
    large enough to see one piece's prototype run from the next, and it costs a new grammar that
    every reader of saved games would have to learn.
 2. **Get C2's payoff by compression instead**: an LZMA (xz) payload for the `savedGame` entry,
-   header-versioned like `VOBS`. Measured: today's 17 MB deflated log becomes 0.66 MB on the
+   header-versioned like `!VOBS`. Measured: today's 17 MB deflated log becomes 0.66 MB on the
    nested text and 0.44 MB on the flat text, against 0.68 MB for the best table. Preset by the
    timing table above; preset 6 unless its compression time on the largest games is
    unacceptable, in which case preset 3 still captures the sharing.

@@ -236,7 +236,7 @@ independent of the escaping scheme — see [vassal-sequence-fix-comparison.md](v
 | **3.8+ engine** | reads (unchanged algorithm path) | reads |
 | **3.7 and earlier** | reads | **cannot read** — `createPiece` takes the first two tokens and fails on the second; the player gets the existing *"saved game was created with a later version"* chat warning (`GameState.java:689-693`) plus per-piece bad-data reports |
 
-This is the same one-way compatibility VASSAL accepted for `VOBS` in 3.8
+This is the same one-way compatibility VASSAL accepted for `!VOBS` in 3.8
 ([wif-engine-optimizations.md A1](wif-engine-optimizations.md#a1-stop-writing-the-obfuscated-data-in-hex--2-disk---merged-vobs)):
 new engines read everything, old engines cannot read new data. Additionally:
 
@@ -286,7 +286,7 @@ The 121.5 MB of backslashes is exactly the figure in the original analysis, and 
 goes away. The compressed size falls by more than the byte count alone would give, because
 the backslash runs were incompressible noise between otherwise repetitive trait segments.
 
-The `.vsav` on disk is the ZIP's DEFLATE of the (`VOBS`, XOR-only) command log, so the gzip
+The `.vsav` on disk is the ZIP's DEFLATE of the (`!VOBS`, XOR-only) command log, so the gzip
 column is the on-disk effect. Memory follows the plaintext column: `GameState.lastSave`,
 `saveString()` and the decode-side `IOUtils.toString` all hold the whole log as one `String`.
 

@@ -151,7 +151,7 @@ Three forms exist, told apart by the entry's leading magic bytes:
 
 | Header | Key | Payload | Written by |
 |---|---|---|---|
-| `VOBS` | 1 raw byte | plaintext XOR key, raw | VASSAL 3.8+ |
+| `!VOBS` | 1 raw byte | plaintext XOR key, raw | VASSAL 3.8+ |
 | `!VCSK` | 2 hex digits | 2 hex digits per XOR-ed byte | VASSAL through 3.7.x |
 | `!VCSZ` | 2 hex digits | as `!VCSK`, but the plaintext is deflated first | never released — see below |
 
@@ -161,15 +161,15 @@ all three and **preserves whichever format a file was opened with** when rewriti
 (`SavedGame.Obfuscation`, `SavedGame.open()` / `getObfuscation()` /
 `writeObfuscated()`; likewise `tools/swap_maps.py`).
 
-#### `VOBS` — the current format (VASSAL 3.8+)
+#### `!VOBS` — the current format (VASSAL 3.8+)
 
 ```
-VOBS <K> <P><P><P>...
-└─┬┘ └┬┘ └───┬────┘
+!VOBS <K> <P><P><P>...
+└──┬─┘ └┬┘ └───┬────┘
 head key  payload
 ```
 
-1. The literal ASCII header **`VOBS`** (4 bytes).
+1. The literal ASCII header **`!VOBS`** (5 bytes). (The change that introduced the format used `VOBS`; the leading `!` was added upstream before release, in commit `b70f881e6`, to match the other headers. This utility looked for the four-byte form until 29 September 2026 and would have rejected real 3.8 saves.)
 2. A single random **key byte**, written **raw** (1 byte). The key is chosen in
    1–255: XOR-ing with 0 would leave the data in plain text.
 3. The plaintext (the UTF-8 command-log string) byte by byte, each byte
@@ -185,7 +185,7 @@ what the hex encoding used to defeat. On the same 1.51 MB command log, the
 |---|---:|---:|
 | `!VCSK` | 3,021,755 | 253,459 |
 | `!VCSZ` | 296,237 | 162,150 |
-| `VOBS` | 1,510,879 | **150,832** |
+| `!VOBS` | 1,510,879 | **150,832** |
 
 Relevant source: `ObfuscatingOutputStream.java` (`HEADER_BYTES = { 'V', 'O', 'B', 'S' }`,
 constructor + `write`), `DeobfuscatingInputStream.DeobfuscatingInputStreamImpl`.
@@ -194,9 +194,9 @@ constructor + `write`), `DeobfuscatingInputStream.DeobfuscatingInputStreamImpl`.
 
 ```python
 data = open("savedGame", "rb").read()          # the raw ZIP entry
-assert data[:4] == b"VOBS"
-key = data[4]
-plaintext = bytes(b ^ key for b in data[5:]).decode("utf-8")
+assert data[:5] == b"!VOBS"
+key = data[5]
+plaintext = bytes(b ^ key for b in data[6:]).decode("utf-8")
 ```
 
 #### `!VCSK` — the legacy hex format (through VASSAL 3.7.x)
@@ -249,7 +249,7 @@ Identical to `!VCSK` except that the plaintext is **deflated (zlib, level 9) bef
 the XOR-hex encoding, so the hex doubling applies to the ~12× smaller deflate output
 instead of the raw command log. This was the first attempt at the problem (see
 [wif-engine-optimizations.md §A1](wif-engine-optimizations.md)) and was **abandoned in
-favour of `VOBS`**, which gets the same saving — a little more of it — by letting the
+favour of `!VOBS`**, which gets the same saving — a little more of it — by letting the
 ZIP compress a payload it can actually read, with no second compression pass and no
 hex at all. It reached no VASSAL release, but saves in it exist (written by a build of
 that branch, or by this utility rewriting one), and VASSAL still reads it, so this
@@ -414,8 +414,8 @@ A `.vsav` is not standalone: loading it requires the module named in its `module
 | Entry — game state | `savedGame` | `GameState.java:1264` |
 | Entry — save meta | `savedata` | `SaveMetaData.java:66` |
 | Entry — module meta | `moduledata` | `ModuleMetaData.java:51` |
-| Obfuscation header | `VOBS` (3.8+) / `!VCSK` (through 3.7.x) / `!VCSZ` (unreleased) | `ObfuscatingOutputStream.java` (`HEADER_BYTES`/`HEADER`) |
-| Obfuscation | `VOBS`: header + 1 raw key byte + each byte XOR key, raw. `!VCSK`/`!VCSZ`: header + 2-hex key + 2-hex-per-byte XOR, lowercase (`!VCSZ` deflates the plaintext first) | `ObfuscatingOutputStream.java`, `DeobfuscatingInputStream.java` |
+| Obfuscation header | `!VOBS` (3.8+) / `!VCSK` (through 3.7.x) / `!VCSZ` (unreleased) | `ObfuscatingOutputStream.java` (`HEADER_BYTES`/`HEADER`) |
+| Obfuscation | `!VOBS`: header + 1 raw key byte + each byte XOR key, raw. `!VCSK`/`!VCSZ`: header + 2-hex key + 2-hex-per-byte XOR, lowercase (`!VCSZ` deflates the plaintext first) | `ObfuscatingOutputStream.java`, `DeobfuscatingInputStream.java` |
 | Payload charset | UTF-8 | `GameState.java:1374, 1635` |
 | Command separator | `0x1B` (ESC, `KeyEvent.VK_ESCAPE`) | `GameModule.java:232` |
 | Save-block markers | `begin_save` / `end_save` | `GameState.java:1328-1329` |

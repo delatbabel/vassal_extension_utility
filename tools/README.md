@@ -33,7 +33,7 @@ The saved-game scripts work the way `model/SavedGame` does (see
 [docs/vsav-excess-units.md](../docs/vsav-excess-units.md)):
 
 - the `savedGame` entry is deobfuscated whole, in any of the three formats VASSAL
-  has written — `VOBS` (a raw key byte + raw XOR, VASSAL 3.8+), `!VCSK` (2-hex key
+  has written — `!VOBS` (a raw key byte + raw XOR, VASSAL 3.8+), `!VCSK` (2-hex key
   + XOR-hex, through 3.7.x) and the unreleased `!VCSZ` (XOR-hex of the deflated
   plaintext). `read_vsav()` returns the format it found and `write_vsav()` re-emits
   it, so a rewrite never converts a save between formats — see

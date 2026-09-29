@@ -43,7 +43,7 @@ Also: two `System.err.println` in the length path (on the WiF save that is ~1.5 
 
 ### Measured on a real save (WiF, 8 855 pieces, 87.6 traits each)
 
-Command log re-encoded piece by piece under each scheme; gzip −9 is what the `.vsav` stores (post-`VOBS` the ZIP deflates the XOR-ed plaintext).
+Command log re-encoded piece by piece under each scheme; gzip −9 is what the `.vsav` stores (post-`!VOBS` the ZIP deflates the XOR-ed plaintext).
 
 | Encoding | Plaintext | gzip −9 |
 |---|---:|---:|
@@ -70,7 +70,7 @@ Worth deciding, not strictly blocking:
 
 - [ ] Also length-prefix a token that **ends** with `\` (and, since the old quote rule is gone, one that **starts** with `\`); that finally closes the 2006 ambiguity for newly written data, at no cost.
 - [ ] Consider **logging rather than throwing** for an ugly delimiter, or at least document it in the change log: it turns a working custom class into a crash at construction.
-- [ ] Document the format change explicitly. This alters the byte grammar of *every* `SequenceEncoder` output wherever a token contains its delimiter — module and extension files, saves, logs, chat/server protocol, preferences — so every external reader (module tools, save-file scripts, the server if it ever parses fields) must learn `RS<len>RS`. That is a larger compatibility footprint than the flat framing, whose grammar is unchanged. As with `VOBS`, older engines cannot read the new files; the existing version-mismatch warnings apply.
+- [ ] Document the format change explicitly. This alters the byte grammar of *every* `SequenceEncoder` output wherever a token contains its delimiter — module and extension files, saves, logs, chat/server protocol, preferences — so every external reader (module tools, save-file scripts, the server if it ever parses fields) must learn `RS<len>RS`. That is a larger compatibility footprint than the flat framing, whose grammar is unchanged. As with `!VOBS`, older engines cannot read the new files; the existing version-mismatch warnings apply.
 - [ ] Note the size result honestly: ~1.5× smaller on disk for the large-piece case, vs ~2.75× for the flat framing, because the prefixes are incompressible per-piece noise. Decoding is also still N-deep recursion with an O(N·L) remainder copy per level; the length prefix does not change that.
 
 ## (2) If `feature/flat-trait-chain-encoding` is merged alongside `fix_sequences`

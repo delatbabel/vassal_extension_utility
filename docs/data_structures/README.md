@@ -26,7 +26,7 @@ All three are ZIP archives whose payload is one XML or text document plus assets
 | | `.vmod` | `.vmdx` | `.vsav` |
 |---|---|---|---|
 | Main entry | `buildFile.xml` | `buildFile.xml` | `savedGame` |
-| Root / envelope | `<VASSAL.build.GameModule>` | `<VASSAL.build.module.ModuleExtension>` | `VOBS` / `!VCSK` / `!VCSZ` obfuscation |
+| Root / envelope | `<VASSAL.build.GameModule>` | `<VASSAL.build.module.ModuleExtension>` | `!VOBS` / `!VCSK` / `!VCSZ` obfuscation |
 | Metadata entries | `moduledata` | `moduledata`, `extensiondata` | `moduledata`, `savedata` |
 | Assets | `images/`, root-level `*.vsav` | `images/`, root-level `*.vsav` | none |
 | Payload encoding | XML | XML | `SequenceEncoder` text, ESC-delimited |

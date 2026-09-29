@@ -9,7 +9,7 @@ module‑side changes (no engine change needed) are in
 These are proposals for the VASSAL engine maintainers. They are ordered by **effort vs. payoff**:
 the first two are small (A2 is fully format‑compatible; A1 adds a new, backward‑readable
 `savedGame` encoding); the rest are larger and (mostly) require a save‑format version bump.
-**A1 and A2 are now implemented** in `../vassal` — A1 is merged to `master` (as `VOBS`,
+**A1 and A2 are now implemented** in `../vassal` — A1 is merged to `master` (as `!VOBS`,
 after a first attempt, `!VCSZ`, was abandoned); see each section. All line numbers are from the current `../vassal` checkout and should be re‑confirmed
 before editing.
 
@@ -17,7 +17,7 @@ before editing.
 
 ## Tier A — small, format‑preserving, ship‑anytime
 
-### A1. Stop writing the obfuscated data in hex — **~2× disk** — ✅ MERGED (`VOBS`)
+### A1. Stop writing the obfuscated data in hex — **~2× disk** — ✅ MERGED (`!VOBS`)
 
 **Problem.** The save path obfuscates the command log **before** the ZIP compresses it.
 `ObfuscatingOutputStream` emits **two ASCII hex chars per byte** (`ObfuscatingOutputStream.java:82‑88`),
@@ -40,21 +40,21 @@ hex‑doubling then applied to ~18 MB instead of ~223 MB. This lives on branch
 released**: it kept the hex encoding — the actual defect — and paid for a second
 compression pass to work around it.
 
-**What shipped instead — drop the hex encoding (`VOBS`).** Merged to `master` in
+**What shipped instead — drop the hex encoding (`!VOBS`).** Merged to `master` in
 [vassalengine/vassal#15060](https://github.com/vassalengine/vassal/pull/15060) (branch
 `feature/drop-writing-data-in-hex`):
 
-- `ObfuscatingOutputStream` writes a 4‑byte **`VOBS`** header (`HEADER_BYTES`), then the
+- `ObfuscatingOutputStream` writes a 4‑byte **`!VOBS`** header (`HEADER_BYTES`), then the
   one‑byte key **raw**, then each plaintext byte XOR‑ed with the key, **raw** — no hex, no
   deflate. The payload is now the same size as the plaintext, and the ZIP entry's own
   DEFLATE compresses it as well as it would the plaintext, which is all the `!VCSZ` detour
   was buying. Measured on a 1.51 MB command log, the `savedGame` entry stores in 150,832
-  bytes as `VOBS` against 162,150 as `!VCSZ` and 253,459 as `!VCSK`.
-- `DeobfuscatingInputStream` dispatches on the header: `VOBS` → raw key + raw XOR; the
+  bytes as `!VOBS` against 162,150 as `!VCSZ` and 253,459 as `!VCSK`.
+- `DeobfuscatingInputStream` dispatches on the header: `!VOBS` → raw key + raw XOR; the
   legacy `!VCSK` → unhex + XOR (`LegacyDeobfuscatingInputStreamImpl`); anything else is
   still passed through as plain text. The `.vsav` remains an ordinary ZIP — the change is
   confined to the `savedGame` entry's payload, so WinZip‑style tools are unaffected.
-- Compatibility: new engines read old and new saves; **old engines cannot read `VOBS`
+- Compatibility: new engines read old and new saves; **old engines cannot read `!VOBS`
   saves**. The obfuscation (anti‑casual‑cheat) intent is preserved — only its encoding
   changed.
 
@@ -68,8 +68,8 @@ intent):
 
 **This utility** has been updated to match: `model/SavedGame` recognises all three headers
 when opening a `.vsav` (`SavedGame.Obfuscation`), and every rewrite (Excess Units,
-`PreservedState.restore`) re‑emits the **same format the file was opened with** — `VOBS`
-in, `VOBS` out; `!VCSK` in, `!VCSK` out; `!VCSZ` in, `!VCSZ` out. `tools/swap_maps.py`
+`PreservedState.restore`) re‑emits the **same format the file was opened with** — `!VOBS`
+in, `!VOBS` out; `!VCSK` in, `!VCSK` out; `!VCSZ` in, `!VCSZ` out. `tools/swap_maps.py`
 does the same. (The Refresh Counters feature saves through whatever engine is installed,
 so its output format follows that engine's version.)
 
@@ -224,8 +224,9 @@ disk from ~18.8 → ~6.3 MB in the de‑obfuscated case (a further ~3×). **Effo
 > table (this item as written) saves 4 % on the WiF game, whose pieces are mostly one of a kind;
 > a trait-segment table saves 10× — but xz on the unchanged text saves the same 10× (17 MB →
 > 0.66 MB today, 7.0 MB → 0.44 MB with the flat chain) with no change to the command grammar.
-> Recommendation: an LZMA payload header-versioned like `VOBS`, not a table. The original text
-> follows.
+> Recommendation: an LZMA payload header-versioned like `!VOBS`, not a table — now implemented
+> on `feature/switch-compressor-to-xz`, see [vassal-xz-payload.md](vassal-xz-payload.md). The
+> original text follows.
 
 **Problem.** One `AddPiece` per piece with **no dedup** (`GameState.java:1609`); identical
 counters re‑emit identical multi‑KB type strings. 8 855 pieces collapse to 5 601 distinct shapes
@@ -254,7 +255,7 @@ completeness; **C1 + C2 are the better targets.**
 ## Recommended sequence
 
 1. **A2** (level 9) — ✅ merged upstream ([PR #15032](https://github.com/vassalengine/vassal/pull/15032)).
-2. **A1** (drop the hex encoding, `VOBS`) — ✅ merged to `master`
+2. **A1** (drop the hex encoding, `!VOBS`) — ✅ merged to `master`
    (`feature/drop-writing-data-in-hex`, PR #15060); the first attempt
    (`feature/compress-then-obfuscate-vsav-file`, `!VCSZ`) and options 2 and 3 discarded.
 3. **B1** (streaming) — ✅ done (`feature/stream-save-and-load`, see
@@ -265,7 +266,7 @@ completeness; **C1 + C2 are the better targets.**
 5. **C1** — ✅ done (`feature/flat-trait-chain-encoding`, see
    [vassal-flat-trait-chain.md](vassal-flat-trait-chain.md)); it needed no format version:
    the decoders read both framings, and the one-way compatibility (old engines cannot read
-   new data) is the same as `VOBS`. Then **C2**, which would still need a versioned opcode.
+   new data) is the same as `!VOBS`. Then **C2**, which would still need a versioned opcode.
 
 Tiers A–B deliver real wins with no disk‑format break and pair well with the module‑side fixes
 in [wif-module-optimizations.md](wif-module-optimizations.md); Tier C is where the order‑of‑magnitude

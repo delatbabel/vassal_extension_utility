@@ -13,7 +13,7 @@ ESC = 0x1B
 # The three obfuscation formats of the savedGame entry, identified by header.
 # The header bytes double as the format token that read_vsav returns and
 # obfuscate()/write_vsav() take, so a rewrite re-emits the format it read.
-RAW = b'VOBS'            # 1 raw key byte, then XOR(plaintext, key) raw (VASSAL 3.8+)
+RAW = b'!VOBS'            # 1 raw key byte, then XOR(plaintext, key) raw (VASSAL 3.8+)
 HEX = b'!VCSK'           # 2-hex key, then hex(XOR(plaintext, key)) (through 3.7.x)
 HEX_DEFLATED = b'!VCSZ'  # as HEX, but the plaintext is deflated first (abandoned)
 FORMATS = (RAW, HEX, HEX_DEFLATED)
@@ -35,7 +35,7 @@ def read_vsav(path):
     fmt = next((f for f in FORMATS if raw[:len(f)] == f), None)
     if fmt is None:
         raise SystemExit(
-            f'{path}: savedGame is not obfuscated (VOBS/!VCSK/!VCSZ missing)')
+            f'{path}: savedGame is not obfuscated (!VOBS/!VCSK/!VCSZ missing)')
     if fmt == RAW:
         key, body = raw[4], raw[5:]
     else:

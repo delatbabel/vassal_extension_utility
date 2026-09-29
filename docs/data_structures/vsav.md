@@ -46,7 +46,7 @@ editor. Three formats exist, told apart by the entry's leading magic bytes.
 
 | Format | Magic | Key | Payload | Written by |
 |---|---|---|---|---|
-| `RAW` | `VOBS` | 1 raw byte | plaintext XOR key, raw | VASSAL 3.8+ |
+| `RAW` | `!VOBS` | 1 raw byte | plaintext XOR key, raw | VASSAL 3.8+ |
 | `HEX` | `!VCSK` | 2 hex digits | 2 hex digits per XOR-ed byte | through VASSAL 3.7.x |
 | `HEX_DEFLATED` | `!VCSZ` | 2 hex digits | as `HEX`, but the plaintext is deflated first | a pre-release 3.8 branch; never shipped |
 
@@ -60,10 +60,10 @@ The layout of a `!VCSK` entry, from the sample save:
 `!VCSK`, then the key `f5`, then two hex characters per plaintext byte.
 
 **Why the format changed.** The hex encoding doubles the payload into a
-16-symbol alphabet, which the ZIP's own deflate can do very little with. `VOBS`
+16-symbol alphabet, which the ZIP's own deflate can do very little with. `!VOBS`
 XORs raw bytes and lets the ZIP layer compress normally. In the sample save:
 7362 plaintext bytes become 14731 hex bytes, which deflate to 1693 — the same
-plaintext written as `VOBS` would deflate far better because the compressor sees
+plaintext written as `!VOBS` would deflate far better because the compressor sees
 the real byte distribution.
 
 **A rewrite must preserve the format it read.** This project tracks the format
