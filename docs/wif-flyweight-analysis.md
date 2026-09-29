@@ -80,11 +80,14 @@ Where the 308 MB goes (WiF; Europa in the same proportions bar images):
 
 Two findings follow directly from the histogram:
 
-- **The "smaller increment" of B2 — interning the duplicated strings — is already done.**
-  `SequenceEncoder.Decoder.nextToken()` interns every token, so every field of every trait, the
-  `markerSpec` of a `PlaceMarker` and the raw type of a `UsePrototype` included, is one shared
-  `String` across all pieces. That is why strings are 7 % of the piece heap, not the majority.
-  There is nothing left to gain there; the item should be dropped from the plan.
+- **The "smaller increment" of B2 — interning the duplicated strings — was already in the
+  engine when it was proposed.** `SequenceEncoder.Decoder.nextToken()` has interned every token
+  since VASSAL commit `9c3b4ce2b` of 10 March 2021 ("Intern some highly-duplicated strings",
+  VASSAL 3.5), so every field of every trait, the `markerSpec` of a `PlaceMarker` and the raw
+  type of a `UsePrototype` included, is one shared `String` across all pieces. The bloat
+  analysis did not notice this and proposed it as new work; nothing was changed by this
+  project. It is why strings are 7 % of the piece heap rather than the majority, and the item
+  is marked complete in [wif-engine-optimizations.md](wif-engine-optimizations.md#b2-flyweight-prototype-expansion--share-immutable-trait-data-across-instances--measured).
 - **The cost is objects built from those strings**, and it is dominated by parsing artefacts:
   a `FormattedString` for every message and property format, a `PropertyExpression` for every
   match expression, a `NamedKeyStroke[]` and a `KeyCommand` per menu entry, a `HashMap` per
@@ -102,7 +105,7 @@ a few fields — a layer's current level, a marker's value, a property's value, 
 list, the footprint — that `mySetState` fills in. So the shared part of a flyweight is bounded
 by the *distinct* population's heap, and the per-instance residue is what cannot be shared.
 
-**(a) String interning** — nothing; already effective (§2).
+**(a) String interning** — nothing to gain; it has been in the engine since 2021 (§2).
 
 **(b) Whole-piece flyweight**, keyed on the complete type chain, the simplest to build:
 

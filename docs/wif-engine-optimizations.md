@@ -142,8 +142,8 @@ module.
 ### B2. Flyweight prototype expansion — share immutable trait data across instances — 📐 MEASURED
 
 > Measured on a legacy-style (WiF) and a modern-style (Europa) game in
-> **[wif-flyweight-analysis.md](wif-flyweight-analysis.md)**: the string-interning increment is
-> already effective (strings are 7 % of the piece heap; the decoder interns every token); a
+> **[wif-flyweight-analysis.md](wif-flyweight-analysis.md)**: the string-interning increment
+> turns out to have been in the engine since 2021 (see below; strings are 7 % of the piece heap); a
 > whole-piece flyweight saves 14 % on WiF and 85 % on Europa; only a trait-level flyweight
 > reaches WiF's 250 MB (80–85 %) and its load time. Cheaper first steps: stop building Swing
 > configurers per trait instance (17 %), share parsed expressions (15 %) and key strokes (16 %).
@@ -163,7 +163,13 @@ identical across pieces sharing a prototype (it's the deterministic, prototype�
 `getType()`), so this is a pure heap win with no behaviour change — but it is a substantial
 refactor of the `Decorator` hierarchy and `PieceCloner`.
 
-**Change (smaller, incremental).** Intern/​canonicalise the obviously‑duplicated large strings:
+**Change (smaller, incremental) — ✅ ALREADY DONE (VASSAL 3.5, 2021).** *Correction: this was
+proposed without noticing that `SequenceEncoder.Decoder.nextToken()` already interns every token
+it returns — added in VASSAL commit `9c3b4ce2b`, 10 March 2021, "Intern some highly‑duplicated
+strings" — so every trait field, `markerSpec` and raw prototype type is already one shared
+`String` per distinct value. Nothing was changed by this project; measured in
+[wif-flyweight-analysis.md](wif-flyweight-analysis.md), strings are 7 % of the piece heap.
+The original text follows.* Intern/​canonicalise the obviously‑duplicated large strings:
 `PlaceMarker.markerSpec` (`PlaceMarker.java:104`) and `UsePrototype`'s raw type are byte‑identical
 across all instances of a definition but never shared — route them through a canonical‑string
 cache so all instances point at one copy.
@@ -243,7 +249,9 @@ completeness; **C1 + C2 are the better targets.**
    (`feature/compress-then-obfuscate-vsav-file`, `!VCSZ`) and options 2 and 3 discarded.
 3. **B1** (streaming) — ✅ done (`feature/stream-save-and-load`, see
    [vassal-stream-save-and-load.md](vassal-stream-save-and-load.md)).
-4. **B2 string‑interning increment** — cheap heap win now; full flyweight later.
+4. **B2 string‑interning increment** — ✅ already in the engine since 2021 (see B2); the
+   measured next steps are the per‑instance configurers and shared parsed expressions in
+   [wif-flyweight-analysis.md §4](wif-flyweight-analysis.md); full flyweight later.
 5. **C1** — ✅ done (`feature/flat-trait-chain-encoding`, see
    [vassal-flat-trait-chain.md](vassal-flat-trait-chain.md)); it needed no format version:
    the decoders read both framings, and the one-way compatibility (old engines cannot read
