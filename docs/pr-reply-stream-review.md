@@ -2,7 +2,7 @@
 
 **`GameState.java` — "Would it make sense to have the message digest as a member and reset it with each use?"**
 
-Yes — done. One `MessageDigest` per `GameState`, created on first use and `reset()` before each, shared by `saveDigest()` and `writeGameFile()`. Both run on the EDT, so there is no contention on it; `writeGameFile` became an instance method for that reason (the logger reaches it through the game state).
+Yes — done. One `MessageDigest` per `GameState`, created on first use and `reset()` before each, shared by `saveDigest()` and `writeGameFile()`. Both run on the EDT, so there is no contention on it; `writeGameFile` became an instance method for that reason (the logger reaches it through the game state). PMD's `AvoidMessageDigestField` rule objects to any `MessageDigest` field on thread-safety grounds; it is suppressed at the field with that EDT justification in the comment.
 
 **"The temp dir is available from `Info.getTempDir()` / `Config.tempDir()`" and "`Files.createTempFile` is typically what we use"**
 
