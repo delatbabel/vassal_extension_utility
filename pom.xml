@@ -62,6 +62,18 @@
             <artifactId>flatlaf</artifactId>
             <version>3.7.2</version>
         </dependency>
+        <!--
+          XZ for Java: the LZMA2 codec VASSAL uses for the savedGame entry's
+          "!VOXZ" payload (vassal feature/switch-compressor-to-xz). Pure Java,
+          0BSD, no native code, needs only java.base, so the packaged runtimes
+          are unaffected. It is the same artifact the engine depends on, and a
+          separate codebase from the xz-utils C library of the 2024 backdoor.
+        -->
+        <dependency>
+            <groupId>org.tukaani</groupId>
+            <artifactId>xz</artifactId>
+            <version>1.12</version>
+        </dependency>
     </dependencies>
 
     <!--

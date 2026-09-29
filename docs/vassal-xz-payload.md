@@ -87,9 +87,11 @@ weeks by a Postgres developer investigating why `sshd` had become slow.
 
 - New engines read every format; older engines cannot read `!VOXZ` saves and logs, exactly as
   they cannot read `!VOBS` — the existing version-mismatch warnings apply.
-- **This utility and its scripts** (`model/SavedGame`, `tools/*.py`) recognise `!VCSK`, `!VCSZ`
-  and `!VOBS`; they need a fourth case for `!VOXZ` (Java: the same `org.tukaani:xz` dependency;
-  Python: the standard `lzma` module). That is a follow-up in this repository.
+- **This utility and its scripts** read and re-emit `!VOXZ` alongside the other three
+  (`SavedGame.Obfuscation.XZ`, with the same `org.tukaani:xz` dependency and preset;
+  `tools/swap_maps.py` and the scripts built on it with Python's `lzma`). Verified both ways:
+  the utility rewrites the engine's file to a byte-identical command log in 3.7 s, and the
+  engine loads the utility's file and saves it to a byte-identical log again.
 - Memory: the decoder needs about the dictionary size, 4 MB; the encoder about 30 MB while a save
   is written.
 

@@ -30,6 +30,10 @@ import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.Inflater;
+
+import org.tukaani.xz.LZMA2Options;
+import org.tukaani.xz.XZInputStream;
+import org.tukaani.xz.XZOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -80,6 +84,15 @@ public class SavedGame {
      */
     public enum Obfuscation {
         /**
+         * {@code !VOXZ} + a one-byte key + the <em>XZ-compressed</em> (LZMA2)
+         * plaintext XOR-ed with it, all raw — what VASSAL's
+         * {@code ObfuscatingOutputStream} writes from the {@code switch-compressor-to-xz}
+         * change: a long-window compressor sees the same prototype traits repeated in
+         * piece after piece, which the ZIP entry's 32 KB deflate window cannot, so a
+         * large game's entry is twenty times smaller than as {@link #RAW}.
+         */
+        XZ("!VOXZ", 1),
+        /**
          * {@code !VOBS} + a one-byte key + the plaintext XOR-ed with it, all raw —
          * what VASSAL's {@code ObfuscatingOutputStream} writes from 3.8. The ZIP
          * entry's own deflate then compresses it, which is the point of the change:
@@ -113,11 +126,17 @@ public class SavedGame {
         }
 
         /** Whether the key and payload are hex-encoded rather than raw bytes. */
-        boolean isHex() { return this != RAW; }
+        boolean isHex() { return this == HEX || this == HEX_DEFLATED; }
 
         /** Whether the plaintext is deflated inside the obfuscation. */
         boolean isDeflated() { return this == HEX_DEFLATED; }
+
+        /** Whether the plaintext is XZ-compressed inside the obfuscation. */
+        boolean isXz() { return this == XZ; }
     }
+
+    /** The LZMA2 preset VASSAL writes {@code !VOXZ} with: a 4 MB dictionary, the fast match finder. */
+    private static final int XZ_PRESET = 3;
 
     /** Top-level command separator in the deobfuscated log (ESC / {@code KeyEvent.VK_ESCAPE}). */
     private static final byte CMD_DELIM = 0x1b;
@@ -203,11 +222,12 @@ public class SavedGame {
             final Obfuscation fmt = obfuscationOf(raw);
             if (fmt == null) {
                 throw new IOException(
-                        "Not an obfuscated VASSAL saved game (missing !VOBS/!VCSK/!VCSZ header): "
+                        "Not an obfuscated VASSAL saved game (missing !VOXZ/!VOBS/!VCSK/!VCSZ header): "
                         + f.getName());
             }
             byte[] plain = deobfuscate(raw, fmt, f);
             if (fmt.isDeflated()) plain = inflate(plain, f);
+            else if (fmt.isXz()) plain = unxz(plain, f);
 
             return new SavedGame(f,
                     md, moduleData == null ? -1L : moduleData.getTime(),
@@ -280,6 +300,15 @@ public class SavedGame {
             out[i] = (byte) (((hexVal(raw[j]) << 4) | hexVal(raw[j + 1])) ^ key);
         }
         return out;
+    }
+
+    /** Decompresses the deobfuscated payload of a {@code !VOXZ} entry. */
+    private static byte[] unxz(byte[] data, java.io.File f) throws IOException {
+        try (XZInputStream in = new XZInputStream(new java.io.ByteArrayInputStream(data))) {
+            return in.readAllBytes();
+        } catch (IOException e) {
+            throw new IOException("Corrupt XZ savedGame entry: " + f.getName() + " (" + e.getMessage() + ")", e);
+        }
     }
 
     /** Inflates the deobfuscated payload of a {@code !VCSZ} entry. */
@@ -934,8 +963,9 @@ public class SavedGame {
 
     /**
      * Streams the surviving command tokens through the VASSAL obfuscation, in the
-     * <em>same format the file was opened with</em>: {@code !VOBS} (header + a
-     * random one-byte key + the plaintext XOR-ed with it, raw), {@code !VCSK} (the
+     * <em>same format the file was opened with</em>: {@code !VOXZ} (header + a
+     * random one-byte key + the XZ-compressed plaintext XOR-ed with it, raw),
+     * {@code !VOBS} (the same without the compression), {@code !VCSK} (the
      * key as 2 hex digits and each plaintext byte as 2 more), or {@code !VCSZ} (the
      * hex encoding of the <em>deflated</em> plaintext). Each removed token is
      * dropped together with its preceding delimiter, and each kept token is
@@ -966,7 +996,12 @@ public class SavedGame {
             sink.rawByte((byte) key);
         }
 
-        if (obfuscation.isDeflated()) {
+        if (obfuscation.isXz()) {
+            // The same preset the engine uses; the XOR sink beneath sees the compressed bytes.
+            final XZOutputStream xz = new XZOutputStream(sink, new LZMA2Options(XZ_PRESET));
+            emitCommands(xz, removeIndices, insertBefore, insertContents, replacements);
+            xz.finish();   // never close() — that would close the ZIP stream
+        } else if (obfuscation.isDeflated()) {
             final Deflater def = new Deflater(Deflater.BEST_COMPRESSION);
             try {
                 final DeflaterOutputStream dos = new DeflaterOutputStream(sink, def, 1 << 16);

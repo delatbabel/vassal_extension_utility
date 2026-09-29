@@ -7,23 +7,25 @@ Mirrors SavedGame.saveWithout(): verbatim token copy, ESC delimiters re-emitted
 unchanged, fresh obfuscation key, savedata/moduledata copied whole, output via
 temp file + atomic replace.
 """
-import os, random, sys, zipfile, zlib
+import lzma, os, random, sys, zipfile, zlib
 
 ESC = 0x1B
-# The three obfuscation formats of the savedGame entry, identified by header.
+# The four obfuscation formats of the savedGame entry, identified by header.
 # The header bytes double as the format token that read_vsav returns and
 # obfuscate()/write_vsav() take, so a rewrite re-emits the format it read.
-RAW = b'!VOBS'            # 1 raw key byte, then XOR(plaintext, key) raw (VASSAL 3.8+)
+XZ = b'!VOXZ'            # 1 raw key byte, then XOR(xz(plaintext), key) raw (VASSAL 3.8+, xz branch)
+RAW = b'!VOBS'           # 1 raw key byte, then XOR(plaintext, key) raw (VASSAL 3.8)
 HEX = b'!VCSK'           # 2-hex key, then hex(XOR(plaintext, key)) (through 3.7.x)
 HEX_DEFLATED = b'!VCSZ'  # as HEX, but the plaintext is deflated first (abandoned)
-FORMATS = (RAW, HEX, HEX_DEFLATED)
+FORMATS = (XZ, RAW, HEX, HEX_DEFLATED)
+XZ_PRESET = 3            # what the engine uses: a 4 MB dictionary, the fast match finder
 SAVED_GAME, SAVE_DATA, MODULE_DATA = 'savedGame', 'savedata', 'moduledata'
 
 
 def read_vsav(path):
     """-> (plaintext command log, {entry: (bytes, date_time)}, format token)
 
-    The format token is one of RAW / HEX / HEX_DEFLATED; pass it back to
+    The format token is one of XZ / RAW / HEX / HEX_DEFLATED; pass it back to
     write_vsav() so the save is rewritten in the format it was read in.
     """
     entries = {}
@@ -35,14 +37,17 @@ def read_vsav(path):
     fmt = next((f for f in FORMATS if raw[:len(f)] == f), None)
     if fmt is None:
         raise SystemExit(
-            f'{path}: savedGame is not obfuscated (!VOBS/!VCSK/!VCSZ missing)')
-    if fmt == RAW:
-        key, body = raw[4], raw[5:]
+            f'{path}: savedGame is not obfuscated (!VOXZ/!VOBS/!VCSK/!VCSZ missing)')
+    n = len(fmt)
+    if fmt in (RAW, XZ):
+        key, body = raw[n], raw[n + 1:]
     else:
-        key, body = int(raw[5:7], 16), bytes.fromhex(raw[7:].decode('ascii'))
+        key, body = int(raw[n:n + 2], 16), bytes.fromhex(raw[n + 2:].decode('ascii'))
     body = body.translate(bytes(i ^ key for i in range(256)))
     if fmt == HEX_DEFLATED:
         body = zlib.decompress(body)
+    elif fmt == XZ:
+        body = lzma.decompress(body)
     return body, entries, fmt
 
 
@@ -82,11 +87,16 @@ def board_picker_tokens(state, toks):
 
 
 def obfuscate(plain, key, fmt=RAW):
-    """Encodes the command log in one of RAW / HEX / HEX_DEFLATED."""
-    payload = zlib.compress(plain, 9) if fmt == HEX_DEFLATED else plain
+    """Encodes the command log in one of XZ / RAW / HEX / HEX_DEFLATED."""
+    if fmt == XZ:
+        payload = lzma.compress(plain, preset=XZ_PRESET)
+    elif fmt == HEX_DEFLATED:
+        payload = zlib.compress(plain, 9)
+    else:
+        payload = plain
     payload = payload.translate(bytes(i ^ key for i in range(256)))
     out = bytearray(fmt)
-    if fmt == RAW:
+    if fmt in (RAW, XZ):
         out.append(key)
         out += payload
     else:
