@@ -106,7 +106,13 @@ Implemented on branch `feature/raise-interactive-save-level` in `../vassal` (pus
 
 ## Tier B — memory / robustness (no disk‑format change)
 
-### B1. Stream the save/load instead of building a 222 MB `String`
+### B1. Stream the save/load instead of building a 222 MB `String` — ✅ IMPLEMENTED (`feature/stream-save-and-load`)
+
+> Implemented on branch `feature/stream-save-and-load` in `../vassal` (PR to be raised
+> manually); design, measurements and tests in **[vassal-stream-save-and-load.md](vassal-stream-save-and-load.md)**.
+> Peak heap for the 8 855-piece game falls from 3.2 GB to 1.2 GB on load and 2.7 GB to 1.25 GB
+> on save; save is 20 % faster, load within 2 %; output byte-identical. The original problem
+> statement follows.
 
 **Problem.** Both save and load materialise the *entire* command log as one Java `String`:
 
@@ -228,7 +234,8 @@ completeness; **C1 + C2 are the better targets.**
 2. **A1** (drop the hex encoding, `VOBS`) — ✅ merged to `master`
    (`feature/drop-writing-data-in-hex`, PR #15060); the first attempt
    (`feature/compress-then-obfuscate-vsav-file`, `!VCSZ`) and options 2 and 3 discarded.
-3. **B1** (streaming) — removes the OOM ceiling; enables even‑larger games regardless of the above.
+3. **B1** (streaming) — ✅ done (`feature/stream-save-and-load`, see
+   [vassal-stream-save-and-load.md](vassal-stream-save-and-load.md)).
 4. **B2 string‑interning increment** — cheap heap win now; full flyweight later.
 5. **C1** — ✅ done (`feature/flat-trait-chain-encoding`, see
    [vassal-flat-trait-chain.md](vassal-flat-trait-chain.md)); it needed no format version:
