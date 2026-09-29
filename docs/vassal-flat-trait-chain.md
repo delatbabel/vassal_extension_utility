@@ -5,7 +5,7 @@ This is the follow-up to [wif-save-bloat-analysis.md §3](wif-save-bloat-analysi
 [wif-engine-optimizations.md](wif-engine-optimizations.md#c1-eliminate-the-on-sequenceencoder-escaping).
 It records a second, exhaustive pass through the engine source in `../vassal` to find every
 piece of code that produces or consumes the escaped form of a game piece, and describes the
-change implemented on branch **`feature/flat-trait-chain-encoding`** in `../vassal`.
+change implemented on branch **`feature/flat-trait-chain-encoding`** in `../vassal` ([PR #15116](https://github.com/vassalengine/vassal/pull/15116)).
 
 The short version: **the quadratic growth is not a property of `SequenceEncoder` at all.**
 `SequenceEncoder` adds exactly one backslash per delimiter per level, and always has. The

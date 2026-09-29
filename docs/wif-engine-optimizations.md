@@ -83,7 +83,7 @@ high‑water mark.
 
 ---
 
-### A2. Raise the interactive‑save deflate level 6 → 9 — small, trivial — ✅ IMPLEMENTED
+### A2. Raise the interactive‑save deflate level 6 → 9 — small, trivial — ✅ MERGED
 
 **Problem.** Two different ZIP writers are used, at different compression levels:
 
@@ -99,8 +99,8 @@ Larger once combined with A1 (level 9 matters more on compressible plaintext).
 
 **Payoff.** Small. **Effort:** trivial, fully format‑compatible.
 
-Implemented on branch `feature/raise-interactive-save-level` in `../vassal` (pushed to the
-`delatbabel/vassal` fork; PR to be raised manually).
+✅ **Merged upstream** as [PR #15032](https://github.com/vassalengine/vassal/pull/15032) ("Use maximum compression for saves and logs"),
+from branch `feature/raise-interactive-save-level`.
 
 ---
 
@@ -108,8 +108,7 @@ Implemented on branch `feature/raise-interactive-save-level` in `../vassal` (pus
 
 ### B1. Stream the save/load instead of building a 222 MB `String` — ✅ IMPLEMENTED (`feature/stream-save-and-load`)
 
-> Implemented on branch `feature/stream-save-and-load` in `../vassal` (PR to be raised
-> manually); design, measurements and tests in **[vassal-stream-save-and-load.md](vassal-stream-save-and-load.md)**.
+> Implemented on branch `feature/stream-save-and-load` in `../vassal`, raised as [PR #15117](https://github.com/vassalengine/vassal/pull/15117); design, measurements and tests in **[vassal-stream-save-and-load.md](vassal-stream-save-and-load.md)**.
 > Peak heap for the 8 855-piece game falls from 3.2 GB to 1.2 GB on load and 2.7 GB to 1.25 GB
 > on save; save is 20 % faster, load within 2 %; output byte-identical. The original problem
 > statement follows.
@@ -141,7 +140,7 @@ module.
 
 ### B2. Flyweight prototype expansion — share immutable trait data across instances — ✅ IMPLEMENTED (`feature/share-immutable-trait-data`)
 
-> Implemented on branch `feature/share-immutable-trait-data` in `../vassal`: see
+> Implemented on branch `feature/share-immutable-trait-data` in `../vassal`, raised as [PR #15119](https://github.com/vassalengine/vassal/pull/15119); see
 > **[vassal-share-immutable-trait-data.md](vassal-share-immutable-trait-data.md)**. The parsed
 > objects of the heaviest traits are shared per type string through `TraitTypeCache`, and the
 > per-instance Swing configurers are gone; WiF piece heap 308 MB → 164 MB (47 %), Europa 13 → 9.5 MB.
@@ -193,8 +192,7 @@ remain compatible with **live network play** and **log replay**, which use the s
 
 ### C1. Eliminate the O(N²) `SequenceEncoder` escaping — ✅ IMPLEMENTED (`feature/flat-trait-chain-encoding`)
 
-> Implemented on branch `feature/flat-trait-chain-encoding` in `../vassal` (PR to be raised
-> manually). The design, the census of engine code that touches the chain, the compatibility
+> Implemented on branch `feature/flat-trait-chain-encoding` in `../vassal`, raised as [PR #15116](https://github.com/vassalengine/vassal/pull/15116). The design, the census of engine code that touches the chain, the compatibility
 > analysis and the measurements are in **[vassal-flat-trait-chain.md](vassal-flat-trait-chain.md)**.
 > The key finding, which changes the "Effort" estimate below from *high, invasive* to *small,
 > contained*: `SequenceEncoder` itself is linear and is **not modified**; the quadratic growth
@@ -220,7 +218,14 @@ non‑recursive framing) so nesting depth no longer multiplies escape characters
 disk from ~18.8 → ~6.3 MB in the de‑obfuscated case (a further ~3×). **Effort:** high, invasive
 (touches the encoder + every trait's expectations of the delimiter contract) and format‑breaking.
 
-### C2. Type‑table / definition dedup in the save
+### C2. Type‑table / definition dedup in the save — 📐 MEASURED, NOT RECOMMENDED AS A FORMAT CHANGE
+
+> Measured in **[vassal-type-table-analysis.md](vassal-type-table-analysis.md)**. A whole-piece
+> table (this item as written) saves 4 % on the WiF game, whose pieces are mostly one of a kind;
+> a trait-segment table saves 10× — but xz on the unchanged text saves the same 10× (17 MB →
+> 0.66 MB today, 7.0 MB → 0.44 MB with the flat chain) with no change to the command grammar.
+> Recommendation: an LZMA payload header-versioned like `VOBS`, not a table. The original text
+> follows.
 
 **Problem.** One `AddPiece` per piece with **no dedup** (`GameState.java:1609`); identical
 counters re‑emit identical multi‑KB type strings. 8 855 pieces collapse to 5 601 distinct shapes
@@ -248,7 +253,7 @@ completeness; **C1 + C2 are the better targets.**
 
 ## Recommended sequence
 
-1. **A2** (level 9) — ✅ done (`feature/raise-interactive-save-level`), PR pending.
+1. **A2** (level 9) — ✅ merged upstream ([PR #15032](https://github.com/vassalengine/vassal/pull/15032)).
 2. **A1** (drop the hex encoding, `VOBS`) — ✅ merged to `master`
    (`feature/drop-writing-data-in-hex`, PR #15060); the first attempt
    (`feature/compress-then-obfuscate-vsav-file`, `!VCSZ`) and options 2 and 3 discarded.

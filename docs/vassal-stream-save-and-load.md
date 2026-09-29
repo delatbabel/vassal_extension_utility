@@ -1,7 +1,7 @@
 # Streaming the saved-game command log — `feature/stream-save-and-load`
 
 Implements item **B1** of [wif-engine-optimizations.md](wif-engine-optimizations.md#b1-stream-the-saveload-instead-of-building-a-222-mb-string)
-on branch `feature/stream-save-and-load` in `../vassal`. The file format is unchanged; what
+on branch `feature/stream-save-and-load` in `../vassal` ([PR #15117](https://github.com/vassalengine/vassal/pull/15117)). The file format is unchanged; what
 changes is that the command log of a saved game or log file is never assembled as one Java
 `String` on the way out or on the way in, and is no longer retained for the session.
 

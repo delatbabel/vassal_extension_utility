@@ -3,7 +3,7 @@
 Implements item **B2** of [wif-engine-optimizations.md](wif-engine-optimizations.md#b2-flyweight-prototype-expansion--share-immutable-trait-data-across-instances--measured),
 in the form the measurements in [wif-flyweight-analysis.md](wif-flyweight-analysis.md) showed
 was worth having, together with the "cheaper fixes" that analysis found on the way. Branch
-`feature/share-immutable-trait-data` in `../vassal`, from `master` at `97e231720`.
+`feature/share-immutable-trait-data` in `../vassal`, raised as [PR #15119](https://github.com/vassalengine/vassal/pull/15119),, from `master` at `97e231720`.
 
 ---
 

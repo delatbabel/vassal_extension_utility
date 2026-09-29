@@ -24,12 +24,12 @@ cause now has a status callout in its section; this table is the summary.
 | Cause | Where the fix lives | Status | Measured effect |
 |---|---|---|---|
 | §2 Prototype expansion (~100–200 traits/piece) | **module** — [wif-module-optimizations.md Fix 2](wif-module-optimizations.md#fix-2--reduce-traits-per-piece-the-big-one), detailed in [wif-fix2-trait-reduction.md](wif-fix2-trait-reduction.md) | ⏳ **not started** in the module (2.1.4 still averages 113 traits/piece). In the **engine**, the per-instance *cost* of the expansion is attacked by B2, `feature/share-immutable-trait-data` ([vassal-share-immutable-trait-data.md](vassal-share-immutable-trait-data.md)) | engine: pieces' heap 308 MB → 164 MB, 8.9 M → 4.0 M objects, on the 7 072-piece game |
-| §3 O(N²) escaping | **engine** — `feature/flat-trait-chain-encoding` ([vassal-flat-trait-chain.md](vassal-flat-trait-chain.md)); compared with Joel Uckelman's `fix_sequences` in [vassal-sequence-fix-comparison.md](vassal-sequence-fix-comparison.md) | ✅ **implemented on branch**, PR to be raised | command log 223 MB → 105 MB; compressed 18.8 MB → 6.9 MB; 121.5 MB of backslashes → 3.3 MB |
+| §3 O(N²) escaping | **engine** — `feature/flat-trait-chain-encoding` ([vassal-flat-trait-chain.md](vassal-flat-trait-chain.md)); compared with Joel Uckelman's `fix_sequences` in [vassal-sequence-fix-comparison.md](vassal-sequence-fix-comparison.md) | ✅ **implemented on branch**, [PR #15116](https://github.com/vassalengine/vassal/pull/15116) | command log 223 MB → 105 MB; compressed 18.8 MB → 6.9 MB; 121.5 MB of backslashes → 3.3 MB |
 | §4 Embedded Place Marker | **module** — [wif-module-optimizations.md Fix 1](wif-module-optimizations.md#fix-1--convert-the-embedded-place-marker-to-a-reference--done-module-212) | ✅ **done in module 2.1.2**; baked copies remain in four older saves (a refresh cannot remove them) | 2 066 embedded definitions gone from new saves |
-| §5 Obfuscation hex-doubling | **engine** — A1 `VOBS` ([wif-engine-optimizations.md A1](wif-engine-optimizations.md#a1-stop-writing-the-obfuscated-data-in-hex--2-disk---merged-vobs)), A2 deflate level 9 (`feature/raise-interactive-save-level`) | ✅ **A1 merged upstream** (PR #15060, VASSAL 3.8); A2 on branch | ~1.8× smaller `.vsav`; this utility reads and re-emits all three formats |
-| §6 No dedup across identical pieces | **engine** — C2 (type table) | ⏳ **not started**; the flyweight (B2) shares the *objects* in memory but the save still repeats the text | — |
-| §7 Memory: the 223 MB `String` on save/load | **engine** — B1 `feature/stream-save-and-load` ([vassal-stream-save-and-load.md](vassal-stream-save-and-load.md)) | ✅ **implemented on branch** | peak heap on load 3.2 GB → 1.2 GB (loads inside 1.5 GB where `master` runs out); save 35 s → 28 s; output byte-identical |
-| §7 Memory: per-piece trait objects | **engine** — B2 (above); the "intern the strings" increment turned out to be in VASSAL since 2021 ([wif-flyweight-analysis.md](wif-flyweight-analysis.md)) | ✅ **implemented on branch** (share the parsed objects; configurer-free Dynamic Property) | as §2 row |
+| §5 Obfuscation hex-doubling | **engine** — A1 `VOBS` ([wif-engine-optimizations.md A1](wif-engine-optimizations.md#a1-stop-writing-the-obfuscated-data-in-hex--2-disk---merged-vobs)), A2 deflate level 9 | ✅ **both merged upstream** (A1 PR #15060, A2 [PR #15032](https://github.com/vassalengine/vassal/pull/15032); VASSAL 3.8) | ~1.8× smaller `.vsav`; this utility reads and re-emits all three formats |
+| §6 No dedup across identical pieces | **engine** — C2 (type table), measured in [vassal-type-table-analysis.md](vassal-type-table-analysis.md) | 📐 **measured, not recommended as a format change**: a whole-piece table saves 4 % on WiF, a trait table 10×, but an xz payload gets the same 10× with no grammar change | deflated log 17 MB → 0.66 MB (xz, today's text) / 0.44 MB (xz, flat) |
+| §7 Memory: the 223 MB `String` on save/load | **engine** — B1 `feature/stream-save-and-load` ([vassal-stream-save-and-load.md](vassal-stream-save-and-load.md)) | ✅ **implemented on branch**, [PR #15117](https://github.com/vassalengine/vassal/pull/15117) | peak heap on load 3.2 GB → 1.2 GB (loads inside 1.5 GB where `master` runs out); save 35 s → 28 s; output byte-identical |
+| §7 Memory: per-piece trait objects | **engine** — B2 (above); the "intern the strings" increment turned out to be in VASSAL since 2021 ([wif-flyweight-analysis.md](wif-flyweight-analysis.md)) | ✅ **implemented on branch**, [PR #15119](https://github.com/vassalengine/vassal/pull/15119) (share the parsed objects; configurer-free Dynamic Property) | as §2 row |
 
 All four engine branches (`feature/flat-trait-chain-encoding`, `feature/stream-save-and-load`,
 `feature/share-immutable-trait-data`, and `fix_sequences`) merge without conflicts; the one
@@ -107,7 +107,7 @@ member's "X + Y bytes" observation (piece + unrolled prototype) — confirmed an
 <a id="3-cause-2--sequenceencoder-escaping-is-otraits-per-piece"></a>
 ## 3. Cause #2 — SequenceEncoder escaping is **O(traits²)** per piece
 
-> **Status: ✅ implemented on `feature/flat-trait-chain-encoding`** (PR to be raised). The
+> **Status: ✅ implemented on `feature/flat-trait-chain-encoding`**, [PR #15116](https://github.com/vassalengine/vassal/pull/15116). The
 > growth was not in `SequenceEncoder` but in `Decorator.getType()`/`getState()` nesting the
 > whole inner piece as one escaped token per trait; the chain is now framed flat, old data still
 > decodes, `SequenceEncoder` is untouched. On the 002 game: 223 MB → 105 MB plaintext,
@@ -207,7 +207,7 @@ there is nothing to remove — which matches the user's own hunt through the mod
 
 > **Status: ✅ merged upstream** as the `VOBS` format (A1, PR #15060, VASSAL 3.8): the key and
 > the XOR-ed bytes are written raw, so the ZIP compresses them as well as the plaintext. A2
-> (deflate level 9 for interactive saves) is on `feature/raise-interactive-save-level`. This
+> (deflate level 9 for interactive saves) is merged too ([PR #15032](https://github.com/vassalengine/vassal/pull/15032)). This
 > utility reads and re-emits `VOBS`, `!VCSK` and the abandoned `!VCSZ` alike.
 
 VASSAL writes the command log through `ObfuscatingOutputStream` (anti‑cheat only), which XORs
@@ -230,9 +230,11 @@ problem — both are addressed in [wif-engine-optimizations.md](wif-engine-optim
 
 ## 6. Cause #5 — no deduplication across identical pieces
 
-> **Status: not started** (engine item C2, a type table in the save). In memory the same
-> duplication is now addressed by B2 (`feature/share-immutable-trait-data`), which shares the
-> parsed objects of identical traits; the save file still repeats the text of each piece.
+> **Status: measured, not recommended as a format change** ([vassal-type-table-analysis.md](vassal-type-table-analysis.md)).
+> Three quarters of the WiF pieces are one of a kind, so a whole-piece table saves 4 %; the
+> repetition is at trait level, where a table saves 10× — and a long-window compressor (xz) on
+> the unchanged text saves the same 10×, so that is the recommended route. In memory the
+> duplication is addressed by B2 (`feature/share-immutable-trait-data`).
 
 `GameState.getRestorePiecesCommand()` emits **one `AddPiece` per piece with no dedup**
 (`GameState.java:1609`, `new AddPiece(p)` in a bare loop; the `pieces` field is a plain `Map`,
@@ -286,7 +288,7 @@ not pixels.
 | §3 O(N²) escaping | memory (222 MB string), CPU, disk (~3×) | engine format | high (memory/CPU); high (disk, pre‑ZIP) | ✅ branch `feature/flat-trait-chain-encoding` |
 | §4 Embedded Place Marker (`Land6`) | memory **and** disk | **module — one trait** | ✅ done in 2.1.2; leftovers remain in 4 saves | ✅ module 2.1.2 |
 | §5 Obfuscate‑before‑zip | disk (~1.8×), memory, CPU | engine | ~2× disk, easy | ✅ merged upstream (`VOBS`, 3.8) |
-| §6 No dedup | disk | engine format | high, but format change | ⏳ not started |
+| §6 No dedup | disk | engine format | high, but format change | 📐 measured; xz payload recommended instead |
 | §7 Whole-log `String`s and per-piece objects | memory | engine | large | ✅ branches B1 and B2 |
 
 The single highest‑value / lowest‑risk change is the **module‑side** fix in §4 (one Place
