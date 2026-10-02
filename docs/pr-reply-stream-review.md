@@ -47,3 +47,9 @@ Done, as above.
 **`CommandSerializer.java` — "This appears to be duplicating what's in `SequenceEncoder`."**
 
 It restates one rule from `SequenceEncoder.Decoder` — a delimiter is escaped iff the character before it is a backslash, and the backslash is dropped — and does so deliberately. `Decoder` works on a `String` already in memory and hands back each token as a new `String`; for the top level of a saved game that string is the whole command log and the second token is the whole piece list, which is exactly what this PR exists to stop materialising. `TokenReader` applies the same rule to a stream of characters one level at a time, so that only one command's own text is ever held. I kept it inside `CommandSerializer`, private, rather than adding a `Reader`-based mode to `SequenceEncoder`, because I did not want to touch that class in a PR about something else — but if you would rather the streaming tokenizer lived in `SequenceEncoder.Decoder` (say a constructor taking a `Reader`), I can move it there; it is the same forty lines either way, and the test that checks it against the `String` decoder on 3 000 random trees would come along. One thing worth knowing for `fix_sequences`: this is the one place that would need its length-prefixed token form added, since it reads the delimiters itself.
+
+---
+
+# After merging `master` (3 October)
+
+The merge of `master` (with #15121) kept an `IOUtils` import this branch no longer uses, which Checkstyle rejects at `validate`, so the build stopped before compiling anything. Removed it, and since the XZ change is now in, the two writers (`writeGameFile` and `saveGameRefresh`) call `GameState.compressSavedGame()` directly instead of constructing the deprecated `ObfuscatingOutputStream`, as promised above.
