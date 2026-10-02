@@ -29,6 +29,10 @@ instances built from one string point at the same objects. The per-instance resi
 trait object itself (its field slots) and its state. `VASSAL.counters.TraitTypeCache` is the
 cache: `get(dataClass, typeString, parser)` — a `ConcurrentHashMap` per data class (traits are
 built on the load worker as well as the EDT), holding one parsed record per distinct string.
+It is an instance owned by the `GameModule` (`getTraitTypeCache()`, at the reviewer's request:
+no new singletons); traits reach it through the static `TraitTypeCache.lookup(...)`, which
+parses without sharing when there is no module or the module has no cache, as in the
+mocked-module tests.
 
 What may be shared is anything immutable, or mutated only in a way every sharer would perform
 identically. What may not is anything that names the piece, or is used as per-call scratch.
