@@ -151,42 +151,41 @@ Four forms exist, told apart by the entry's leading magic bytes:
 
 | Header | Key | Payload | Written by |
 |---|---|---|---|
-| `!VOXZ` | 1 raw byte | **XZ-compressed** plaintext XOR key, raw | VASSAL 3.8 with `feature/switch-compressor-to-xz` ([vassal-xz-payload.md](vassal-xz-payload.md)) |
+| `\xFD7zXZ\0` (the XZ magic) | none | a plain **XZ-compressed** stream of the plaintext | VASSAL 3.8 with `feature/switch-compressor-to-xz` ([vassal-xz-payload.md](vassal-xz-payload.md)) |
 | `!VOBS` | 1 raw byte | plaintext XOR key, raw | VASSAL 3.8 |
 | `!VCSK` | 2 hex digits | 2 hex digits per XOR-ed byte | VASSAL through 3.7.x |
 | `!VCSZ` | 2 hex digits | as `!VCSK`, but the plaintext is deflated first | never released — see below |
 
 A reader dispatches on the header, and anything else is passed through unchanged as
 plain text (`DeobfuscatingInputStream`'s backward compatibility). The engine itself reads
-`!VOXZ` and `!VCSK` (neither `!VOBS`, dropped at review as never released, nor `!VCSZ`);
+XZ and `!VCSK` (neither `!VOBS`, dropped at review as never released, nor `!VCSZ`);
 this utility reads all four and **preserves whichever format a file was opened with** when
 rewriting it
 (`SavedGame.Obfuscation`, `SavedGame.open()` / `getObfuscation()` /
 `writeObfuscated()`; likewise `tools/swap_maps.py`).
 
-#### `!VOXZ` — the compressed format (VASSAL 3.8 with the XZ change)
+#### XZ — the compressed format (VASSAL 3.8 with the XZ change)
 
 ```
-!VOXZ <K> <P><P><P>...       payload = XOR(xz(plaintext), key)
+FD 37 7A 58 5A 00 ...       the entry is an ordinary .xz stream of the plaintext
 ```
 
-The same layout as `!VOBS` — a five-byte header, one raw key byte, then the payload
-XOR-ed with the key — but the payload is the plaintext **compressed with XZ (LZMA2,
-preset 3: a 4 MB dictionary)** before the XOR. The reason is the window: the ZIP entry's
-deflate looks back 32 KB and a piece is 15–90 KB, so every piece's repeated prototype
-traits are stored again for each piece; LZMA2's 4 MB dictionary spans dozens of pieces
-and stores them once. On the 7 072-piece WiF game the entry falls from 17.2 MB (`!VOBS`,
-deflated by the ZIP) to 829 KB, and compresses faster than deflate at level 9. The ZIP
+Not an obfuscation at all: the `savedGame` entry is the plaintext **compressed with XZ
+(LZMA2, preset 3: a 4 MB dictionary)** and nothing else, recognised by XZ's own six magic
+bytes. The reason is the window: the ZIP entry's deflate looks back 32 KB and a piece is
+15–90 KB, so every piece's repeated prototype traits are stored again for each piece; LZMA2's
+4 MB dictionary spans dozens of pieces and stores them once. On the 7 072-piece WiF game the
+entry falls from 17.2 MB (`!VOBS`, deflated by the ZIP) to 829 KB, and compresses faster than
+deflate at level 9. The XOR of the earlier formats was only ever there so that an unzipped
+entry was not plain text; compressed bytes are not plain text either, so the maintainers
+dropped it with this change (`ObfuscatingOutputStream` is deprecated in the engine). The ZIP
 still deflates the entry, to no effect. This utility reads it (`SavedGame.Obfuscation.XZ`,
-`org.tukaani:xz`) and re-emits it with the same preset; `tools/swap_maps.py` and the
-scripts built on it use Python's `lzma`. Decoding one by hand:
+`org.tukaani:xz`) and re-emits it with the same preset; `tools/swap_maps.py` and the scripts
+built on it use Python's `lzma`. Decoding one by hand is just:
 
 ```python
 import lzma
-data = open("savedGame", "rb").read()
-assert data[:5] == b"!VOXZ"
-key = data[5]
-plaintext = lzma.decompress(bytes(b ^ key for b in data[6:])).decode("utf-8")
+plaintext = lzma.decompress(open("savedGame", "rb").read()).decode("utf-8")
 ```
 
 #### `!VOBS` — the uncompressed format (VASSAL 3.8)
@@ -442,8 +441,8 @@ A `.vsav` is not standalone: loading it requires the module named in its `module
 | Entry — game state | `savedGame` | `GameState.java:1264` |
 | Entry — save meta | `savedata` | `SaveMetaData.java:66` |
 | Entry — module meta | `moduledata` | `ModuleMetaData.java:51` |
-| Obfuscation header | `!VOXZ` (3.8, XZ change) / `!VOBS` (3.8) / `!VCSK` (through 3.7.x) / `!VCSZ` (unreleased) | `ObfuscatingOutputStream.java` (`HEADER_BYTES`/`HEADER`) |
-| Obfuscation | `!VOXZ`: header + 1 raw key byte + XZ(plaintext) XOR key, raw. `!VOBS`: header + 1 raw key byte + each byte XOR key, raw. `!VCSK`/`!VCSZ`: header + 2-hex key + 2-hex-per-byte XOR, lowercase (`!VCSZ` deflates the plaintext first) | `ObfuscatingOutputStream.java`, `DeobfuscatingInputStream.java` |
+| Obfuscation header | XZ magic `FD 37 7A 58 5A 00` (3.8, XZ change) / `!VOBS` (3.8 betas) / `!VCSK` (through 3.7.x) / `!VCSZ` (unreleased) | `ObfuscatingOutputStream.java` (`HEADER_BYTES`/`HEADER`) |
+| Obfuscation | XZ: the entry is a plain `.xz` stream of the plaintext, no key. `!VOBS`: header + 1 raw key byte + each byte XOR key, raw. `!VCSK`/`!VCSZ`: header + 2-hex key + 2-hex-per-byte XOR, lowercase (`!VCSZ` deflates the plaintext first) | `ObfuscatingOutputStream.java`, `DeobfuscatingInputStream.java` |
 | Payload charset | UTF-8 | `GameState.java:1374, 1635` |
 | Command separator | `0x1B` (ESC, `KeyEvent.VK_ESCAPE`) | `GameModule.java:232` |
 | Save-block markers | `begin_save` / `end_save` | `GameState.java:1328-1329` |

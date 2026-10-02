@@ -66,7 +66,7 @@ Three properties fall out of that design and hold for every tool here:
   only differ from its input in the places it meant to change. The
   [check recipe](#checking-the-result) below turns that into an assertion.
 - **The obfuscation format round-trips.** A save is re-emitted in whichever of
-  VASSAL's four formats it was read in (`!VOXZ`, `!VOBS`, `!VCSK`, `!VCSZ` — see
+  VASSAL's four formats it was read in (XZ, `!VOBS`, `!VCSK`, `!VCSZ` — see
   [docs/vsav-format.md](../vsav-format.md)).
 - **Writes are atomic.** Output goes to a temp file that is then `os.replace`d
   into position, so an interrupted write never leaves the truncated `.vsav` that

@@ -8,7 +8,7 @@ I measured the alternative first — a type table in the save that defines each 
 
 ### What changes
 
-`ObfuscatingOutputStream` writes a new five-byte header, `!VOXZ`, the one-byte key, then the data **XZ-compressed (LZMA2 preset 3) and XORed with the key** — the XZ stream sits between the caller and the XOR, so the obfuscation applies to the compressed bytes. `DeobfuscatingInputStream` recognises the header and wraps the XOR-undoing stream in an `XZInputStream`; `!VOBS`, `!VCSK` and `!VCSZ` are still read. Every writer of a save or log goes through these two classes, so nothing else changes; the `.vsav` is still an ordinary ZIP.
+The `savedGame` entry becomes a plain **XZ stream** of the command log (LZMA2 preset 3), recognised by XZ's own magic bytes; nothing precedes it and nothing is XORed. `GameState.compressSavedGame(OutputStream)` is the one place a save or log is compressed, used by `saveGame`, `saveGameRefresh` and `BasicLogger.write`; `DeobfuscatingInputStream` reads the stream, the released `!VCSK` form, and plain text. `ObfuscatingOutputStream` is deprecated for removal and reduced to a wrapper that compresses the same way, so anything still constructing one writes a readable file. The `.vsav` is still an ordinary ZIP.
 
 Preset 3 (4 MB dictionary, the fast match finder) is the point of diminishing returns: presets 6 and 9 gain a further 20–30 % for ten times the compression time.
 

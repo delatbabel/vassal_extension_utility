@@ -30,9 +30,8 @@ ESC = '\x1b'
 
 
 def deobfuscate(data):
-    if data[:5] == b'!VOXZ':
-        key = data[5]
-        return lzma.decompress(bytes.translate(data[6:], bytes(i ^ key for i in range(256))))
+    if data[:6] == b'\xfd7zXZ\x00':
+        return lzma.decompress(data)
     if data[:5] == b'!VOBS':
         key = data[5]
         return bytes.translate(data[6:], bytes(i ^ key for i in range(256)))

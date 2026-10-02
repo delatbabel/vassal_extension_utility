@@ -13,7 +13,7 @@ ESC = 0x1B
 # The four obfuscation formats of the savedGame entry, identified by header.
 # The header bytes double as the format token that read_vsav returns and
 # obfuscate()/write_vsav() take, so a rewrite re-emits the format it read.
-XZ = b'!VOXZ'            # 1 raw key byte, then XOR(xz(plaintext), key) raw (VASSAL 3.8+, xz branch)
+XZ = b'\xfd7zXZ\x00'     # a plain XZ stream, by XZ's own magic (VASSAL 3.8+, xz branch)
 RAW = b'!VOBS'           # 1 raw key byte, then XOR(plaintext, key) raw (VASSAL 3.8)
 HEX = b'!VCSK'           # 2-hex key, then hex(XOR(plaintext, key)) (through 3.7.x)
 HEX_DEFLATED = b'!VCSZ'  # as HEX, but the plaintext is deflated first (abandoned)
@@ -37,17 +37,17 @@ def read_vsav(path):
     fmt = next((f for f in FORMATS if raw[:len(f)] == f), None)
     if fmt is None:
         raise SystemExit(
-            f'{path}: savedGame is not obfuscated (!VOXZ/!VOBS/!VCSK/!VCSZ missing)')
+            f'{path}: savedGame is not obfuscated (not XZ, and no !VOBS/!VCSK/!VCSZ header)')
+    if fmt == XZ:
+        return lzma.decompress(raw), entries, fmt   # the whole entry is the stream; no key
     n = len(fmt)
-    if fmt in (RAW, XZ):
+    if fmt == RAW:
         key, body = raw[n], raw[n + 1:]
     else:
         key, body = int(raw[n:n + 2], 16), bytes.fromhex(raw[n + 2:].decode('ascii'))
     body = body.translate(bytes(i ^ key for i in range(256)))
     if fmt == HEX_DEFLATED:
         body = zlib.decompress(body)
-    elif fmt == XZ:
-        body = lzma.decompress(body)
     return body, entries, fmt
 
 
@@ -89,14 +89,11 @@ def board_picker_tokens(state, toks):
 def obfuscate(plain, key, fmt=RAW):
     """Encodes the command log in one of XZ / RAW / HEX / HEX_DEFLATED."""
     if fmt == XZ:
-        payload = lzma.compress(plain, preset=XZ_PRESET)
-    elif fmt == HEX_DEFLATED:
-        payload = zlib.compress(plain, 9)
-    else:
-        payload = plain
+        return lzma.compress(plain, preset=XZ_PRESET)   # nothing precedes it, nothing is XOR-ed
+    payload = zlib.compress(plain, 9) if fmt == HEX_DEFLATED else plain
     payload = payload.translate(bytes(i ^ key for i in range(256)))
     out = bytearray(fmt)
-    if fmt in (RAW, XZ):
+    if fmt == RAW:
         out.append(key)
         out += payload
     else:

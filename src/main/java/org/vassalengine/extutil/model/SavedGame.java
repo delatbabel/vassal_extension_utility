@@ -84,14 +84,15 @@ public class SavedGame {
      */
     public enum Obfuscation {
         /**
-         * {@code !VOXZ} + a one-byte key + the <em>XZ-compressed</em> (LZMA2)
-         * plaintext XOR-ed with it, all raw — what VASSAL's
-         * {@code ObfuscatingOutputStream} writes from the {@code switch-compressor-to-xz}
-         * change: a long-window compressor sees the same prototype traits repeated in
+         * A plain XZ stream (LZMA2), identified by XZ's own six magic bytes — what
+         * VASSAL writes from the {@code switch-compressor-to-xz} change. There is no
+         * key: a long-window compressor sees the same prototype traits repeated in
          * piece after piece, which the ZIP entry's 32 KB deflate window cannot, so a
-         * large game's entry is twenty times smaller than as {@link #RAW}.
+         * large game's entry is twenty times smaller than as {@link #RAW}, and the
+         * compressed bytes are no more plain text than the XOR made them, which was
+         * all the XOR was for.
          */
-        XZ("!VOXZ", 1),
+        XZ("\u00FD7zXZ\u0000", 0),
         /**
          * {@code !VOBS} + a one-byte key + the plaintext XOR-ed with it, all raw —
          * what VASSAL's {@code ObfuscatingOutputStream} writes from 3.8. The ZIP
@@ -121,7 +122,7 @@ public class SavedGame {
         final int keyLength;
 
         Obfuscation(String header, int keyLength) {
-            this.header = header.getBytes(StandardCharsets.US_ASCII);
+            this.header = header.getBytes(StandardCharsets.ISO_8859_1);
             this.keyLength = keyLength;
         }
 
@@ -135,7 +136,7 @@ public class SavedGame {
         boolean isXz() { return this == XZ; }
     }
 
-    /** The LZMA2 preset VASSAL writes {@code !VOXZ} with: a 4 MB dictionary, the fast match finder. */
+    /** The LZMA2 preset VASSAL compresses the log with: a 4 MB dictionary, the fast match finder. */
     private static final int XZ_PRESET = 3;
 
     /** Top-level command separator in the deobfuscated log (ESC / {@code KeyEvent.VK_ESCAPE}). */
@@ -222,12 +223,11 @@ public class SavedGame {
             final Obfuscation fmt = obfuscationOf(raw);
             if (fmt == null) {
                 throw new IOException(
-                        "Not an obfuscated VASSAL saved game (missing !VOXZ/!VOBS/!VCSK/!VCSZ header): "
+                        "Not an obfuscated VASSAL saved game (not XZ, and no !VOBS/!VCSK/!VCSZ header): "
                         + f.getName());
             }
             byte[] plain = deobfuscate(raw, fmt, f);
             if (fmt.isDeflated()) plain = inflate(plain, f);
-            else if (fmt.isXz()) plain = unxz(plain, f);
 
             return new SavedGame(f,
                     md, moduleData == null ? -1L : moduleData.getTime(),
@@ -285,6 +285,10 @@ public class SavedGame {
         if (raw.length < start) {
             throw new IOException("Not an obfuscated VASSAL saved game (too short): " + f.getName());
         }
+        if (fmt.isXz()) {
+            // The whole entry, magic included, is the XZ stream; nothing is XOR-ed.
+            return unxz(raw, f);
+        }
         if (!fmt.isHex()) {
             final int key = raw[fmt.header.length] & 0xFF;
             final byte[] out = new byte[raw.length - start];
@@ -302,7 +306,7 @@ public class SavedGame {
         return out;
     }
 
-    /** Decompresses the deobfuscated payload of a {@code !VOXZ} entry. */
+    /** Decompresses an XZ {@code savedGame} entry. */
     private static byte[] unxz(byte[] data, java.io.File f) throws IOException {
         try (XZInputStream in = new XZInputStream(new java.io.ByteArrayInputStream(data))) {
             return in.readAllBytes();
@@ -963,9 +967,9 @@ public class SavedGame {
 
     /**
      * Streams the surviving command tokens through the VASSAL obfuscation, in the
-     * <em>same format the file was opened with</em>: {@code !VOXZ} (header + a
-     * random one-byte key + the XZ-compressed plaintext XOR-ed with it, raw),
-     * {@code !VOBS} (the same without the compression), {@code !VCSK} (the
+     * <em>same format the file was opened with</em>: a plain XZ stream,
+     * {@code !VOBS} (header + a random one-byte key + the plaintext XOR-ed with it,
+     * raw), {@code !VCSK} (the
      * key as 2 hex digits and each plaintext byte as 2 more), or {@code !VCSZ} (the
      * hex encoding of the <em>deflated</em> plaintext). Each removed token is
      * dropped together with its preceding delimiter, and each kept token is
@@ -984,6 +988,13 @@ public class SavedGame {
             throws IOException {
         // Keys are in 1-255, as in VASSAL's ObfuscatingOutputStream: XORing with 0
         // would leave the data in plain text.
+        if (obfuscation.isXz()) {
+            // A plain XZ stream at the engine's preset; nothing precedes it and nothing is XOR-ed.
+            final XZOutputStream xz = new XZOutputStream(out, new LZMA2Options(XZ_PRESET));
+            emitCommands(xz, removeIndices, insertBefore, insertContents, replacements);
+            xz.finish();   // never close() — that would close the ZIP stream
+            return;
+        }
         final int key = new Random().nextInt(255) + 1;
         // Accumulate output in a large buffer so the downstream stream sees big
         // chunks rather than a byte or two at a time (dramatically slower).
@@ -996,12 +1007,7 @@ public class SavedGame {
             sink.rawByte((byte) key);
         }
 
-        if (obfuscation.isXz()) {
-            // The same preset the engine uses; the XOR sink beneath sees the compressed bytes.
-            final XZOutputStream xz = new XZOutputStream(sink, new LZMA2Options(XZ_PRESET));
-            emitCommands(xz, removeIndices, insertBefore, insertContents, replacements);
-            xz.finish();   // never close() — that would close the ZIP stream
-        } else if (obfuscation.isDeflated()) {
+        if (obfuscation.isDeflated()) {
             final Deflater def = new Deflater(Deflater.BEST_COMPRESSION);
             try {
                 final DeflaterOutputStream dos = new DeflaterOutputStream(sink, def, 1 << 16);

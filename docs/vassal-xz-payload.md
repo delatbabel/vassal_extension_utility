@@ -10,17 +10,20 @@ LZMA2-compressed. Branch `feature/switch-compressor-to-xz` in `../vassal`, from 
 
 ## 1. The change
 
-`ObfuscatingOutputStream` writes a new five-byte header, **`!VOXZ`**, then the one-byte key,
-then the data **XZ-compressed and XORed with the key**: the XZ stream sits between the caller
-and the XOR, so the obfuscation applies to the compressed bytes. `DeobfuscatingInputStream`
-recognises the header and wraps the XOR-undoing stream in an `XZInputStream`; the released
-`!VCSK` hex payload is still read. `!VOBS`, the uncompressed payload of the 3.8 betas, is no
-longer read by the engine at the maintainer's request in review (it was never in a full
-release); this utility keeps reading it, as it keeps reading the abandoned `!VCSZ`. Every writer of a
-save or log goes through `ObfuscatingOutputStream` (`GameState.saveGame`, `saveGameRefresh`,
-`BasicLogger.write`), so nothing else changes; the `.vsav` remains an ordinary ZIP whose
-`savedGame` entry now holds a few hundred kilobytes of already-compressed bytes that the ZIP's
-own deflate leaves as they are.
+The `savedGame` entry is now a plain **XZ stream** of the command log — nothing precedes it,
+and nothing is XORed. `GameState.compressSavedGame(OutputStream)` is the one place a save or
+log is compressed (an `XZOutputStream` at preset 3), used by `GameState.saveGame`,
+`saveGameRefresh` and `BasicLogger.write`; `DeobfuscatingInputStream` recognises the stream by
+XZ's own six magic bytes and still reads the released `!VCSK` hex form and plain text.
+`ObfuscatingOutputStream` is **deprecated for removal** and reduced to a wrapper that
+compresses the same way, so anything still constructing one writes a readable file. The
+`.vsav` remains an ordinary ZIP whose entry now holds a few hundred kilobytes of
+already-compressed bytes that the ZIP's own deflate leaves as they are.
+
+The XOR went at the maintainers' request during review: it only ever existed so that an
+unzipped entry was not plain text, and compressed bytes satisfy that as well as XOR-ed ones
+did. (The first version of this branch kept it, under a `!VOXZ` header, with the XZ stream
+inside the XOR; that form never shipped and is not read.)
 
 The preset is **3**: a 4 MB dictionary, which spans the repeated text of dozens of pieces, with
 LZMA2's fast match finder. `LZMA2Options` presets 6 and 9 gain a further 20–30 % for ten times
@@ -87,10 +90,10 @@ weeks by a Postgres developer investigating why `sshd` had become slow.
 
 ## 4. Compatibility
 
-- The engine reads `!VOXZ` and the released `!VCSK`; older engines cannot read `!VOXZ` saves
-  and logs — the existing version-mismatch warnings apply. A save written by a 3.8 beta in
-  `!VOBS` can be converted with this utility (open it, rewrite it), which reads all four forms.
-- **This utility and its scripts** read and re-emit `!VOXZ` alongside the other three
+- The engine reads the XZ stream and the released `!VCSK`; older engines cannot read the new
+  saves and logs — the existing version-mismatch warnings apply. A save written by a 3.8 beta
+  in `!VOBS` can be converted with this utility (open it, rewrite it), which reads all four forms.
+- **This utility and its scripts** read and re-emit the XZ stream alongside the other three
   (`SavedGame.Obfuscation.XZ`, with the same `org.tukaani:xz` dependency and preset;
   `tools/swap_maps.py` and the scripts built on it with Python's `lzma`). Verified both ways:
   the utility rewrites the engine's file to a byte-identical command log in 3.7 s, and the
@@ -105,16 +108,16 @@ weeks by a Postgres developer investigating why `sshd` had become slow.
 org.tukaani.xz does not exist` in the `.deb` step) before it was added.
 
 **Review changes** ([PR #15121](https://github.com/vassalengine/vassal/pull/15121)): the `!VOBS`
-reading path removed (above); `XorOutputStream` made private with a public constructor and
-given one reused 8 KB buffer instead of an allocation per write — measured, `XZOutputStream`
-hands down one compressed chunk at a time, mostly 4–16 KB and never above 64 KB, 250 writes
-for the whole 224 MB game; the original copyright line restored; the pom comment dropped.
+reading path removed as never released; the original copyright line restored; the pom comment
+dropped; then, on the observation that XZ output is not plain text, the XOR removed entirely
+and `ObfuscatingOutputStream` deprecated (above).
 
 ## 5. Tests
 
-`ObfuscatingOutputStreamTest` now expects the XZ layout (computed with `XZOutputStream` at the
-same preset) and checks that repetitive text shrinks by more than 20×; `DeobfuscatingInputStreamTest`
-gains a case for the `!VOXZ` header alongside the existing `!VCSK` cases. Full `vassal-app` suite: 764 tests, the one failure the environmental
+`DeobfuscatingInputStreamTest`
+covers the XZ stream (recognised by its magic, round-tripped whole and byte by byte, truncated,
+and shrinking repetitive text), the deprecated wrapper writing the same bytes, and the existing
+`!VCSK` and plain-text cases; `ObfuscatingOutputStreamTest` is gone with the format it tested. Full `vassal-app` suite: 764 tests, the one failure the environmental
 `ProcessCallableTest` that fails on `master` too; Checkstyle, PMD and SpotBugs report nothing new.
 
 ## 7. Alternatives measured: zstd and brotli
@@ -207,11 +210,11 @@ Trial merges of each open branch into this one, then a four-way union, compiled 
 | Merge into `feature/switch-compressor-to-xz` | Conflicts | Resolution |
 |---|---|---|
 | `feature/flat-trait-chain-encoding` (PR #15116) | none | — |
-| `feature/stream-save-and-load` (PR #15117) | **one hunk**, `ObfuscatingOutputStream.write(byte[], int, int)`: that branch made the method XOR a block at a time; this branch moves the XOR into the inner `XorOutputStream` and has the method delegate to `out.write` | keep this branch's version (the block XOR is already inside `XorOutputStream`) |
+| `feature/stream-save-and-load` (PR #15117) | none, since that branch dropped its block-XOR tweak to `ObfuscatingOutputStream` (its writers still construct one, which is what the deprecated wrapper is for; after both merge they switch to `GameState.compressSavedGame`) | — |
 | `feature/share-immutable-trait-data` (PR #15119) | none | — |
 | `fix_sequences` | none | — |
 
-With that one hunk resolved, the union of all five compiles and passes this branch's stream
+The union of all five compiles and passes this branch's stream
 tests, `TraitChainFramingTest`, `TraitTypeCacheTest`, `SequenceEncoderTest` and the trait tests.
 The only failures on the union are the six `CommandSerializerTest` byte-identity assertions
 already noted in [vassal-share-immutable-trait-data.md §6](vassal-share-immutable-trait-data.md#6-merging-with-the-other-branches):
