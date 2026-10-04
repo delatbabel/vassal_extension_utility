@@ -53,3 +53,19 @@ It restates one rule from `SequenceEncoder.Decoder` — a delimiter is escaped i
 # After merging `master` (3 October)
 
 The merge of `master` (with #15121) kept an `IOUtils` import this branch no longer uses, which Checkstyle rejects at `validate`, so the build stopped before compiling anything. Removed it, and since the XZ change is now in, the two writers (`writeGameFile` and `saveGameRefresh`) call `GameState.compressSavedGame()` directly instead of constructing the deprecated `ObfuscatingOutputStream`, as promised above.
+
+---
+
+# Third review (3–4 October)
+
+**`CommandSerializer.java:475` — "Can this replace almost all of the implementation of `SequenceEncoder.Decoder`?"**
+
+They implement the same grammar (a delimiter preceded by a backslash is part of the token with the backslash dropped; a token wrapped in single quotes is unwrapped), but over different representations, and that is where the duplication comes from. `Decoder` indexes into a `String` the caller already holds, returns interned substrings, and offers `getRemaining()`, `copy()` and the typed `nextInt()`/`nextNamedKeyStroke()`/... conveniences on top. `TokenReader` pulls characters from a stream it never holds whole and yields each token *as a stream*, so a nested level is read from its parent's characters without materialising the parent, with one character of pushback for the backslash look-ahead. `getRemaining()` and `copy()` cannot exist on it.
+
+So `Decoder.nextToken()` could be written over a `TokenReader` on a `StringReader`, but not for free: a `Reader`, a `TokenReader` and a `Token` per decoder, and a character-at-a-time loop through three calls where today the common unescaped token is one indexed scan and one `substring`. `Decoder` is the hottest parser in the engine, since every trait's `mySetType` goes through it (789 k traits on the WiF game), and that is the direction I would not take. The reverse, `TokenReader` over `Decoder`, is impossible, since `Decoder` needs the whole string.
+
+What can be shared is the scanning rule itself: a `CharSequence`-based scanner that `Decoder.nextToken()` uses for the string case and `TokenReader` uses block-wise. I would rather do that as its own PR, so that this one stays about streaming and the hot path change gets its own review. Until then the two are held to the same behaviour by `CommandSerializerTest`, which decodes 3,000 random command trees through both paths and asserts equal trees and byte-identical re-encoding.
+
+**`GameState.java:1751` — "Why 64KB for the buffer?"**
+
+No measurement behind it. The serializer's own `ReaderSource` reads its `Reader` in 16 K blocks, so a `BufferedReader` of any size on top only added a copy. Removed (`ecfe500e7`); the entry is read through the `InputStreamReader` alone.
