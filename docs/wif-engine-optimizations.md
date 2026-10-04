@@ -143,7 +143,7 @@ module.
 > Implemented on branch `feature/share-immutable-trait-data` in `../vassal`, raised as [PR #15119](https://github.com/vassalengine/vassal/pull/15119); see
 > **[vassal-share-immutable-trait-data.md](vassal-share-immutable-trait-data.md)**. The parsed
 > objects of the heaviest traits are shared per type string through `TraitTypeCache`, and the
-> per-instance Swing configurers are gone; WiF piece heap 308 MB → 164 MB (47 %; 183 MB after the per-instance array copies asked for in review), Europa 13 → 9.5 MB.
+> per-instance Swing configurers are gone; WiF piece heap 308 MB → 164 MB (47 %; 213 MB after the per-instance arrays and expression handles asked for in review), Europa 13 → 9.5 MB.
 
 > Measured on a legacy-style (WiF) and a modern-style (Europa) game in
 > **[wif-flyweight-analysis.md](wif-flyweight-analysis.md)**: the string-interning increment

@@ -251,7 +251,7 @@ copies of a smaller set of definitions.
 > **Status.** The retained 223 MB save `String` and the whole-log `String` on load are gone on
 > `feature/stream-save-and-load` (B1): the command log is streamed both ways and `isModified()`
 > compares a digest; peak heap on load 3.2 GB → 1.2 GB. The per-piece trait objects are halved
-> on `feature/share-immutable-trait-data` (B2): 8.9 M → 4.0 M objects, 308 MB → 164 MB (183 MB after the per-instance array copies asked for in review). The
+> on `feature/share-immutable-trait-data` (B2): 8.9 M → 4.0 M objects, 308 MB → 164 MB (213 MB after the per-instance arrays and expression handles asked for in review). The
 > "intern the embedded marker strings" idea below was found to be moot: `SequenceEncoder.Decoder`
 > has interned every token since 2021, which is why strings are only 7 % of the piece heap
 > ([wif-flyweight-analysis.md](wif-flyweight-analysis.md)).

@@ -62,6 +62,16 @@ A Layer's `size` bounds, which `getCurrentImageBounds()` returns to callers, are
 no longer in the shared data at all. Measured on WiF this costs 19 MB (164 → 183 MB), 12.8 MB of it
 the 558 k one-to-three-entry `NamedKeyStroke[]` of Trigger Action and Restrict Commands.
 
+### 1.2 `FormattedString` and `PropertyExpression` are per instance
+
+Both have public setters (`setFormat`/`setProperty`/`setDefaultProperties`; `setExpression`), so a
+shared instance is open to the same cross-piece write as a shared array, and copy-on-write cannot
+help a shared *reference*. Since the third review (4 October, `5bd588696`) the shared type data
+holds their **source text** and each Trigger Action, Restrict Commands and Layer instance builds its
+own handle, exactly as on master. The parsed `Expression` behind a `FormattedString` is already
+shared by that class's own `FSData` cache, so this costs a 24-byte handle per field per instance
+(16 for `PropertyExpression`) and no parsing. Measured on WiF: 183 → 213 MB.
+
 ## 2. The cheaper fixes
 
 **Swing configurers per trait instance.** `DynamicProperty`'s constructor built a
@@ -87,6 +97,7 @@ built with `createPiece`/`setState`, heap by class histogram against the loaded 
 | Piece heap, `master` | 308 MB, 8.9 M objects | 13.0 MB, 313 k objects |
 | Piece heap, this branch | **164 MB, 4.0 M objects** | **9.5 MB, 207 k objects** |
 | Piece heap, with per-instance array copies (§1.1) | **183 MB, 4.7 M objects** | — |
+| Piece heap, with per-instance expression handles too (§1.2) — **the branch now** | **213 MB, 6.2 M objects** | — |
 | Saving | **144 MB (47 %)** | 3.5 MB (27 %) |
 | `createPiece` time | 59.1 s → 54.7 s | 0.5 s |
 
