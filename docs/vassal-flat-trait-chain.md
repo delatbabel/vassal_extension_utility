@@ -227,6 +227,19 @@ independent of the escaping scheme — see [vassal-sequence-fix-comparison.md](v
 
 `SequenceEncoder.java` is not modified. No trait is modified. No new dependency.
 
+Review, 3–4 October: `splitChain` returns a `VASSAL.tools.lang.Pair` rather than a two-element
+array (`bb1dea599`), and upstream `master` (with the XZ change and 3.7.29) is merged in again
+(`7f95d564b`). The reviewer also reported that in VASL 6.7.4-beta3 a piece dragged onto a map
+disappears. This could not be reproduced headless against the exact module and a real board set:
+all 5,911 palette pieces clone and rebuild from their type and state strings identically; 60
+pieces dropped through VASL's own `ASLPieceMover` into a started game (move key applied,
+auto-report on) all stayed on the map, visible and drawable, and the restore command round-trips;
+a game saved by master loads and its pieces move. VASL frames nothing itself (no trait overrides
+the four framing methods; `ASLCommandEncoder` overrides only `createDecorator`/`decode`). What is
+left is the AWT drag-and-drop glue and painting; the reply asks for the error log and the exact
+steps ([pr-reply-flat-chain-review.md](pr-reply-flat-chain-review.md)). The harnesses used
+(`ClonePieces`, `DropPiece3`) are in the session scratchpad, not the repo.
+
 ---
 
 ## 4. Compatibility

@@ -50,6 +50,18 @@ Audited per trait:
 The legacy `emb;` Layer format (`originalSetType`) is left unshared: it rewrites `resetLevel`
 during parsing and is not what modules write today.
 
+### 1.1 Arrays are copied per instance
+
+An array is not immutable, and the converted traits expose theirs as `protected` fields:
+`Embellishment.imageName`/`commonName`/`imagePainter`/`size`, `TriggerAction.watchKeys`/`actionKeys`,
+`RestrictCommands.watchKeys`. A subclass may write into them — `MassPieceLoader.Emb.buildLayers`
+does, substituting each generated piece's image names — and with a shared array that write would
+have reached every other instance of the type. So (review of 3 October, commit `d933fa7ce`) a
+trait assigns a `clone()` of the shared array: the elements stay shared, the header is per instance.
+A Layer's `size` bounds, which `getCurrentImageBounds()` returns to callers, are per instance and
+no longer in the shared data at all. Measured on WiF this costs 19 MB (164 → 183 MB), 12.8 MB of it
+the 558 k one-to-three-entry `NamedKeyStroke[]` of Trigger Action and Restrict Commands.
+
 ## 2. The cheaper fixes
 
 **Swing configurers per trait instance.** `DynamicProperty`'s constructor built a
@@ -74,6 +86,7 @@ built with `createPiece`/`setState`, heap by class histogram against the loaded 
 |---|---:|---:|
 | Piece heap, `master` | 308 MB, 8.9 M objects | 13.0 MB, 313 k objects |
 | Piece heap, this branch | **164 MB, 4.0 M objects** | **9.5 MB, 207 k objects** |
+| Piece heap, with per-instance array copies (§1.1) | **183 MB, 4.7 M objects** | — |
 | Saving | **144 MB (47 %)** | 3.5 MB (27 %) |
 | `createPiece` time | 59.1 s → 54.7 s | 0.5 s |
 
