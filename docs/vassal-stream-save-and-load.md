@@ -58,8 +58,8 @@ consequences shape the implementation:
 |---|---|
 | `VASSAL/command/CommandSerializer.java` (new) | `write(Command, ownEncoder, delim, Writer)` and `read(Reader, stringDecoder, ownDecoder, delim)`: the streaming forms of `GameModule.encode`/`decode`, byte-for-byte and tree-for-tree equivalent to them. The reader is a stack of per-level token filters over one buffered character source; only one command's own text is ever held. |
 | `VASSAL/build/GameModule.java` | `encode(Command, Writer)` and `decode(Reader)`, delegating to the serializer with the module's private `encodeSubCommand`/`decodeSubCommand`. The String forms are unchanged and still used for network traffic and single commands. |
-| `VASSAL/build/module/GameState.java` | `saveGame(File)` and `saveGameRefresh()` encode straight into the obfuscating stream. `decodeSavedGame()` decodes straight from the deobfuscating stream. `isModified()` compares a **SHA-256 digest** of the streamed encoding with the one recorded at the last save (`saveDigest()`), instead of building and retaining the text; `lastSave` is deprecated and always null. New `writeGameFile(File, Command, SaveMetaData)` writes the log entry and metadata **through a temporary file** that replaces the target only when complete, and returns the digest. |
-| `VASSAL/build/module/BasicLogger.java` | `write()` uses `writeGameFile` for the `.vlog`. |
+| `VASSAL/build/module/GameState.java` | `saveGame(File)` and `saveGameRefresh()` encode straight into the obfuscating stream. `decodeSavedGame()` decodes straight from the deobfuscating stream. `isModified()` answers **yes at once if the logger has logged anything since the last save** (a command count recorded by `markSaved()`), and otherwise compares a **SHA-256 digest** of the streamed encoding with the one recorded at the last save (`saveDigest()`), instead of building and retaining the text; `lastSave` is deprecated and always null. New `writeGameFile(File, Command, SaveMetaData)` writes the log entry and metadata **through a temporary file** that replaces the target only when complete, and returns the digest. |
+| `VASSAL/build/module/BasicLogger.java` | `write()` uses `writeGameFile` for the `.vlog`. Counts every command added to `logOutput`, undos included (`getLoggedCommandCount()`), for `isModified()`'s fast path. |
 | `VASSAL/tools/io/ObfuscatingOutputStream.java` | `write(byte[],off,len)` XORs a block and writes it once, instead of one `write(int)` per byte. |
 | `VASSAL/command/CommandSerializerTest.java` (new) | See §5. |
 
@@ -74,6 +74,13 @@ entries are written too. This also protects against a full disk, which `master` 
 Comparing SHA-256 of the encoded text is as exact as comparing the text for any practical
 purpose and costs nothing to keep. It is computed in the same pass as the save (a
 `DigestOutputStream` sits between the writer and the obfuscator, so it hashes the plaintext).
+
+**Why a command count in front of it.** A reviewer asked for the simpler "mark the command after
+which the last save occurred" (§6). It is the fast path: `BasicLogger` counts every command it
+adds to `logOutput`, `GameState` records the count whenever it records the digest, and a moved
+count is answered *modified* without encoding anything, so closing a game that was played costs
+nothing and close-and-save encodes the state once rather than twice. An unmoved count falls
+through to the digest, because saved state also changes without a logged command (§6).
 
 **What is unchanged.** The bytes on disk: two engines given the same loaded game wrote
 byte-identical 223 MB command logs (§4). The `String` API: `encode(Command)`,
@@ -175,6 +182,34 @@ that it would not work but not why. The answer given (posted on the PR):
 >
 > So the recommendation is to keep the digest: it is exact by construction, its cost sits where a
 > save already costs the same, and it keeps nothing between calls but 32 bytes.
+
+### 6.1 The save marker (fourth round, 22 October)
+
+The same reviewer then proposed a concrete marker: record the command after which the last
+save occurred, and report modified whenever the undo or redo stacks have moved away from it,
+accepting the one wrong answer in the harmless direction (an undo that happens to restore the
+saved state exactly still prompts). Two facts about the engine shape what was done with it,
+both verified in the source:
+
+- **There is no redo stack.** `BasicLogger.undo()` appends a new `UndoCommand` to `logOutput`
+  and walks `nextUndo` back; nothing is ever popped. So "the stacks have moved" reduces to
+  "something was added to `logOutput`", and a monotonic count of additions (undos included) is
+  the marker.
+- **Saved state changes without passing through the log.** Both chess clock commands override
+  `isLoggable()` to `false` (`ChessClock.UpdateTimerCommand`,
+  `ChessClockControl.UpdateClockControlCommand`), yet `ChessClock.getRestoreCommand()` is an
+  `UpdateTimerCommand` carrying `elapsedTime`, which the clock's `Timer` advances in
+  `updateDisplay()` with no command at all. More generally every `GameComponent.getRestoreCommand()`
+  encodes whatever its fields hold, and `setModified(true)` exists for code that has changed them
+  directly. A marker alone would answer "unchanged" there and skip the save prompt, which
+  `master`'s `String` comparison never did.
+
+So the marker went in **as the fast path and the digest stayed as the backstop**: a moved count
+is *modified* at once; an unmoved count is decided by the digest. `isModified()` keeps `master`'s
+exact semantics, the common close-after-play case is free, and the close-and-save of the WiF game
+encodes once instead of twice. The reply as drafted, with the "just append a record" and "undo
+past the auto-save" points from the other reviewer, is in
+[pr-reply-stream-review.md](pr-reply-stream-review.md).
 
 ## 7. Not done here
 
