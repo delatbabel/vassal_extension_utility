@@ -10,6 +10,7 @@ package org.vassalengine.extutil.gui;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vassalengine.extutil.model.ComponentNode;
+import org.vassalengine.extutil.model.ExtensionCombiner;
 import org.vassalengine.extutil.model.RecentFilesStore;
 import org.vassalengine.extutil.model.RefreshOptions;
 import org.vassalengine.extutil.model.SavedGame;
@@ -37,7 +38,9 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.nio.charset.StandardCharsets;
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -234,6 +237,12 @@ public class MainWindow extends JFrame implements UiTheme.ThemeAware {
         JMenuItem swapMaps = new JMenuItem("Swap Maps Between Saved Games…");
         swapMaps.addActionListener(e -> swapMaps());
 
+        JMenuItem combineExt = new JMenuItem("Combine Extensions…");
+        combineExt.addActionListener(e -> combineExtensions());
+
+        JMenuItem uncombineExt = new JMenuItem("Uncombine Extensions…");
+        uncombineExt.addActionListener(e -> uncombineExtensions());
+
         toolsMenu.add(unusedLeft);
         toolsMenu.add(unusedRight);
         toolsMenu.addSeparator();
@@ -246,6 +255,9 @@ public class MainWindow extends JFrame implements UiTheme.ThemeAware {
         toolsMenu.add(excessUnits);
         toolsMenu.add(refreshCounters);
         toolsMenu.add(swapMaps);
+        toolsMenu.addSeparator();
+        toolsMenu.add(combineExt);
+        toolsMenu.add(uncombineExt);
         bar.add(toolsMenu);
 
         JMenu helpMenu = new JMenu("Help");
@@ -952,6 +964,580 @@ public class MainWindow extends JFrame implements UiTheme.ThemeAware {
                 }
             }
             return this;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Combine / Uncombine extensions
+    // -----------------------------------------------------------------------
+
+    /**
+     * The module a combine/uncombine run works on, read fresh from disk.
+     *
+     * <p>Neither operation edits the archive the left panel holds. They re-open the
+     * module file, change that copy, and save it under a name the user chooses — so
+     * a run that fails, or whose Save is cancelled, leaves the loaded module exactly
+     * as it was. The price is that unsaved edits would be invisible to the run,
+     * which is why an unsaved module is refused up front rather than silently
+     * ignored (the same pre-flight Refresh Counters makes).</p>
+     *
+     * @return the module file, or null after reporting why there isn't a usable one
+     */
+    private File moduleFileForCombine(String title) {
+        final VassalArchive module = leftPanel.getArchive();
+        if (module == null || module.isExtension()) {
+            JOptionPane.showMessageDialog(this,
+                    "Load a module (.vmod) in the LEFT panel first.",
+                    title, JOptionPane.WARNING_MESSAGE);
+            return null;
+        }
+        if (module.getFile() == null) {
+            JOptionPane.showMessageDialog(this,
+                    "The module in the left panel has never been saved.\n"
+                    + "Save it first, then run this again.",
+                    title, JOptionPane.WARNING_MESSAGE);
+            return null;
+        }
+        if (module.isModified()) {
+            JOptionPane.showMessageDialog(this,
+                    "The module in the left panel has unsaved changes.\n\n"
+                    + "This works from the module file on disk, so those changes\n"
+                    + "would not be included. Save the module first, then run this again.",
+                    title, JOptionPane.WARNING_MESSAGE);
+            return null;
+        }
+        return module.getFile();
+    }
+
+    /** Opens every {@code .vmdx} in {@code dir} and its {@code inactive/} subdirectory. */
+    private static List<File> extensionFilesIn(File dir) {
+        final List<File> out = new ArrayList<>(listVmdx(dir));
+        out.addAll(listVmdx(new File(dir, INACTIVE_DIR)));
+        out.sort(Comparator.comparing(f -> f.getName().toLowerCase()));
+        return out;
+    }
+
+    /** Whether this extension file sits in the {@code inactive/} subdirectory. */
+    private static boolean isInactive(File f) {
+        final File parent = f.getParentFile();
+        return parent != null && INACTIVE_DIR.equalsIgnoreCase(parent.getName());
+    }
+
+    /**
+     * <b>Tools &rarr; Combine Extensions…</b> — folds every extension of the
+     * left-panel module, active and inactive alike, into the module itself, and
+     * saves the result under a new name.
+     *
+     * <p>The VASSAL editor can do things to a monolithic module that it refuses to
+     * do to one with extensions; this makes the monolith to edit, and
+     * {@link #uncombineExtensions()} puts the edits back afterwards. Each
+     * component lands at the place in the module tree its {@code ExtensionElement}
+     * target names, with the images and setup files it references
+     * (see {@link ExtensionCombiner}).</p>
+     *
+     * <p>The extensions are only read — none is modified, activated or deactivated
+     * — and no version number is touched, on either side.</p>
+     */
+    private void combineExtensions() {
+        final String title = "Combine Extensions";
+        final File moduleFile = moduleFileForCombine(title);
+        if (moduleFile == null) return;
+
+        final File extDir = moduleExtensionDir();
+        if (extDir == null || !extDir.isDirectory()) {
+            JOptionPane.showMessageDialog(this,
+                    "No extension directory found for this module.\n\nExpected: "
+                    + (extDir == null ? "(unknown)" : extDir.getPath()),
+                    title, JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        final List<File> extFiles = extensionFilesIn(extDir);
+        if (extFiles.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "No extensions (*.vmdx) found in:\n" + extDir.getPath(),
+                    title, JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        final StringBuilder list = new StringBuilder();
+        for (File f : extFiles) {
+            list.append("<br>&nbsp;&nbsp;• ").append(f.getName());
+            if (isInactive(f)) list.append("&nbsp;&nbsp;<i>(inactive)</i>");
+        }
+        final int go = JOptionPane.showConfirmDialog(this,
+                "<html>Combine <b>" + extFiles.size() + "</b> extension(s) into \"<b>"
+                + moduleFile.getName() + "</b>\":" + list
+                + "<br><br>Every component is copied into the module at the place its<br>"
+                + "extension grafts it, together with the images it uses.<br><br>"
+                + "The extensions are not modified, and neither module nor extension<br>"
+                + "version numbers are changed. You will be asked for a new file name<br>"
+                + "for the combined module; the original is kept.</html>",
+                title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (go != JOptionPane.OK_OPTION) return;
+
+        status("Combining " + extFiles.size() + " extension(s) …");
+        final JDialog progress = makeProgressDialog(
+                "Combining <b>" + extFiles.size() + "</b> extension(s) into <b>"
+                + moduleFile.getName() + "</b> …<br>Please wait.");
+
+        final SwingWorker<Object[], Void> worker = new SwingWorker<Object[], Void>() {
+            @Override protected Object[] doInBackground() throws Exception {
+                final VassalArchive module = VassalArchive.open(moduleFile);
+                final List<VassalArchive> exts = new ArrayList<>();
+                for (File f : extFiles) exts.add(VassalArchive.open(f));
+                final ExtensionCombiner.CombineReport r =
+                        ExtensionCombiner.combine(module, exts);
+                return new Object[]{module, r};
+            }
+            @Override protected void done() {
+                progress.dispose();
+                try {
+                    final Object[] res = get();
+                    finishCombine(moduleFile, (VassalArchive) res[0],
+                            (ExtensionCombiner.CombineReport) res[1]);
+                } catch (Exception ex) {
+                    log.error("Combine Extensions failed for {}", moduleFile, ex);
+                    final Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(MainWindow.this,
+                            "Could not combine the extensions:\n\n" + cause.getMessage(),
+                            title, JOptionPane.ERROR_MESSAGE);
+                    status("Combine Extensions failed.");
+                }
+            }
+        };
+        worker.execute();
+        progress.setVisible(true);
+    }
+
+    /** Asks where the combined module should go, writes it, and shows the log. */
+    private void finishCombine(File moduleFile, VassalArchive combined,
+                               ExtensionCombiner.CombineReport r) {
+        final String title = "Combine Extensions";
+        if (!r.changedAnything()) {
+            showRunLog(title, combineLog(moduleFile, r));
+            status("Nothing was combined — see the log.");
+            return;
+        }
+
+        final File dest = chooseModuleDestination(title, moduleFile,
+                suggestedCombinedName(moduleFile), moduleFile);
+        if (dest == null) {
+            status("Combine Extensions cancelled — nothing was written.");
+            return;
+        }
+
+        try {
+            combined.saveAs(dest);
+        } catch (Exception ex) {
+            log.error("Could not write combined module {}", dest, ex);
+            JOptionPane.showMessageDialog(this,
+                    "Could not write the combined module:\n" + dest.getName()
+                    + "\n\n" + ex.getMessage(), title, JOptionPane.ERROR_MESSAGE);
+            status("Could not write " + dest.getName() + ".");
+            return;
+        }
+
+        showRunLog(title, combineLog(dest, r));
+        status(String.format("Combined %d component(s) from %d extension(s) into %s.",
+                r.copied.size(), r.extensionsUsed.size(), dest.getName()));
+
+        final int open = JOptionPane.showConfirmDialog(this,
+                "Open the combined module \"" + dest.getName() + "\" in the left panel?",
+                title, JOptionPane.YES_NO_OPTION);
+        if (open == JOptionPane.YES_OPTION) openArchive(leftPanel, dest);
+    }
+
+    /** "<name> (combined).vmod" for the combined copy of {@code moduleFile}. */
+    private static String suggestedCombinedName(File moduleFile) {
+        final String n = moduleFile.getName();
+        final String base = n.toLowerCase().endsWith(".vmod")
+                ? n.substring(0, n.length() - ".vmod".length()) : n;
+        return base + " (combined).vmod";
+    }
+
+    /**
+     * <b>Tools &rarr; Uncombine Extensions…</b> — the inverse: takes the components
+     * a set of extensions owns back out of a combined module, carrying any edit made
+     * while it was monolithic back into the extension it belongs to.
+     *
+     * <p>For each component an extension contributes: if the module's copy is
+     * identical it is simply removed from the module; if it differs it replaces the
+     * extension's copy first, so the edit survives in exactly one place. Images left
+     * unreferenced in the module afterwards are offered for removal, the changed
+     * extensions are saved in place, and the module is written under a name the user
+     * chooses — which may be the original pre-combine module.</p>
+     */
+    private void uncombineExtensions() {
+        final String title = "Uncombine Extensions";
+        final File moduleFile = moduleFileForCombine(title);
+        if (moduleFile == null) return;
+
+        final JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Choose the Extensions Folder");
+        fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        final File guess = moduleExtensionDir();
+        if (guess != null && guess.isDirectory()) fc.setCurrentDirectory(guess.getParentFile());
+        if (guess != null) fc.setSelectedFile(guess);
+        if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        final File extDir = fc.getSelectedFile();
+        if (extDir == null || !extDir.isDirectory()) {
+            JOptionPane.showMessageDialog(this, "Not a folder:\n" + extDir,
+                    title, JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        final List<File> extFiles = extensionFilesIn(extDir);
+        if (extFiles.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "No extensions (*.vmdx) found in:\n" + extDir.getPath()
+                    + "\n(or its " + INACTIVE_DIR + "/ subfolder)",
+                    title, JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        final StringBuilder list = new StringBuilder();
+        for (File f : extFiles) {
+            list.append("<br>&nbsp;&nbsp;• ").append(f.getName());
+            if (isInactive(f)) list.append("&nbsp;&nbsp;<i>(inactive)</i>");
+        }
+        final int go = JOptionPane.showConfirmDialog(this,
+                "<html>Uncombine <b>" + extFiles.size() + "</b> extension(s) from \"<b>"
+                + moduleFile.getName() + "</b>\":" + list
+                + "<br><br>A component the module and its extension agree on is removed from<br>"
+                + "the module. One the module has edited is written back into its extension<br>"
+                + "first, then removed — so each edit ends up in exactly one place.<br><br>"
+                + "<b>The extension files will be modified.</b> You will be shown what changed<br>"
+                + "and asked where to save the module before anything is written.</html>",
+                title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (go != JOptionPane.OK_OPTION) return;
+
+        status("Uncombining " + extFiles.size() + " extension(s) …");
+        final JDialog progress = makeProgressDialog(
+                "Comparing <b>" + moduleFile.getName() + "</b> against <b>"
+                + extFiles.size() + "</b> extension(s) …<br>Please wait.");
+
+        final SwingWorker<Object[], Void> worker = new SwingWorker<Object[], Void>() {
+            @Override protected Object[] doInBackground() throws Exception {
+                final VassalArchive module = VassalArchive.open(moduleFile);
+                final List<VassalArchive> exts = new ArrayList<>();
+                for (File f : extFiles) exts.add(VassalArchive.open(f));
+                final ExtensionCombiner.UncombineReport r =
+                        ExtensionCombiner.uncombine(module, exts);
+                // Only meaningful once the components have gone: an image used
+                // solely by something that moved back out is unused only now.
+                final Set<String> unused = module.findUnusedImages();
+                return new Object[]{module, exts, r, unused};
+            }
+            @SuppressWarnings("unchecked")
+            @Override protected void done() {
+                progress.dispose();
+                try {
+                    final Object[] res = get();
+                    finishUncombine(moduleFile, (VassalArchive) res[0],
+                            (List<VassalArchive>) res[1],
+                            (ExtensionCombiner.UncombineReport) res[2],
+                            (Set<String>) res[3]);
+                } catch (Exception ex) {
+                    log.error("Uncombine Extensions failed for {}", moduleFile, ex);
+                    final Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(MainWindow.this,
+                            "Could not uncombine the extensions:\n\n" + cause.getMessage(),
+                            title, JOptionPane.ERROR_MESSAGE);
+                    status("Uncombine Extensions failed.");
+                }
+            }
+        };
+        worker.execute();
+        progress.setVisible(true);
+    }
+
+    /**
+     * Confirms the planned uncombine, asks where the module goes, writes everything
+     * (unused images dropped, changed extensions saved in place, module saved), then
+     * shows the log of what each extension received.
+     */
+    private void finishUncombine(File moduleFile, VassalArchive module,
+                                 List<VassalArchive> exts,
+                                 ExtensionCombiner.UncombineReport r,
+                                 Set<String> unusedImages) {
+        final String title = "Uncombine Extensions";
+        if (!r.changedAnything()) {
+            showRunLog(title, uncombineLog(moduleFile, r, java.util.Collections.emptySet()));
+            status("Nothing to uncombine — see the log.");
+            return;
+        }
+
+        final int updated  = r.count(ExtensionCombiner.ChangeRecord.Kind.UPDATED);
+        final int reverted = r.count(ExtensionCombiner.ChangeRecord.Kind.REVERTED);
+        final int go = JOptionPane.showConfirmDialog(this,
+                "<html><b>" + updated + "</b> component(s) edited in the module will be written"
+                + "<br>back into <b>" + r.modifiedExtensions.size() + "</b> extension(s);"
+                + " <b>" + reverted + "</b> unchanged component(s)<br>will simply be removed."
+                + "<br><br><b>" + unusedImages.size() + "</b> image(s) and <b>"
+                + r.orphanedSetupFiles.size() + "</b> setup file(s) will be left"
+                + "<br>unreferenced and dropped from the module."
+                + "<br><br>The extension files are written in place. Continue?</html>",
+                title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+        if (go != JOptionPane.OK_OPTION) {
+            status("Uncombine Extensions cancelled — nothing was written.");
+            return;
+        }
+
+        // The original module may legitimately be the destination here: uncombining
+        // is how a combined module is turned back into the one that had extensions.
+        final File dest = chooseModuleDestination(title, moduleFile,
+                suggestedUncombinedName(moduleFile), null);
+        if (dest == null) {
+            status("Uncombine Extensions cancelled — nothing was written.");
+            return;
+        }
+
+        for (String img : unusedImages) module.removeImage(img);
+        for (String f : r.orphanedSetupFiles) module.removeEntry(f);
+
+        final List<String> failures = new ArrayList<>();
+        for (VassalArchive ext : r.modifiedExtensions) {
+            try {
+                ext.save();
+            } catch (Exception ex) {
+                log.error("Could not save extension {}", ext.getFile(), ex);
+                failures.add(ext.getFile().getName() + ": " + ex.getMessage());
+            }
+        }
+        try {
+            module.saveAs(dest);
+        } catch (Exception ex) {
+            log.error("Could not write uncombined module {}", dest, ex);
+            failures.add(dest.getName() + ": " + ex.getMessage());
+        }
+
+        showRunLog(title, uncombineLog(dest, r, unusedImages));
+
+        if (!failures.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "Some files could not be written:\n\n" + String.join("\n", failures),
+                    title, JOptionPane.ERROR_MESSAGE);
+            status("Uncombine finished with " + failures.size() + " write error(s).");
+            return;
+        }
+        status(String.format("Uncombined: %d updated, %d removed, %d extension(s) saved, module → %s.",
+                updated, reverted, r.modifiedExtensions.size(), dest.getName()));
+
+        final int open = JOptionPane.showConfirmDialog(this,
+                "Open the uncombined module \"" + dest.getName() + "\" in the left panel?",
+                title, JOptionPane.YES_NO_OPTION);
+        if (open == JOptionPane.YES_OPTION) openArchive(leftPanel, dest);
+    }
+
+    /** "<name> (uncombined).vmod", dropping a "(combined)" marker if one is there. */
+    private static String suggestedUncombinedName(File moduleFile) {
+        String n = moduleFile.getName();
+        if (n.toLowerCase().endsWith(".vmod")) n = n.substring(0, n.length() - ".vmod".length());
+        if (n.endsWith(" (combined)")) {
+            return n.substring(0, n.length() - " (combined)".length()) + ".vmod";
+        }
+        return n + " (uncombined).vmod";
+    }
+
+    /**
+     * Asks for the module's destination, forcing a {@code .vmod} extension and
+     * confirming an overwrite. {@code forbidden}, when given, is a file the result
+     * may not be written to — Combine refuses to overwrite the module it read.
+     *
+     * @return the chosen file, or null if the user cancelled
+     */
+    private File chooseModuleDestination(String title, File moduleFile,
+                                         String suggestedName, File forbidden) {
+        while (true) {
+            final JFileChooser fc = new JFileChooser();
+            fc.setDialogTitle(title + " — Save Module As");
+            fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+                    "VASSAL Modules (*.vmod)", "vmod"));
+            fc.setCurrentDirectory(moduleFile.getAbsoluteFile().getParentFile());
+            fc.setSelectedFile(new File(moduleFile.getAbsoluteFile().getParentFile(),
+                    suggestedName));
+            if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return null;
+
+            File chosen = fc.getSelectedFile();
+            if (!chosen.getName().toLowerCase().endsWith(".vmod")) {
+                chosen = new File(chosen.getParentFile(), chosen.getName() + ".vmod");
+            }
+            if (forbidden != null
+                    && chosen.getAbsoluteFile().equals(forbidden.getAbsoluteFile())) {
+                JOptionPane.showMessageDialog(this,
+                        "The original module must be kept:\n" + forbidden.getName()
+                        + "\n\nPlease choose a different file name.",
+                        title, JOptionPane.WARNING_MESSAGE);
+                continue;
+            }
+            if (chosen.exists()) {
+                final int r = JOptionPane.showConfirmDialog(this,
+                        chosen.getName() + " already exists.\nOverwrite it?",
+                        title, JOptionPane.OK_CANCEL_OPTION);
+                if (r != JOptionPane.OK_OPTION) continue;
+            }
+            return chosen;
+        }
+    }
+
+    // ---- logs --------------------------------------------------------------
+
+    private static String combineLog(File dest, ExtensionCombiner.CombineReport r) {
+        final StringBuilder b = new StringBuilder();
+        b.append("Combine Extensions\n");
+        b.append("Module: ").append(dest.getName()).append('\n');
+        b.append('\n');
+        b.append("Copied into the module: ").append(r.copied.size())
+         .append(" component(s) from ").append(r.extensionsUsed.size()).append(" extension(s)\n");
+        b.append("Images copied: ").append(r.imagesCopied.size())
+         .append("    Setup files copied: ").append(r.filesCopied.size()).append('\n');
+
+        section(b, "COMPONENTS COPIED", r.copied);
+        section(b, "SKIPPED — the module already had one", r.alreadyPresent);
+        section(b, "SKIPPED — target not found in the module", r.unresolved);
+        if (!r.imagesCopied.isEmpty()) {
+            section(b, "IMAGES COPIED", new ArrayList<>(r.imagesCopied));
+        }
+        if (!r.filesCopied.isEmpty()) {
+            section(b, "SETUP FILES COPIED", new ArrayList<>(r.filesCopied));
+        }
+        return b.toString();
+    }
+
+    /**
+     * The per-extension record of what uncombining did — which components were
+     * written back into each extension and why, which were simply removed from the
+     * module, and what could not be matched.
+     */
+    private static String uncombineLog(File dest, ExtensionCombiner.UncombineReport r,
+                                       Set<String> unusedImages) {
+        final StringBuilder b = new StringBuilder();
+        b.append("Uncombine Extensions\n");
+        b.append("Module: ").append(dest.getName()).append('\n');
+        b.append('\n');
+        b.append("Updated in an extension : ")
+         .append(r.count(ExtensionCombiner.ChangeRecord.Kind.UPDATED)).append('\n');
+        b.append("Removed from the module : ").append(r.removedFromModule).append('\n');
+        b.append("Extensions saved        : ").append(r.modifiedExtensions.size()).append('\n');
+        b.append("Unused images dropped   : ").append(unusedImages.size()).append('\n');
+        b.append("Setup files dropped     : ").append(r.orphanedSetupFiles.size()).append('\n');
+
+        // Group by extension: what each one actually received.
+        final Map<String, List<ExtensionCombiner.ChangeRecord>> byExt = new LinkedHashMap<>();
+        for (ExtensionCombiner.ChangeRecord c : r.changes) {
+            byExt.computeIfAbsent(c.extension, k -> new ArrayList<>()).add(c);
+        }
+        for (Map.Entry<String, List<ExtensionCombiner.ChangeRecord>> e : byExt.entrySet()) {
+            final List<ExtensionCombiner.ChangeRecord> cs = e.getValue();
+            long upd = cs.stream()
+                    .filter(c -> c.kind == ExtensionCombiner.ChangeRecord.Kind.UPDATED).count();
+            b.append("\n").append(repeat('=', 72)).append('\n');
+            b.append(e.getKey());
+            b.append(upd > 0 ? "   — " + upd + " component(s) updated" : "   — unchanged");
+            b.append('\n').append(repeat('=', 72)).append('\n');
+            for (ExtensionCombiner.ChangeRecord c : cs) {
+                b.append("  ").append(tag(c.kind)).append(' ').append(c.component).append('\n');
+                b.append("        at: ").append(c.target).append('\n');
+                b.append("        ").append(c.detail).append('\n');
+            }
+        }
+
+        if (!r.imagesCopiedToExtensions.isEmpty()) {
+            section(b, "IMAGES COPIED INTO EXTENSIONS",
+                    new ArrayList<>(r.imagesCopiedToExtensions));
+        }
+        if (!r.filesCopiedToExtensions.isEmpty()) {
+            section(b, "SETUP FILES COPIED INTO EXTENSIONS",
+                    new ArrayList<>(r.filesCopiedToExtensions));
+        }
+        if (!r.orphanedSetupFiles.isEmpty()) {
+            section(b, "SETUP FILES DROPPED FROM THE MODULE",
+                    new ArrayList<>(r.orphanedSetupFiles));
+        }
+        if (!unusedImages.isEmpty()) {
+            section(b, "UNUSED IMAGES DROPPED FROM THE MODULE",
+                    new ArrayList<>(unusedImages));
+        }
+        return b.toString();
+    }
+
+    private static String tag(ExtensionCombiner.ChangeRecord.Kind k) {
+        switch (k) {
+            case UPDATED:           return "[UPDATED ]";
+            case REVERTED:          return "[removed ]";
+            case MISSING_IN_MODULE: return "[absent  ]";
+            case TARGET_MISSING:    return "[no path ]";
+            default:                return "[        ]";
+        }
+    }
+
+    private static String repeat(char c, int n) {
+        final StringBuilder sb = new StringBuilder(n);
+        for (int i = 0; i < n; i++) sb.append(c);
+        return sb.toString();
+    }
+
+    private static void section(StringBuilder b, String heading, List<String> lines) {
+        if (lines.isEmpty()) return;
+        b.append('\n').append(repeat('=', 72)).append('\n');
+        b.append(heading).append("  (").append(lines.size()).append(")\n");
+        b.append(repeat('=', 72)).append('\n');
+        for (String l : lines) b.append("  ").append(l).append('\n');
+    }
+
+    /**
+     * Shows a run's log in a scrollable window, with the means to keep it: these
+     * reports are long and are the only record of which component went where.
+     */
+    private void showRunLog(String title, String text) {
+        final JTextArea area = new JTextArea(text);
+        area.setEditable(false);
+        area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        area.setCaretPosition(0);
+        final JScrollPane scroll = new JScrollPane(area);
+        scroll.setPreferredSize(new Dimension(760, 460));
+
+        final JButton copy = new JButton("Copy");
+        copy.addActionListener(e -> {
+            Toolkit.getDefaultToolkit().getSystemClipboard()
+                   .setContents(new java.awt.datatransfer.StringSelection(text), null);
+            status("Log copied to the clipboard.");
+        });
+        final JButton save = new JButton("Save…");
+        save.addActionListener(e -> saveLogToFile(title, text));
+        final JButton close = new JButton("Close");
+
+        final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        buttons.add(copy);
+        buttons.add(save);
+        buttons.add(close);
+
+        final JPanel content = new JPanel(new BorderLayout(6, 8));
+        content.setBorder(new EmptyBorder(10, 12, 10, 12));
+        content.add(scroll, BorderLayout.CENTER);
+        content.add(buttons, BorderLayout.SOUTH);
+
+        final JDialog dialog = new JDialog(this, title + " — Log", true);
+        close.addActionListener(e -> dialog.dispose());
+        dialog.setContentPane(content);
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
+    private void saveLogToFile(String title, String text) {
+        final JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Save Log As");
+        fc.setSelectedFile(new File(title.toLowerCase().replace(' ', '-') + ".log"));
+        if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        final File f = fc.getSelectedFile();
+        try {
+            java.nio.file.Files.write(f.toPath(), text.getBytes(StandardCharsets.UTF_8));
+            status("Log saved as " + f.getName());
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Could not write the log:\n" + ex.getMessage(),
+                    title, JOptionPane.ERROR_MESSAGE);
         }
     }
 

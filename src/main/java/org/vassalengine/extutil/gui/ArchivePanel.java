@@ -8,6 +8,7 @@
 package org.vassalengine.extutil.gui;
 
 import org.vassalengine.extutil.model.ComponentNode;
+import org.vassalengine.extutil.model.ComponentPath;
 import org.vassalengine.extutil.model.VassalArchive;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -470,11 +471,11 @@ public class ArchivePanel extends JPanel {
     // become greyed inherited nodes (shared prefixes merged), and each wrapper's
     // real component subtree hangs beneath its target as normal (black) nodes.
 
-    private static final String EXTENSION_ELEMENT = "VASSAL.build.module.ExtensionElement";
+    private static final String EXTENSION_ELEMENT = ComponentPath.EXTENSION_ELEMENT;
 
     private DefaultMutableTreeNode buildExtensionTree(Element extRoot) {
         DefaultMutableTreeNode root = new DefaultMutableTreeNode(new ComponentNode(extRoot));
-        for (Element child : elementChildren(extRoot)) {
+        for (Element child : ComponentPath.elementChildren(extRoot)) {
             graftInto(root, child);
         }
         return root;
@@ -494,10 +495,10 @@ public class ArchivePanel extends JPanel {
             return;
         }
         DefaultMutableTreeNode parent = root;
-        for (String[] seg : decodeTarget(child.getAttribute("target"))) {
+        for (String[] seg : ComponentPath.decode(child.getAttribute("target"))) {
             parent = findOrCreateInherited(parent, seg[0], seg[1]);
         }
-        for (Element comp : elementChildren(child)) {
+        for (Element comp : ComponentPath.elementChildren(child)) {
             if (EXTENSION_ELEMENT.equals(comp.getTagName())) {
                 graftInto(root, comp);           // nested wrapper: absolute target
             } else {
@@ -530,92 +531,6 @@ public class ArchivePanel extends JPanel {
                 new DefaultMutableTreeNode(new ComponentNode(className, name));
         parent.add(created);
         return created;
-    }
-
-    private static List<Element> elementChildren(Element el) {
-        List<Element> kids = new ArrayList<>();
-        NodeList children = el.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            Node child = children.item(i);
-            if (child.getNodeType() == Node.ELEMENT_NODE) kids.add((Element) child);
-        }
-        return kids;
-    }
-
-    /**
-     * Decodes an ExtensionElement {@code target} into a list of {@code {className, name}}
-     * pairs (name may be null).  The target is a SequenceEncoder string: '/'-joined
-     * tokens, each a ':'-joined {@code className:name} — decoded here exactly as
-     * VASSAL's {@code SequenceEncoder.Decoder} / {@code ComponentPathBuilder} do.
-     * An empty target yields an empty list (graft at the module root).
-     */
-    private static List<String[]> decodeTarget(String target) {
-        List<String[]> segs = new ArrayList<>();
-        if (target == null || target.isEmpty()) return segs;
-        for (String token : seqDecode(target, '/')) {
-            if (token.isEmpty()) continue;
-            List<String> parts = seqDecode(token, ':');
-            String className = parts.isEmpty() ? "" : parts.get(0);
-            String name = parts.size() > 1 ? parts.get(1) : null;
-            segs.add(new String[]{className, name});
-        }
-        return segs;
-    }
-
-    /**
-     * Faithful port of VASSAL's {@code SequenceEncoder.Decoder}: splits {@code val}
-     * on unescaped {@code delim}, honouring {@code \}-escaped delimiters and single-quote
-     * enclosure, so it is the exact inverse of the encoder that produced the target.
-     */
-    private static List<String> seqDecode(String val, char delim) {
-        List<String> out = new ArrayList<>();
-        if (val == null) return out;
-        final int stop = val.length();
-        int start = 0;
-        boolean done = false;
-        while (!done) {
-            if (start == stop) {           // trailing empty token (== "null")
-                out.add("");
-                break;
-            }
-            StringBuilder buf = null;
-            String tok = null;
-            int i = start;
-            for (; i < stop; i++) {
-                if (val.charAt(i) == delim) {
-                    if (i > 0 && val.charAt(i - 1) == '\\') {
-                        if (buf == null) buf = new StringBuilder();
-                        buf.append(val, start, i - 1);
-                        start = i;
-                    } else {
-                        if (buf == null || buf.length() == 0) {
-                            tok = val.substring(start, i);
-                        } else {
-                            buf.append(val, start, i);
-                        }
-                        start = i + 1;
-                        break;
-                    }
-                }
-            }
-            if (start < i) {               // reached the end without a real delimiter
-                if (buf == null || buf.length() == 0) {
-                    tok = val.substring(start);
-                } else {
-                    buf.append(val, start, stop);
-                }
-                done = true;
-            }
-            out.add(unquote(tok != null ? tok : (buf != null ? buf.toString() : "")));
-        }
-        return out;
-    }
-
-    /** Strips a single-quote enclosure, matching {@code SequenceEncoder.Decoder.unquote}. */
-    private static String unquote(String s) {
-        int len = s.length();
-        return (len > 1 && s.charAt(0) == '\'' && s.charAt(len - 1) == '\'')
-                ? s.substring(1, len - 1) : s;
     }
 
     /**

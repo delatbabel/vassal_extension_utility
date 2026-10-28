@@ -24,6 +24,7 @@ VASSAL's built-in module editor lets you edit a module or extension in isolation
 12. Find and remove "excess" game pieces from a saved game (`.vsav`) — pieces missing from the module's active extensions that otherwise cause *"Image not found"* / *"No such map"* on load and *"Unable to match piece … by name"* on Refresh Counters (**Excess Units…**). The tidied game is written to a new file, leaving the original unchanged.
 13. Swap the maps of one saved game for another's (**Tools → Swap Maps Between Saved Games…**) — every board layout is taken from a second saved game, leaving the first game's pieces and everything else exactly as they were. The result is written to a new file; neither original is changed.
 14. Choose the application's appearance (**View → Theme**) — a clean **Light** or **Dark** theme, or your platform's own **System** look. The choice applies at once and is remembered.
+15. Fold a module's extensions into the module and back out again (**Tools → Combine / Uncombine Extensions…**) — the VASSAL editor refuses some edits on a module that has extensions, so combine, edit the monolith, then uncombine to put each change back in the extension it came from.
 
 ## Developing
 
@@ -102,6 +103,43 @@ Before anything is written you are shown what will happen. Maps whose layout act
 - **System** — your platform's own look and feel (the Windows or macOS native appearance, or whatever your Linux desktop provides), for when you would rather the application matched everything else on your screen.
 
 The change takes effect immediately — no restart — and is remembered for next time in `~/.vassal-extension-utility/ui.properties`. Light and Dark come from [FlatLaf](https://www.formdev.com/flatlaf/); System is what earlier versions of this utility always used.
+
+## Editing a module that has extensions
+
+The VASSAL editor will not perform some edits on a module that carries
+extensions. **Tools → Combine Extensions…** and **Tools → Uncombine Extensions…**
+let you work around that: make a single monolithic module, edit it in VASSAL, then
+put the changes back into the extensions they belong to.
+
+**Combine** — with the module open in the left panel:
+
+1. Every extension of that module is read, active and inactive alike.
+2. Each component is copied into the module at exactly the place its extension
+   grafts it, along with the images and saved games it uses.
+3. You are asked for a **new** file name; the original module is kept and refused
+   as the destination. The extensions are not modified, not activated or
+   deactivated, and no version number is changed on either side.
+
+Edit the combined module in VASSAL as you like.
+
+**Uncombine** — with the combined module open in the left panel:
+
+1. You are asked for the extensions folder (its `inactive` subfolder is included).
+2. Every component an extension owns is compared with the module's copy. If they
+   agree, the module's copy is simply removed. If the module's has been edited, it
+   is written back into the extension first and then removed — so each change ends
+   up in exactly one place.
+3. Images and saved games left referenced by nothing are dropped from the module.
+4. The changed extensions are saved, and you are asked where to save the module —
+   which may be the original module you had before combining.
+5. A **log** opens showing what each extension received, which components were
+   removed, and anything that could not be matched. You can copy it or save it to
+   a file.
+
+Components you add to the module that belong to no extension stay in the module,
+which is how new work survives the round trip. A component an extension has but
+the module no longer does is reported and left alone — uncombining never deletes
+anything from an extension.
 
 ## Logs
 
