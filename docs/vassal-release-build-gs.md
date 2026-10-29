@@ -119,7 +119,41 @@ vassal-doc/target/classes/designerguide/designerguide.pdf  2 780 681
 The halved size is the proof that Ghostscript really ran, rather than the optimization being
 silently skipped.
 
-## 6. Files changed
+## 6. Building Windows afterwards — the jlink/jmods version trap
+
+With the spawn fixed, `make release` gets through the Maven build, `release-other` and
+`release-linux`, then stops at Windows because the cross-build tooling is not present:
+
+```
+make: *** No rule to make target 'tmp/VASSAL-...-windows-x86_64.exe', needed by 'release-windows-x86_64'.
+```
+
+`./bootstrap.sh` fetches it, but **its default JDK will not work**. The Makefile links the
+bundled runtime with the *host* `jlink` against the *target* JDK's `jmods`, and jlink refuses a
+feature-version mismatch. bootstrap defaults to Temurin 26 while this machine's JDK — and so its
+jlink — is 25, so the default download produces a runtime that cannot be linked.
+
+Ask for the version you actually have:
+
+```bash
+java -version                       # e.g. 25.0.4.1
+./bootstrap.sh --no-dmg --no-wrapper -t 25.0.4.1+1 windows-x86_64
+make release-windows
+```
+
+Temurin publishes `jdk-25.0.4.1+1`, an exact match for the host, which is the safest choice —
+list what is available with:
+
+```bash
+curl -s 'https://api.adoptium.net/v3/info/release_names?architecture=x64&image_type=jdk&os=windows&release_type=ga&version=%5B25%2C26%29&page_size=5&sort_order=DESC'
+```
+
+`--no-dmg` and `--no-wrapper` skip building libdmg-hfsplus (macOS only) and regenerating the
+Maven wrapper. Everything lands under `dist/` and `make release-windows` then produces the NSIS
+installer. `nsis`, `dos2unix`, `cmake` and `genisoimage` need to be installed; `jinja2-cli` is
+only needed for `release-announcements`.
+
+## 7. Files changed
 
 | File | Change |
 |---|---|
