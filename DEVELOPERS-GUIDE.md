@@ -57,6 +57,7 @@ Packages are written to `tmp/` and bundle their own Java runtime. The Linux `.de
 
 - [packaging.md](docs/packaging.md) — building installable packages (`.deb`/`.rpm`/`.exe`/`.dmg`) and the versioning scheme
 - [image-display-and-tiling.md](docs/image-display-and-tiling.md) — how VASSAL tiles large board images and why moved images must preserve their modification times
+- [vassal-release-build-gs.md](docs/vassal-release-build-gs.md) — why `make release` in `../vassal` dies with *"(EBADF) Bad file descriptor - /usr/bin/gs"* when Ghostscript is installed and working, and the two `--add-opens` that let JRuby spawn it on Java 17+
 - [vassal-editor-extensions.md](docs/vassal-editor-extensions.md) — why a module opened with **Edit Module** shows none of its extensions' maps or counters, and the engine change (`feature/load-extensions-with-module-in-editor`) that loads them without the editor then saving them into the module
 - [vassal-empty-extensionelement-crash.md](docs/vassal-empty-extensionelement-crash.md) — why an empty `ExtensionElement` crashes VASSAL, and how the utility avoids leaving one behind
 - [wif-save-bloat-analysis.md](docs/wif-save-bloat-analysis.md) — why the WiF module uses so much memory and produces huge `.vsav` saves (measured root causes: baked-in prototype expansion, O(traits²) escaping, embedded Place Marker, obfuscation-before-compression)
