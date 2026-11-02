@@ -44,8 +44,9 @@ others; the underlying measurements are in
 
 ## Pull-request correspondence
 
-Review comments written for, and replies sent to, the pull requests above. Kept because they
-carry measurements and reasoning that did not fit in a commit message.
+Review comments written for, and replies sent to, the pull requests above, plus reviews of
+other people's engine pull requests. Kept because they carry measurements and reasoning that
+did not fit in a commit message.
 
 | Document | Pull request |
 |---|---|
@@ -58,3 +59,4 @@ carry measurements and reasoning that did not fit in a commit message.
 | [pr-reply-share-trait-data-review.md](pr-reply-share-trait-data-review.md) | #15119 — shared trait type data |
 | [pr-reply-xz-alternatives.md](pr-reply-xz-alternatives.md) | XZ vs zstd and brotli, measured |
 | [pr-reply-xz-drop-xor.md](pr-reply-xz-drop-xor.md) | Dispensing with the XOR obfuscation entirely |
+| [pr-review-trait-keyevent-snapshot.md](pr-review-trait-keyevent-snapshot.md) | [#15257](https://github.com/vassalengine/vassal/pull/15257) — review of riverwanderer's change to snapshot piece state only when a Dynamic Property or Layer handles the keystroke |
