@@ -1,6 +1,6 @@
 # Flat trait-chain framing — removing the O(N²) backslashes from VASSAL pieces
 
-This is the follow-up to [wif-save-bloat-analysis.md §3](wif-save-bloat-analysis.md#3-cause-2--sequenceencoder-escaping-is-otraits-per-piece)
+This is the follow-up to [wif-save-bloat-analysis.md §3](../wif-save-bloat-analysis.md#3-cause-2--sequenceencoder-escaping-is-otraits-per-piece)
 ("Cause #2 — SequenceEncoder escaping is O(traits²) per piece") and to item **C1** of
 [wif-engine-optimizations.md](wif-engine-optimizations.md#c1-eliminate-the-on-sequenceencoder-escaping).
 It records a second, exhaustive pass through the engine source in `../vassal` to find every
@@ -339,9 +339,9 @@ cd ../vassal && ./mvnw -q -pl vassal-app test -Dtest=TraitChainFramingTest -Dsur
 ## 7. What this does *not* do, and what is next
 
 - It removes the quadratic term only. The linear content (200 expanded traits per piece,
-  [analysis §2](wif-save-bloat-analysis.md#2-cause-1--every-piece-inlines-a-fully-expanded-prototype-chain))
+  [analysis §2](../wif-save-bloat-analysis.md#2-cause-1--every-piece-inlines-a-fully-expanded-prototype-chain))
   and the duplication across identical pieces (§6, engine item C2) remain; the module-side
-  fixes in [wif-module-optimizations.md](wif-module-optimizations.md) are still the largest
+  fixes in [wif-module-optimizations.md](../wif-module-optimizations.md) are still the largest
   lever on the linear part.
 - It does not touch `SequenceEncoder`, so the 2006-era ambiguities of that class (a token
   *ending* in a backslash before a delimiter is still mis-read; only a *leading* backslash is

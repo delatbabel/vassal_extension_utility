@@ -53,16 +53,24 @@ Packages are written to `tmp/` and bundle their own Java runtime. The Linux `.de
 - [vsav excess units](docs/vsav-excess-units.md) — finding and removing pieces missing from a module's active extensions (detection algorithm & file rewrite)
 - [Excess Units guide](docs/excess-units-guide.md) — step-by-step how-to for the **Excess Units …** tool, e.g. dropping unwanted extensions (Convoys in Flames, Light Cruisers) from a saved game
 
+## VASSAL Engine Documentation
+
+Notes about the engine itself — its behaviour, bugs, build, and the branches and pull requests
+this project has contributed to it — live in **[docs/vassal/](docs/vassal/README.md)**, which
+indexes them. Highlights:
+
+- [vassal-deb-missing-xz.md](docs/vassal/vassal-deb-missing-xz.md) — `NoClassDefFoundError: org/tukaani/xz/FilterOptions` on the 3.8.0 `.deb`: the new `libxz-java` dependency, why a dangling `Class-Path` symlink fails silently, and how to install the `.deb` so it cannot happen ([#15256](https://github.com/vassalengine/vassal/issues/15256))
+- [vassal-editor-extensions.md](docs/vassal/vassal-editor-extensions.md) — why a module opened with **Edit Module** shows none of its extensions' maps or counters, and the change that loads them without the editor then saving them into the module
+- [vassal-empty-extensionelement-crash.md](docs/vassal/vassal-empty-extensionelement-crash.md) — why an empty `ExtensionElement` crashes VASSAL, and how the utility avoids leaving one behind
+- [image-display-and-tiling.md](docs/vassal/image-display-and-tiling.md) — how VASSAL tiles large board images and why moved images must preserve their modification times
+- [vassal-release-build-gs.md](docs/vassal/vassal-release-build-gs.md) — why `make release` dies on Ghostscript when Ghostscript is fine, and the jlink/jmods trap behind the Windows build
+- [wif-engine-optimizations.md](docs/vassal/wif-engine-optimizations.md) — proposed engine changes to reduce saved-game memory and disk usage, tiered by effort, with `file:line` citations
+
 ## Additional Documentation
 
 - [packaging.md](docs/packaging.md) — building installable packages (`.deb`/`.rpm`/`.exe`/`.dmg`) and the versioning scheme
-- [image-display-and-tiling.md](docs/image-display-and-tiling.md) — how VASSAL tiles large board images and why moved images must preserve their modification times
-- [vassal-release-build-gs.md](docs/vassal-release-build-gs.md) — why `make release` in `../vassal` dies with *"(EBADF) Bad file descriptor - /usr/bin/gs"* when Ghostscript is installed and working, and the two `--add-opens` that let JRuby spawn it on Java 17+
-- [vassal-editor-extensions.md](docs/vassal-editor-extensions.md) — why a module opened with **Edit Module** shows none of its extensions' maps or counters, and the engine change (`feature/load-extensions-with-module-in-editor`) that loads them without the editor then saving them into the module
-- [vassal-empty-extensionelement-crash.md](docs/vassal-empty-extensionelement-crash.md) — why an empty `ExtensionElement` crashes VASSAL, and how the utility avoids leaving one behind
 - [wif-save-bloat-analysis.md](docs/wif-save-bloat-analysis.md) — why the WiF module uses so much memory and produces huge `.vsav` saves (measured root causes: baked-in prototype expansion, O(traits²) escaping, embedded Place Marker, obfuscation-before-compression)
 - [wif-module-optimizations.md](docs/wif-module-optimizations.md) — module-side changes to shrink memory/save size with no engine change and no loss of game features
-- [wif-engine-optimizations.md](docs/wif-engine-optimizations.md) — proposed VASSAL engine changes to reduce saved-game memory and disk usage, tiered by effort, with `file:line` citations
 - [docs/wif-fix2-trait-reduction.md](docs/wif-fix2-trait-reduction.md) — deep dive into reducing traits per WiF piece: which automation can move to map-level Global Key Commands, what prototype consolidation really buys, where the Marker constants come from, and the dead traits
 - [docs/refresh-counters.md](docs/refresh-counters.md) — running VASSAL's own Refresh Counters over external saved games: why the engine runs in a subprocess, how it is bootstrapped, what must be preserved in each save, and why "module was saved with older vassal version" really means duplicate Piece Ids
 - [docs/diagrams.md](docs/diagrams.md) — **index of every diagram in the repository**, each one viewable on GitHub as Markdown and downloadable as an interactive page that runs in a browser

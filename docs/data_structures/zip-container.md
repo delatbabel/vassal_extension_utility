@@ -72,7 +72,7 @@ rule exists to prevent.
 Both the module and its active extensions tile into the *same* cache, keyed by
 the **module's** name and version, which is why an extension's images are
 subject to the same rule. Full pipeline analysis:
-[docs/image-display-and-tiling.md](../image-display-and-tiling.md).
+[docs/image-display-and-tiling.md](../vassal/image-display-and-tiling.md).
 
 ### Sizes tell you what encoding was used
 
@@ -159,4 +159,4 @@ save carries both.
 ## See also
 
 - [vsav.md](vsav.md) · [vmod.md](vmod.md) · [vmdx.md](vmdx.md)
-- [docs/image-display-and-tiling.md](../image-display-and-tiling.md)
+- [docs/image-display-and-tiling.md](../vassal/image-display-and-tiling.md)

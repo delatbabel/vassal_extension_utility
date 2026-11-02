@@ -2,9 +2,9 @@
 
 Changes to the **VASSAL engine** (`../vassal`, `vassal-app/src/main/java/…`) that would reduce
 memory usage and saved‑game (`.vsav`) size for large modules like *WiF CE Official Combo*.
-Evidence and measurements are in **[wif-save-bloat-analysis.md](wif-save-bloat-analysis.md)**;
+Evidence and measurements are in **[wif-save-bloat-analysis.md](../wif-save-bloat-analysis.md)**;
 module‑side changes (no engine change needed) are in
-**[wif-module-optimizations.md](wif-module-optimizations.md)**.
+**[wif-module-optimizations.md](../wif-module-optimizations.md)**.
 
 These are proposals for the VASSAL engine maintainers. They are ordered by **effort vs. payoff**:
 the first two are small (A2 is fully format‑compatible; A1 adds a new, backward‑readable
@@ -24,7 +24,7 @@ before editing.
 so the ZIP is asked to compress a 2×‑inflated, 16‑symbol hex stream, which it does far less
 effectively than the original text.
 
-**Evidence** ([analysis §5](wif-save-bloat-analysis.md#5-cause-4--obfuscation-hex-doubles-the-bytes-and-defeats-compression)),
+**Evidence** ([analysis §5](../wif-save-bloat-analysis.md#5-cause-4--obfuscation-hex-doubles-the-bytes-and-defeats-compression)),
 gzip‑9 of the 002 sample:
 
 | Compressed input | Result |
@@ -146,7 +146,7 @@ module.
 > per-instance Swing configurers are gone; WiF piece heap 308 MB → 164 MB (47 %; 213 MB after the per-instance arrays and expression handles asked for in review), Europa 13 → 9.5 MB.
 
 > Measured on a legacy-style (WiF) and a modern-style (Europa) game in
-> **[wif-flyweight-analysis.md](wif-flyweight-analysis.md)**: the string-interning increment
+> **[wif-flyweight-analysis.md](../wif-flyweight-analysis.md)**: the string-interning increment
 > turns out to have been in the engine since 2021 (see below; strings are 7 % of the piece heap); a
 > whole-piece flyweight saves 14 % on WiF and 85 % on Europa; only a trait-level flyweight
 > reaches WiF's 250 MB (80–85 %) and its load time. Cheaper first steps: stop building Swing
@@ -172,13 +172,13 @@ proposed without noticing that `SequenceEncoder.Decoder.nextToken()` already int
 it returns — added in VASSAL commit `9c3b4ce2b`, 10 March 2021, "Intern some highly‑duplicated
 strings" — so every trait field, `markerSpec` and raw prototype type is already one shared
 `String` per distinct value. Nothing was changed by this project; measured in
-[wif-flyweight-analysis.md](wif-flyweight-analysis.md), strings are 7 % of the piece heap.
+[wif-flyweight-analysis.md](../wif-flyweight-analysis.md), strings are 7 % of the piece heap.
 The original text follows.* Intern/​canonicalise the obviously‑duplicated large strings:
 `PlaceMarker.markerSpec` (`PlaceMarker.java:104`) and `UsePrototype`'s raw type are byte‑identical
 across all instances of a definition but never shared — route them through a canonical‑string
 cache so all instances point at one copy.
 
-**Payoff.** Large heap reduction (the dominant cost per [analysis §7](wif-save-bloat-analysis.md#7-what-this-means-for-memory-in-the-running-engine)).
+**Payoff.** Large heap reduction (the dominant cost per [analysis §7](../wif-save-bloat-analysis.md#7-what-this-means-for-memory-in-the-running-engine)).
 **Effort:** high for the full flyweight; low for the string‑interning increment.
 
 ---
@@ -207,7 +207,7 @@ remain compatible with **live network play** and **log replay**, which use the s
 characters of every inner level (`SequenceEncoder.java:198‑209`, quote‑wrap `:95‑113`). The
 innermost trait accumulates one extra backslash per enclosing trait → **54.5 % of the plaintext
 is backslashes**, `backslashes ≈ 0.251 × traits²`
-([analysis §3](wif-save-bloat-analysis.md#3-cause-2--sequenceencoder-escaping-is-otraits-per-piece)).
+([analysis §3](../wif-save-bloat-analysis.md#3-cause-2--sequenceencoder-escaping-is-otraits-per-piece)).
 
 **Change.** Serialise a piece's trait chain with a **length‑prefixed / non‑escaping container**
 (e.g. write each trait's `myGetType()`/`myGetState()` with an explicit length or a
@@ -230,7 +230,7 @@ disk from ~18.8 → ~6.3 MB in the de‑obfuscated case (a further ~3×). **Effo
 
 **Problem.** One `AddPiece` per piece with **no dedup** (`GameState.java:1609`); identical
 counters re‑emit identical multi‑KB type strings. 8 855 pieces collapse to 5 601 distinct shapes
-([analysis §6](wif-save-bloat-analysis.md#6-cause-5--no-deduplication-across-identical-pieces)).
+([analysis §6](../wif-save-bloat-analysis.md#6-cause-5--no-deduplication-across-identical-pieces)).
 
 **Change.** Emit each distinct `<type>` once into a table at the head of the save and reference
 it by index from each piece (piece then carries only `id + typeRef + state`). `getType()` is
@@ -262,12 +262,12 @@ completeness; **C1 + C2 are the better targets.**
    [vassal-stream-save-and-load.md](vassal-stream-save-and-load.md)).
 4. **B2 string‑interning increment** — ✅ already in the engine since 2021 (see B2); the
    measured next steps are the per‑instance configurers and shared parsed expressions in
-   [wif-flyweight-analysis.md §4](wif-flyweight-analysis.md); full flyweight later.
+   [wif-flyweight-analysis.md §4](../wif-flyweight-analysis.md); full flyweight later.
 5. **C1** — ✅ done (`feature/flat-trait-chain-encoding`, see
    [vassal-flat-trait-chain.md](vassal-flat-trait-chain.md)); it needed no format version:
    the decoders read both framings, and the one-way compatibility (old engines cannot read
    new data) is the same as `!VOBS`. Then **C2**, which would still need a versioned opcode.
 
 Tiers A–B deliver real wins with no disk‑format break and pair well with the module‑side fixes
-in [wif-module-optimizations.md](wif-module-optimizations.md); Tier C is where the order‑of‑magnitude
+in [wif-module-optimizations.md](../wif-module-optimizations.md); Tier C is where the order‑of‑magnitude
 disk reduction lives, at the cost of a versioned format change.

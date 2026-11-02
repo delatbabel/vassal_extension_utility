@@ -34,7 +34,7 @@ grafts. Deleting the component and leaving the wrapper produces an
 the whole module launch** with a NullPointerException, because
 `ExtensionElement.build()` leaves its `extension` field null and `addTo()` then
 dereferences it (see
-[docs/vassal-empty-extensionelement-crash.md](../vassal-empty-extensionelement-crash.md)).
+[docs/vassal-empty-extensionelement-crash.md](../vassal/vassal-empty-extensionelement-crash.md)).
 
 So a wrapper left empty by a deletion is removed along with the slot; a wrapper
 still holding other components is kept. The run says which of the two happened
@@ -55,7 +55,7 @@ Only `buildFile.xml` is rewritten, plus `extensiondata` when `--version` bumps
 the version. Every other ZIP entry is copied byte-for-byte **with its original
 modification time**, because VASSAL judges whether a cached image tile is stale
 purely by comparing mtimes (see
-[docs/image-display-and-tiling.md](../image-display-and-tiling.md)).
+[docs/image-display-and-tiling.md](../vassal/image-display-and-tiling.md)).
 
 A version bump updates the version in **both** places VASSAL keeps it: the
 `version` attribute on the `ModuleExtension` root, and `<version>` in the

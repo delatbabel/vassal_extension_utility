@@ -502,7 +502,7 @@ Only `buildFile.xml` is rewritten. Every other ZIP entry is copied byte-for-byte
 **with its original modification time**, because VASSAL decides whether a cached
 image tile is stale purely by comparing mtimes — restamping them forces a needless
 re-tile of every board image (see
-[docs/image-display-and-tiling.md](../docs/image-display-and-tiling.md)).
+[docs/image-display-and-tiling.md](../docs/vassal/image-display-and-tiling.md)).
 
 ## drop_slots.py — delete piece slots from an extension
 
@@ -528,7 +528,7 @@ grafts. Deleting the component and leaving the wrapper produces an
 `ExtensionElement` with nothing in it, which is XML-valid but makes VASSAL
 **abort the whole module launch**: `ExtensionElement.build()` leaves its
 `extension` field null and `addTo()` then dereferences it (see
-[docs/vassal-empty-extensionelement-crash.md](../docs/vassal-empty-extensionelement-crash.md)).
+[docs/vassal-empty-extensionelement-crash.md](../docs/vassal/vassal-empty-extensionelement-crash.md)).
 
 So a wrapper left empty by a deletion is removed along with the slot; a wrapper
 still holding other components is kept. The run says which of the two happened

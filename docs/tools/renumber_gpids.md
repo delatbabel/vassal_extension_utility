@@ -38,7 +38,7 @@ Only `buildFile.xml` is rewritten. Every other ZIP entry is copied byte-for-byte
 **with its original modification time**, because VASSAL decides whether a cached
 image tile is stale purely by comparing mtimes — restamping them forces a
 needless re-tile of every board image (see
-[docs/image-display-and-tiling.md](../image-display-and-tiling.md)).
+[docs/image-display-and-tiling.md](../vassal/image-display-and-tiling.md)).
 
 ## Why duplicates happen
 

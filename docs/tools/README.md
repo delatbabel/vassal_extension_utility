@@ -84,7 +84,7 @@ Three properties fall out of that design and hold for every tool here:
 - **Modification times are preserved.** Tools that rewrite a `.vmdx` copy every
   untouched ZIP entry with its original mtime, because VASSAL decides whether a
   cached image tile is stale purely by comparing mtimes (see
-  [docs/image-display-and-tiling.md](../image-display-and-tiling.md)).
+  [docs/image-display-and-tiling.md](../vassal/image-display-and-tiling.md)).
 - **Stacks are left alone deliberately.** Removing a piece leaves its id dangling
   in any stack that listed it, which is safe: `Stack.setState()` looks each member
   up and silently skips what it cannot resolve. A later Refresh Counters reknits

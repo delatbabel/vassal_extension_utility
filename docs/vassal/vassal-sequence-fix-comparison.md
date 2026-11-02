@@ -1,7 +1,7 @@
 # Two fixes for the O(N²) piece encoding: `fix_sequences` vs `feature/flat-trait-chain-encoding`
 
 Two branches in `../vassal` attack the quadratic backslash growth described in
-[wif-save-bloat-analysis.md §3](wif-save-bloat-analysis.md#3-cause-2--sequenceencoder-escaping-is-otraits-per-piece):
+[wif-save-bloat-analysis.md §3](../wif-save-bloat-analysis.md#3-cause-2--sequenceencoder-escaping-is-otraits-per-piece):
 
 | | `fix_sequences` (Joel Uckelman, 28 Sep 2026, WIP) | `feature/flat-trait-chain-encoding` (this project, [vassal-flat-trait-chain.md](vassal-flat-trait-chain.md)) |
 |---|---|---|

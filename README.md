@@ -38,6 +38,12 @@ diagram in the repository — the application's runtime architecture, the `.vsav
 tool. Each renders on GitHub and can also be downloaded as an interactive page
 that runs in a browser.
 
+The documentation is split in two. **[docs/](docs/)** covers this utility — its
+features, the `.vmod` / `.vmdx` / `.vsav` formats it reads and writes, its
+packaging and its diagrams. **[docs/vassal/](docs/vassal/README.md)** covers the
+VASSAL engine itself: its behaviour, bugs and build, and the branches and pull
+requests this project has contributed upstream.
+
 ## Usage
 
 1. **File → Open Module** — open a `.vmod` file (appears in the left panel).

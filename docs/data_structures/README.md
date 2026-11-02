@@ -118,6 +118,6 @@ unzip -p  Extension.vmdx buildFile.xml | grep -o 'target="[^"]*"' | sort -u
 - [docs/vsav-format.md](../vsav-format.md), [docs/vmod-format.md](../vmod-format.md),
   [docs/vmdx-format.md](../vmdx-format.md) — the original format notes these pages expand on
 - [docs/vsav-excess-units.md](../vsav-excess-units.md) — the detection algorithm built on these structures
-- [docs/image-display-and-tiling.md](../image-display-and-tiling.md) — the tiling pipeline behind the mtime rule
+- [docs/image-display-and-tiling.md](../vassal/image-display-and-tiling.md) — the tiling pipeline behind the mtime rule
 - [docs/wif-save-bloat-analysis.md](../wif-save-bloat-analysis.md) — what these structures cost at scale
 - [docs/tools/](../tools/README.md) — the command-line tools that manipulate them

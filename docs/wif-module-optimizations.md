@@ -4,7 +4,7 @@ Actionable changes to the **module** (`WiF CE Official Combo ver 2_1_1.vmod` and
 extensions) that reduce VASSAL memory usage and `.vsav` size **without changing any game
 feature and without any engine code change**. Evidence and measurements are in
 **[wif-save-bloat-analysis.md](wif-save-bloat-analysis.md)**; engine‑side changes are in
-**[wif-engine-optimizations.md](wif-engine-optimizations.md)**.
+**[wif-engine-optimizations.md](vassal/wif-engine-optimizations.md)**.
 
 All work here is done in the **VASSAL module editor** (or, for bulk edits, by rewriting
 `buildFile.xml` — the same tree this extension‑utility manipulates). Every change is to a
@@ -215,6 +215,6 @@ offer such a scan as a future tool (it already parses the same trees and piece�
 - **Fixes 3–4** keep the module from regressing.
 
 None of these changes any game feature; they change *how* the same behaviour is stored. Combined
-with the engine‑side changes in [wif-engine-optimizations.md](wif-engine-optimizations.md)
+with the engine‑side changes in [wif-engine-optimizations.md](vassal/wif-engine-optimizations.md)
 (compression/obfuscation ordering, escaping format, streaming), the two together attack every
 cause identified in the [analysis](wif-save-bloat-analysis.md).

@@ -20,7 +20,7 @@ The `CEMOD AMERICAS Centre.png` board was one of the discarded ones.
 **Fix:** the utility now writes **one `ExtensionElement` per grafted component**,
 never sharing a wrapper even when several components target the same location —
 exactly what the VASSAL editor does (see `MainWindow.createExtensionElement` and
-[AGENTS.md → Move / Copy Operation](../AGENTS.md)). An extension already damaged by
+[AGENTS.md → Move / Copy Operation](../../AGENTS.md)). An extension already damaged by
 an older build must be re-created (re-do the move with the fixed utility), since
 VASSAL discarded the extra boards on load.
 
@@ -204,7 +204,7 @@ Then:
 ## Relationship to the earlier mtime fix
 
 The utility was separately corrected to **preserve image modification times** on
-save (see [AGENTS.md → Image modification times & tiling](../AGENTS.md)), because
+save (see [AGENTS.md → Image modification times & tiling](../../AGENTS.md)), because
 the tiler's freshness check is mtime-based. That fix is still correct and keeps a
 moved image from forcing a needless re-tile, but it is independent of the
 rendering behaviour described here.

@@ -1,7 +1,7 @@
 # Sharing a trait's parsed type data (B2) — `feature/share-immutable-trait-data`
 
 Implements item **B2** of [wif-engine-optimizations.md](wif-engine-optimizations.md#b2-flyweight-prototype-expansion--share-immutable-trait-data-across-instances--measured),
-in the form the measurements in [wif-flyweight-analysis.md](wif-flyweight-analysis.md) showed
+in the form the measurements in [wif-flyweight-analysis.md](../wif-flyweight-analysis.md) showed
 was worth having, together with the "cheaper fixes" that analysis found on the way. Branch
 `feature/share-immutable-trait-data` in `../vassal`, raised as [PR #15119](https://github.com/vassalengine/vassal/pull/15119),, from `master` at `97e231720`.
 
@@ -89,7 +89,7 @@ shares for the converted traits (1.3 M `FormattedString`s in the WiF game become
 
 ## 3. Measured
 
-Same harness and games as [wif-flyweight-analysis.md](wif-flyweight-analysis.md) (all pieces
+Same harness and games as [wif-flyweight-analysis.md](../wif-flyweight-analysis.md) (all pieces
 built with `createPiece`/`setState`, heap by class histogram against the loaded module):
 
 | | WiF `17-40-JA` (7 072 pieces) | Europa `FallOfFrance2004` (1 169 pieces) |

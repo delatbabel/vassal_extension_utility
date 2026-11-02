@@ -1,6 +1,6 @@
 # Flyweight prototype expansion (B2) — how much would it actually save?
 
-Item **B2** of [wif-engine-optimizations.md](wif-engine-optimizations.md#b2-flyweight-prototype-expansion--share-immutable-trait-data-across-instances)
+Item **B2** of [wif-engine-optimizations.md](vassal/wif-engine-optimizations.md#b2-flyweight-prototype-expansion--share-immutable-trait-data-across-instances)
 proposes sharing the immutable "type" part of each trait across the pieces built from the same
 definition, so that N pieces made from one prototype hold one copy of its ~200 parsed traits
 instead of N. This note measures what that would buy, on two modules built the two ways VASSAL
@@ -87,7 +87,7 @@ Two findings follow directly from the histogram:
   type of a `UsePrototype` included, is one shared `String` across all pieces. The bloat
   analysis did not notice this and proposed it as new work; nothing was changed by this
   project. It is why strings are 7 % of the piece heap rather than the majority, and the item
-  is marked complete in [wif-engine-optimizations.md](wif-engine-optimizations.md#b2-flyweight-prototype-expansion--share-immutable-trait-data-across-instances--measured).
+  is marked complete in [wif-engine-optimizations.md](vassal/wif-engine-optimizations.md#b2-flyweight-prototype-expansion--share-immutable-trait-data-across-instances--measured).
 - **The cost is objects built from those strings**, and it is dominated by parsing artefacts:
   a `FormattedString` for every message and property format, a `PropertyExpression` for every
   match expression, a `NamedKeyStroke[]` and a `KeyCommand` per menu entry, a `HashMap` per
@@ -158,7 +158,7 @@ Put the numbers against what a player experiences:
   is 1 024 MB (`AbstractLaunchAction.DEFAULT_MAXIMUM_HEAP`). The WiF game's pieces resident are
   308 MB; the game as loaded (maps, stacks, module) settles at ~350 MB. What exceeded the heap
   was the *transient* of building the command log as a `String` — 3.2 GB peak on load — and
-  that is removed by B1 ([vassal-stream-save-and-load.md](vassal-stream-save-and-load.md)),
+  that is removed by B1 ([vassal-stream-save-and-load.md](vassal/vassal-stream-save-and-load.md)),
   which loads the game inside 1.5 GB (665 MB peak). B2 would bring the resident part from
   ~350 MB to ~100 MB: welcome, but no longer the difference between loading and not loading.
 - **Load time is where B2 would be felt.** Loading the 8 855-piece game takes 133 s, of which

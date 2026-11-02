@@ -151,7 +151,7 @@ Four forms exist, told apart by the entry's leading magic bytes:
 
 | Header | Key | Payload | Written by |
 |---|---|---|---|
-| `\xFD7zXZ\0` (the XZ magic) | none | a plain **XZ-compressed** stream of the plaintext | VASSAL 3.8 with `feature/switch-compressor-to-xz` ([vassal-xz-payload.md](vassal-xz-payload.md)) |
+| `\xFD7zXZ\0` (the XZ magic) | none | a plain **XZ-compressed** stream of the plaintext | VASSAL 3.8 with `feature/switch-compressor-to-xz` ([vassal-xz-payload.md](vassal/vassal-xz-payload.md)) |
 | `!VOBS` | 1 raw byte | plaintext XOR key, raw | VASSAL 3.8 |
 | `!VCSK` | 2 hex digits | 2 hex digits per XOR-ed byte | VASSAL through 3.7.x |
 | `!VCSZ` | 2 hex digits | as `!VCSK`, but the plaintext is deflated first | never released — see below |
@@ -275,7 +275,7 @@ plaintext = bytes(int(hexpayload[i:i+2], 16) ^ key
 Identical to `!VCSK` except that the plaintext is **deflated (zlib, level 9) before**
 the XOR-hex encoding, so the hex doubling applies to the ~12× smaller deflate output
 instead of the raw command log. This was the first attempt at the problem (see
-[wif-engine-optimizations.md §A1](wif-engine-optimizations.md)) and was **abandoned in
+[wif-engine-optimizations.md §A1](vassal/wif-engine-optimizations.md)) and was **abandoned in
 favour of `!VOBS`**, which gets the same saving — a little more of it — by letting the
 ZIP compress a payload it can actually read, with no second compression pass and no
 hex at all. It reached no VASSAL release, but saves in it exist (written by a build of
@@ -398,7 +398,7 @@ traits, outermost first, ending with the `BasicPiece`. VASSAL has written it two
 - **Flat** (3.8+, `feature/flat-trait-chain-encoding`): `esc(A)<TAB>esc(B)<TAB>…<TAB>esc(basic)`
   — each segment escaped once. A reader tells them apart by counting top-level tabs: exactly
   one after the first segment means nested, more means flat; a single trait over a basic piece
-  is identical in both. See [vassal-flat-trait-chain.md](vassal-flat-trait-chain.md).
+  is identical in both. See [vassal-flat-trait-chain.md](vassal/vassal-flat-trait-chain.md).
 
 In both framings the innermost `BasicPiece` segment is the text after the **last** tab, and the
 `/` escaping of the enclosing `AddPiece` is applied once to the whole chain — which is why this

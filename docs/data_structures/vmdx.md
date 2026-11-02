@@ -153,7 +153,7 @@ extension, an unopenable module.
 
 This is why deleting the last component grafted through a wrapper must delete the
 wrapper too. See
-[docs/vassal-empty-extensionelement-crash.md](../vassal-empty-extensionelement-crash.md).
+[docs/vassal-empty-extensionelement-crash.md](../vassal/vassal-empty-extensionelement-crash.md).
 
 ### A wrapper must not be nested
 

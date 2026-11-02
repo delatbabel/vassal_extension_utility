@@ -112,7 +112,7 @@ lets the editor surface/repair it instead of crashing.
 
 The VASSAL Extension Utility never *creates* an empty `ExtensionElement` (it
 writes one wrapper per component, always with its component inside — see
-[AGENTS.md → Move / Copy Operation](../AGENTS.md)). It previously could *leave*
+[AGENTS.md → Move / Copy Operation](../../AGENTS.md)). It previously could *leave*
 one behind when a grafted component was moved back out of an extension; it now
 drops any `ExtensionElement` that a Move empties (`MainWindow.removeEmptyExtensionElements`),
 so freshly edited extensions are safe. Extensions damaged by an earlier build
