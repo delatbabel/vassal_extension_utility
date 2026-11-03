@@ -18,13 +18,14 @@ VASSAL's built-in module editor lets you edit a module or extension in isolation
 6. Reopen recent files from **File → Open Recent …** — the 5 most-recently-opened files for each panel are remembered between sessions.
 7. Create a new empty extension for the loaded module (**File → New Extension**) and save it with **File → Save Extension As…**, which defaults to the module's `_ext` directory (creating it if needed).
 8. Remove unused (unreferenced) images from a module or extension (**Tools → Remove Unused Images**), after reviewing and confirming the list — mirroring the VASSAL editor's tool of the same name.
-9. List a module's extensions — active and inactive — and activate/deactivate or open them for editing (**Show Extensions**).
-10. Download a module and its extensions from the VASSAL game library (**File → Download Module from Library…**) — paste the library page URL, choose a folder, and the newest copy of each extension is fetched into a correctly-named `<module>_ext` folder. Optionally point it at a saved game to fetch only the extensions that game needs.
-11. Run VASSAL's own **Refresh Counters** over any number of external saved games (**Tools → Refresh Counters in Saved Games…**), updating each piece to the module's current definitions. The engine does the work in a subprocess; each save is backed up first.
-12. Find and remove "excess" game pieces from a saved game (`.vsav`) — pieces missing from the module's active extensions that otherwise cause *"Image not found"* / *"No such map"* on load and *"Unable to match piece … by name"* on Refresh Counters (**Excess Units…**). The tidied game is written to a new file, leaving the original unchanged.
-13. Swap the maps of one saved game for another's (**Tools → Swap Maps Between Saved Games…**) — every board layout is taken from a second saved game, leaving the first game's pieces and everything else exactly as they were. The result is written to a new file; neither original is changed.
-14. Choose the application's appearance (**View → Theme**) — a clean **Light** or **Dark** theme, or your platform's own **System** look. The choice applies at once and is remembered.
-15. Fold a module's extensions into the module and back out again (**Tools → Combine / Uncombine Extensions…**) — the VASSAL editor refuses some edits on a module that has extensions, so combine, edit the monolith, then uncombine to put each change back in the extension it came from.
+9. Shrink a module or extension by losslessly re-compressing its PNG images (**Tools → Optimise Images**) — the colour type is narrowed where that loses nothing and the best per-scanline filter is found, with every result verified pixel by pixel against the original. Large truecolour board maps typically halve; art that is already well encoded is left untouched.
+10. List a module's extensions — active and inactive — and activate/deactivate or open them for editing (**Show Extensions**).
+11. Download a module and its extensions from the VASSAL game library (**File → Download Module from Library…**) — paste the library page URL, choose a folder, and the newest copy of each extension is fetched into a correctly-named `<module>_ext` folder. Optionally point it at a saved game to fetch only the extensions that game needs.
+12. Run VASSAL's own **Refresh Counters** over any number of external saved games (**Tools → Refresh Counters in Saved Games…**), updating each piece to the module's current definitions. The engine does the work in a subprocess; each save is backed up first.
+13. Find and remove "excess" game pieces from a saved game (`.vsav`) — pieces missing from the module's active extensions that otherwise cause *"Image not found"* / *"No such map"* on load and *"Unable to match piece … by name"* on Refresh Counters (**Excess Units…**). The tidied game is written to a new file, leaving the original unchanged.
+14. Swap the maps of one saved game for another's (**Tools → Swap Maps Between Saved Games…**) — every board layout is taken from a second saved game, leaving the first game's pieces and everything else exactly as they were. The result is written to a new file; neither original is changed.
+15. Choose the application's appearance (**View → Theme**) — a clean **Light** or **Dark** theme, or your platform's own **System** look. The choice applies at once and is remembered.
+16. Fold a module's extensions into the module and back out again (**Tools → Combine / Uncombine Extensions…**) — the VASSAL editor refuses some edits on a module that has extensions, so combine, edit the monolith, then uncombine to put each change back in the extension it came from.
 
 ## Developing
 
@@ -66,7 +67,8 @@ requests this project has contributed upstream.
 7. If both a parent and its child are selected, only the parent is transferred — for both Move and Copy the child is carried with it automatically (the whole subtree comes along).
 8. After each transfer the trees are redrawn, but your view is kept: branches you had expanded stay expanded, collapsed ones stay collapsed, your selection is retained, and the scroll position stays in approximately the same place.
 9. **Tools → Remove Unused Images** (left or right panel) lists the images in that archive that no component references. Review the list — deselect any you want to keep (they could be used by custom code) — and confirm to mark the rest for removal. The images are deleted when you save.
-10. **File → Save All** (or Ctrl+S) writes all modified archives back to disk.
+10. **Tools → Optimise Images** (left or right panel) examines every PNG in that archive and reports how much can be saved with no change to a single pixel. Confirm to apply; the smaller images are written when you save.
+11. **File → Save All** (or Ctrl+S) writes all modified archives back to disk.
 
 ## Downloading a module from the library
 

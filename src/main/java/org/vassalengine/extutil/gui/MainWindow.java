@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vassalengine.extutil.model.ComponentNode;
 import org.vassalengine.extutil.model.ExtensionCombiner;
+import org.vassalengine.extutil.model.PngOptimizer;
 import org.vassalengine.extutil.model.RecentFilesStore;
 import org.vassalengine.extutil.model.RefreshOptions;
 import org.vassalengine.extutil.model.SavedGame;
@@ -218,6 +219,11 @@ public class MainWindow extends JFrame implements UiTheme.ThemeAware {
         JMenuItem unusedRight = new JMenuItem("Remove Unused Images (right)…");
         unusedRight.addActionListener(e -> removeUnusedImages(rightPanel));
 
+        JMenuItem optimiseLeft = new JMenuItem("Optimise Images (left)…");
+        optimiseLeft.addActionListener(e -> optimiseImages(leftPanel));
+        JMenuItem optimiseRight = new JMenuItem("Optimise Images (right)…");
+        optimiseRight.addActionListener(e -> optimiseImages(rightPanel));
+
         JMenuItem repairLeft = new JMenuItem("Repair Double-Wrapped Extension Elements (left)…");
         repairLeft.addActionListener(e -> repairDoubleWrappedExtensionElements(leftPanel));
         JMenuItem repairRight = new JMenuItem("Repair Double-Wrapped Extension Elements (right)…");
@@ -245,6 +251,9 @@ public class MainWindow extends JFrame implements UiTheme.ThemeAware {
 
         toolsMenu.add(unusedLeft);
         toolsMenu.add(unusedRight);
+        toolsMenu.addSeparator();
+        toolsMenu.add(optimiseLeft);
+        toolsMenu.add(optimiseRight);
         toolsMenu.addSeparator();
         toolsMenu.add(repairLeft);
         toolsMenu.add(repairRight);
@@ -651,6 +660,194 @@ public class MainWindow extends JFrame implements UiTheme.ThemeAware {
         updateRoleBorders();
         status(String.format("Marked %d unused image(s) for removal from \"%s\" — Save to apply.",
                 selected.size(), va.getFile() != null ? va.getFile().getName() : va.getDisplayName()));
+    }
+
+    // -----------------------------------------------------------------------
+    // Optimise images
+    // -----------------------------------------------------------------------
+
+    /** What optimising one image produced, kept for the summary and the log. */
+    private static final class ImageSaving {
+        final String name;
+        final byte[] data;
+        final long time;
+        final int before;
+        final int after;
+        final String filter;
+        ImageSaving(String name, byte[] data, long time, int before, int after, String filter) {
+            this.name = name; this.data = data; this.time = time;
+            this.before = before; this.after = after; this.filter = filter;
+        }
+    }
+
+    /**
+     * <b>Tools &rarr; Optimise Images (left/right)…</b> — losslessly re-compresses the
+     * archive's PNG images by searching for a better per-scanline filter
+     * ({@link PngOptimizer}).  Pixels are never touched and every result is verified
+     * by comparing the re-read scanlines with the original's, so an image either
+     * shrinks or is left exactly as it was.
+     *
+     * <p>Most module art gains nothing — counters and the maps that were exported
+     * with filter {@code None} are already optimal.  The win is in large images
+     * written with a predictive filter, which can halve.  See
+     * {@code docs/module-size-analysis.md}.
+     *
+     * <p>Each replaced image keeps its original entry modification time, because the
+     * bytes decode to the identical picture and VASSAL's tile cache is keyed on mtime
+     * — re-tiling a map that has not changed would be pure waste.  Like every other
+     * edit, nothing reaches disk until the next Save.
+     */
+    private void optimiseImages(ArchivePanel panel) {
+        final VassalArchive va = panel.getArchive();
+        if (va == null) {
+            status("Open a file in the " + (panel == leftPanel ? "left" : "right")
+                    + " panel first.");
+            return;
+        }
+
+        final List<String> pngs = new ArrayList<>();
+        for (String n : va.getImageNames()) {
+            if (n.toLowerCase().endsWith(".png")) pngs.add(n);
+        }
+        Collections.sort(pngs);
+        if (pngs.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "\"" + va.getDisplayName() + "\" contains no PNG images.",
+                    "Optimise Images", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        final JDialog progress = new JDialog(this, "Optimising images…", true);
+        progress.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        final JProgressBar bar = new JProgressBar(0, pngs.size());
+        bar.setStringPainted(true);
+        final JLabel label = new JLabel("<html>Examining <b>" + pngs.size()
+                + "</b> PNG image(s) in \"" + va.getDisplayName() + "\".<br>"
+                + "Large maps take a while; nothing is changed until you confirm.</html>");
+        final JPanel pp = new JPanel(new BorderLayout(10, 10));
+        pp.setBorder(new EmptyBorder(16, 20, 16, 20));
+        pp.add(label, BorderLayout.NORTH);
+        pp.add(bar, BorderLayout.CENTER);
+        progress.setContentPane(pp);
+        progress.pack();
+        progress.setMinimumSize(new Dimension(460, progress.getHeight()));
+        progress.setLocationRelativeTo(this);
+
+        final SwingWorker<List<ImageSaving>, Integer> worker =
+                new SwingWorker<List<ImageSaving>, Integer>() {
+            private final List<String> unchanged = new ArrayList<>();
+
+            @Override
+            protected List<ImageSaving> doInBackground() throws Exception {
+                final List<ImageSaving> out = new ArrayList<>();
+                int done = 0;
+                for (String name : pngs) {
+                    final String entry = VassalArchive.IMAGE_DIR + name;
+                    try {
+                        final byte[] in = va.readEntry(entry);
+                        final PngOptimizer.Result r = PngOptimizer.optimise(in);
+                        if (r.improved()) {
+                            out.add(new ImageSaving(name, r.data, va.getEntryTime(entry),
+                                    r.originalSize, r.optimisedSize, r.filter));
+                        }
+                        else {
+                            unchanged.add(String.format("%-52s %8.1f KB  %s",
+                                    name, r.originalSize / 1024.0, r.skipped));
+                        }
+                    }
+                    catch (IOException ex) {
+                        unchanged.add(String.format("%-52s  unreadable: %s", name, ex.getMessage()));
+                    }
+                    publish(++done);
+                }
+                return out;
+            }
+
+            @Override
+            protected void process(List<Integer> chunks) {
+                bar.setValue(chunks.get(chunks.size() - 1));
+            }
+
+            @Override
+            protected void done() {
+                progress.dispose();
+                final List<ImageSaving> savings;
+                try {
+                    savings = get();
+                }
+                catch (Exception ex) {
+                    log.error("Image optimisation failed", ex);
+                    JOptionPane.showMessageDialog(MainWindow.this,
+                            "Could not optimise the images:\n" + ex.getMessage(),
+                            "Optimise Images", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+                applyImageSavings(panel, va, pngs.size(), savings, unchanged);
+            }
+        };
+
+        worker.execute();
+        progress.setVisible(true);
+    }
+
+    /** Confirms the measured savings, applies them, and shows the per-image log. */
+    private void applyImageSavings(ArchivePanel panel, VassalArchive va, int examined,
+                                   List<ImageSaving> savings, List<String> unchanged) {
+        if (savings.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "<html>All <b>" + examined + "</b> PNG image(s) in \"" + va.getDisplayName()
+                    + "\" are already optimally compressed.<br>Nothing to do.</html>",
+                    "Optimise Images", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        savings.sort((a, b) -> Integer.compare(b.before - b.after, a.before - a.after));
+        long before = 0, after = 0;
+        for (ImageSaving s : savings) { before += s.before; after += s.after; }
+        final long saved = before - after;
+
+        final int choice = JOptionPane.showConfirmDialog(this,
+                "<html><b>" + savings.size() + "</b> of " + examined
+                + " image(s) can be made smaller with no change to a single pixel.<br><br>"
+                + String.format("Those images: <b>%.1f MB</b> &rarr; <b>%.1f MB</b> "
+                        + "(saving <b>%.1f MB</b>, %.0f%%).<br><br>",
+                        before / 1e6, after / 1e6, saved / 1e6, 100.0 * saved / before)
+                + "Every result has been verified against the original scanlines.<br>"
+                + "The change is applied on the next Save.</html>",
+                "Optimise Images", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (choice != JOptionPane.OK_OPTION) {
+            status("Image optimisation cancelled — nothing changed.");
+            return;
+        }
+
+        for (ImageSaving s : savings) {
+            va.addPendingImage(s.name, s.data, s.time);
+        }
+        panel.refresh();
+        updateRoleBorders();
+        status(String.format("Optimised %d image(s) in \"%s\" — %.1f MB saved, Save to apply.",
+                savings.size(), va.getDisplayName(), saved / 1e6));
+
+        final StringBuilder b = new StringBuilder();
+        b.append("Optimise Images — ").append(va.getDisplayName()).append('\n');
+        b.append(repeat('=', 72)).append('\n');
+        b.append(String.format("examined %d PNG image(s); %d improved, %d already optimal%n",
+                examined, savings.size(), unchanged.size()));
+        b.append(String.format("total %.2f MB -> %.2f MB  (saved %.2f MB, %.1f%%)%n%n",
+                before / 1e6, after / 1e6, saved / 1e6, 100.0 * saved / before));
+        b.append("IMPROVED  (").append(savings.size()).append(")\n");
+        b.append(repeat('=', 72)).append('\n');
+        for (ImageSaving s : savings) {
+            b.append(String.format("  %-48s %9.1f -> %9.1f KB  %5.1f%%  filter=%s%n",
+                    s.name, s.before / 1024.0, s.after / 1024.0,
+                    100.0 * s.after / s.before, s.filter));
+        }
+        if (!unchanged.isEmpty()) {
+            b.append('\n').append("UNCHANGED  (").append(unchanged.size()).append(")\n");
+            b.append(repeat('=', 72)).append('\n');
+            for (String u : unchanged) b.append("  ").append(u).append('\n');
+        }
+        showRunLog("Optimise Images", b.toString());
     }
 
     /**

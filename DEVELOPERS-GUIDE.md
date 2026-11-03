@@ -69,6 +69,7 @@ indexes them. Highlights:
 ## Additional Documentation
 
 - [packaging.md](docs/packaging.md) — building installable packages (`.deb`/`.rpm`/`.exe`/`.dmg`) and the versioning scheme
+- [module-size-analysis.md](docs/module-size-analysis.md) — why `.vmod`/`.vmdx` files did not shrink when saved games did: a module is 97–99.8% image bytes and `buildFile.xml` is 0.2–0.6%, so trait encoding and container compression cannot move it; the one measured win is lossless PNG re-filtering of large RGB maps (1.92×, pixel-identical)
 - [wif-save-bloat-analysis.md](docs/wif-save-bloat-analysis.md) — why the WiF module uses so much memory and produces huge `.vsav` saves (measured root causes: baked-in prototype expansion, O(traits²) escaping, embedded Place Marker, obfuscation-before-compression)
 - [wif-module-optimizations.md](docs/wif-module-optimizations.md) — module-side changes to shrink memory/save size with no engine change and no loss of game features
 - [docs/wif-fix2-trait-reduction.md](docs/wif-fix2-trait-reduction.md) — deep dive into reducing traits per WiF piece: which automation can move to map-level Global Key Commands, what prototype consolidation really buys, where the Marker constants come from, and the dead traits
