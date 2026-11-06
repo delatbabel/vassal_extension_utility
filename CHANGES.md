@@ -2,8 +2,7 @@
 
 ## 1.0.23
 
-Saved games are written in the VASSAL 3.8.0 format. VASSAL 3.7 is no longer
-supported as a target: the formats it wrote are still read, but none is written.
+Saved games are written in the VASSAL 3.8.0 format. VASSAL 3.7 is no longer supported as a target: the formats it wrote are still read, but none is written.
 
 ### Changed
 
