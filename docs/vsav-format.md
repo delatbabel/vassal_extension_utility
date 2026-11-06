@@ -157,12 +157,18 @@ Four forms exist, told apart by the entry's leading magic bytes:
 | `!VCSZ` | 2 hex digits | as `!VCSK`, but the plaintext is deflated first | never released — see below |
 
 A reader dispatches on the header, and anything else is passed through unchanged as
-plain text (`DeobfuscatingInputStream`'s backward compatibility). The engine itself reads
-XZ and `!VCSK` (neither `!VOBS`, dropped at review as never released, nor `!VCSZ`);
-this utility reads all four and **preserves whichever format a file was opened with** when
-rewriting it
-(`SavedGame.Obfuscation`, `SavedGame.open()` / `getObfuscation()` /
-`writeObfuscated()`; likewise `tools/swap_maps.py`).
+plain text (`DeobfuscatingInputStream`'s backward compatibility). Released **VASSAL 3.8.0
+reads only XZ and `!VCSK`** — neither `!VOBS` nor `!VCSZ`, both of which were pre-release
+experiments; a file in either falls through to that pass-through branch and is read as
+though the obfuscated bytes were plain text.
+
+This utility **reads all four and writes only XZ**, the format 3.8.0 writes
+(`SavedGame.WRITE_FORMAT`, `SavedGame.open()` / `getObfuscation()` /
+`writeObfuscated()`; likewise `tools/swap_maps.py`'s `WRITE_FORMAT`). A rewrite therefore
+upgrades the file: `getObfuscation()` still reports what the source was, but it no longer
+decides what is written. Preserving the source format was the old behaviour and was a
+hazard — it meant a `!VOBS` save stayed in a format the shipped engine cannot read — as
+well as leaving a 3.7.x save twenty times larger than it needs to be.
 
 #### XZ — the compressed format (VASSAL 3.8 with the XZ change)
 

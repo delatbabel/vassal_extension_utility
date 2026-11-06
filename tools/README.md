@@ -35,9 +35,10 @@ The saved-game scripts work the way `model/SavedGame` does (see
 - the `savedGame` entry is deobfuscated whole, in any of the three formats VASSAL
   has written — a plain XZ stream (VASSAL 3.8 with the XZ change, no key), `!VOBS` (a raw key byte + raw XOR, VASSAL 3.8), `!VCSK` (2-hex key
   + XOR-hex, through 3.7.x) and the unreleased `!VCSZ` (XOR-hex of the deflated
-  plaintext). `read_vsav()` returns the format it found and `write_vsav()` re-emits
-  it, so a rewrite never converts a save between formats — see
-  [docs/vsav-format.md](../docs/vsav-format.md);
+  plaintext). `read_vsav()` returns the format it found, but `write_vsav()` always
+  writes XZ (`WRITE_FORMAT`) — the format VASSAL 3.8.0 writes, and the only one
+  besides `!VCSK` that the shipped engine reads — so a rewrite upgrades the save;
+  see [docs/vsav-format.md](../docs/vsav-format.md);
 - the command log is split at **every** ESC (`0x1B`), recording each token's
   preceding-delimiter bytes separately from its content. Because piece data
   contains no ESC, re-emitting the same delimiter bytes reconstructs the

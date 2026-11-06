@@ -10,23 +10,29 @@ temp file + atomic replace.
 import lzma, os, random, sys, zipfile, zlib
 
 ESC = 0x1B
-# The four obfuscation formats of the savedGame entry, identified by header.
-# The header bytes double as the format token that read_vsav returns and
-# obfuscate()/write_vsav() take, so a rewrite re-emits the format it read.
-XZ = b'\xfd7zXZ\x00'     # a plain XZ stream, by XZ's own magic (VASSAL 3.8+, xz branch)
-RAW = b'!VOBS'           # 1 raw key byte, then XOR(plaintext, key) raw (VASSAL 3.8)
+# The four storage formats of the savedGame entry, identified by header. All four
+# are read; only XZ is written (see WRITE_FORMAT).
+XZ = b'\xfd7zXZ\x00'     # a plain XZ stream, by XZ's own magic (VASSAL 3.8.0)
+RAW = b'!VOBS'           # 1 raw key byte, then XOR(plaintext, key) raw (pre-release 3.8)
 HEX = b'!VCSK'           # 2-hex key, then hex(XOR(plaintext, key)) (through 3.7.x)
 HEX_DEFLATED = b'!VCSZ'  # as HEX, but the plaintext is deflated first (abandoned)
 FORMATS = (XZ, RAW, HEX, HEX_DEFLATED)
 XZ_PRESET = 3            # what the engine uses: a 4 MB dictionary, the fast match finder
+
+# Every rewrite is written as a plain XZ stream, whatever it was read as -- what
+# VASSAL 3.8.0 writes (GameState.compressSavedGame). Released VASSAL understands
+# only XZ and !VCSK of the four above, so faithfully re-emitting !VOBS or !VCSZ
+# produced a file the engine reads as plain text and rejects; and XZ shrinks a
+# !VCSK save by more than twenty times.
+WRITE_FORMAT = XZ
 SAVED_GAME, SAVE_DATA, MODULE_DATA = 'savedGame', 'savedata', 'moduledata'
 
 
 def read_vsav(path):
     """-> (plaintext command log, {entry: (bytes, date_time)}, format token)
 
-    The format token is one of XZ / RAW / HEX / HEX_DEFLATED; pass it back to
-    write_vsav() so the save is rewritten in the format it was read in.
+    The format token is one of XZ / RAW / HEX / HEX_DEFLATED, and says only how
+    the file on disk was stored: write_vsav() always writes WRITE_FORMAT.
     """
     entries = {}
     with zipfile.ZipFile(path) as z:
@@ -86,8 +92,9 @@ def board_picker_tokens(state, toks):
     return found
 
 
-def obfuscate(plain, key, fmt=RAW):
-    """Encodes the command log in one of XZ / RAW / HEX / HEX_DEFLATED."""
+def obfuscate(plain, key, fmt=WRITE_FORMAT):
+    """Encodes the command log. Defaults to WRITE_FORMAT; the legacy encodings
+    remain for tests and for inspecting what older VASSAL wrote."""
     if fmt == XZ:
         return lzma.compress(plain, preset=XZ_PRESET)   # nothing precedes it, nothing is XOR-ed
     payload = zlib.compress(plain, 9) if fmt == HEX_DEFLATED else plain
@@ -102,7 +109,7 @@ def obfuscate(plain, key, fmt=RAW):
     return bytes(out)
 
 
-def write_vsav(path, plain, entries, fmt=RAW, key=None):
+def write_vsav(path, plain, entries, key=None):
     tmp = path + '.tmp'
     # Keys are in 1-255, as in VASSAL's ObfuscatingOutputStream: XORing with 0
     # would leave the data in plain text.
@@ -111,7 +118,7 @@ def write_vsav(path, plain, entries, fmt=RAW, key=None):
         for name in (SAVED_GAME, SAVE_DATA, MODULE_DATA):
             data, when = entries[name]
             if name == SAVED_GAME:
-                data = obfuscate(plain, key, fmt)
+                data = obfuscate(plain, key, WRITE_FORMAT)
             z.writestr(zipfile.ZipInfo(name, date_time=when), data,
                        zipfile.ZIP_DEFLATED)
     os.replace(tmp, path)
@@ -155,7 +162,7 @@ def main(target, donor, out, maps):
         parts.append(replace.get(idx) or tgt[cs:end])  # content
     plain = b''.join(parts)
 
-    write_vsav(out, plain, tgt_entries, tgt_fmt)
+    write_vsav(out, plain, tgt_entries)
     print(f'\nwrote {out}: {len(tgt_toks)} commands, '
           f'{len(plain)} plaintext bytes ({len(tgt)} before)')
 

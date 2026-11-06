@@ -65,8 +65,10 @@ Three properties fall out of that design and hold for every tool here:
   tokens it targets and copies every other token through untouched, so a run can
   only differ from its input in the places it meant to change. The
   [check recipe](#checking-the-result) below turns that into an assertion.
-- **The obfuscation format round-trips.** A save is re-emitted in whichever of
-  VASSAL's four formats it was read in (XZ, `!VOBS`, `!VCSK`, `!VCSZ` — see
+- **A rewrite upgrades the format.** All four of VASSAL's formats are read
+  (XZ, `!VOBS`, `!VCSK`, `!VCSZ`), and every save is written as the plain XZ
+  stream VASSAL 3.8.0 writes — the shipped engine reads only XZ and `!VCSK`, so
+  re-emitting the other two produced a file it could not load (see
   [docs/vsav-format.md](../vsav-format.md)).
 - **Writes are atomic.** Output goes to a temp file that is then `os.replace`d
   into position, so an interrupted write never leaves the truncated `.vsav` that

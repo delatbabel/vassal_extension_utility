@@ -1,5 +1,14 @@
 # Changes
 
+## 1.0.23
+
+Saved games are written in the VASSAL 3.8.0 format. VASSAL 3.7 is no longer
+supported as a target: the formats it wrote are still read, but none is written.
+
+### Changed
+
+- **Saved games are now written in the VASSAL 3.8.0 format.** Every `.vsav` this utility writes — Excess Units, Swap Maps, the bookkeeping rewrite after Refresh Counters, and every script under `tools/` — is a plain XZ stream (LZMA2 preset 3), which is what 3.8.0 writes (`GameState.compressSavedGame`). All four historical formats are still **read** — XZ, `!VOBS`, `!VCSK` (3.7.x) and `!VCSZ` — but none is written any more, so a rewrite upgrades the file. Previously a rewrite re-emitted whichever format it read, which was a hazard as well as wasteful: released 3.8.0 recognises only XZ and `!VCSK`, and passes anything else through as though the obfuscated bytes were plain text, so a faithfully re-emitted `!VOBS` or `!VCSZ` save was one the engine could not load. It is also far smaller — a 174 MB command log is 25.65 MB as a deflated `!VCSK` entry and 0.55 MB as XZ, a 47× reduction in file size. Verified on that log encoded in all four formats: each rewrites to XZ with a byte-identical decompressed log and byte-identical `savedata`/`moduledata`, and VASSAL 3.8.0's own `DeobfuscatingInputStream` reads all four outputs back to the same SHA-256. **VASSAL 3.8.0 or newer is now required** to load what this utility writes.
+
 ## 1.0.22
 
 A module's extensions fold into it for editing and back out again; saved games

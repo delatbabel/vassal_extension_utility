@@ -176,7 +176,7 @@ def patch_command(cmd, pairs):
 
 def fix(path, pairs):
     """-> (rewritten command log, entries, format token, {incorrect name: count})"""
-    state, entries, fmt = read_vsav(path)
+    state, entries, _ = read_vsav(path)
     parts, fixed = [], {}
     for ds, cs, end in split_commands(state):
         parts.append(state[ds:cs])                      # delimiter, unchanged
@@ -191,7 +191,7 @@ def fix(path, pairs):
         parts.append(new.encode('utf-8'))
         fixed[pair['name']] = fixed.get(pair['name'], 0) + 1
 
-    return b''.join(parts), entries, fmt, fixed
+    return b''.join(parts), entries, fixed
 
 
 def add_twins(path, pairs):
@@ -220,7 +220,7 @@ def add_twins(path, pairs):
 
     -> (rewritten command log, entries, format token, {incorrect name: count})
     """
-    state, entries, fmt = read_vsav(path)
+    state, entries, _ = read_vsav(path)
     toks = split_commands(state)
 
     # Pass 1: find the pieces to twin and allocate ids above everything in use.
@@ -287,7 +287,7 @@ def add_twins(path, pairs):
         first = False
         if idx in plan:
             parts.append(bytes([CMD_DELIM]) + plan[idx][0])
-    return b''.join(parts), entries, fmt, fixed
+    return b''.join(parts), entries, fixed
 
 
 def _thread_into_stack(text, added):
@@ -350,7 +350,7 @@ def main(argv):
 
     total = 0
     for path in args.saves:
-        plain, entries, fmt, fixed = (add_twins if args.add else fix)(path, pairs)
+        plain, entries, fixed = (add_twins if args.add else fix)(path, pairs)
         n = sum(fixed.values())
         total += n
         print('\n%s: %d piece(s) %s' % (os.path.basename(path), n,
@@ -375,13 +375,13 @@ def main(argv):
                 print('  keeping existing %s' % os.path.basename(backup))
             else:
                 os.replace(path, backup)
-            write_vsav(path, plain, entries, fmt)
+            write_vsav(path, plain, entries)
             print('  wrote %s (original kept as %s)'
                   % (os.path.basename(path), os.path.basename(backup)))
         else:
             stem, _, suffix = path.rpartition('.')
             out = '%s (subs fixed).%s' % (stem, suffix)
-            write_vsav(out, plain, entries, fmt)
+            write_vsav(out, plain, entries)
             print('  wrote %s' % os.path.basename(out))
 
     print('\n%d piece(s) rewritten across %d file(s)%s'

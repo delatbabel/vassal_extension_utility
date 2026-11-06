@@ -66,15 +66,18 @@ XORs raw bytes and lets the ZIP layer compress normally. In the sample save:
 plaintext written as `!VOBS` would deflate far better because the compressor sees
 the real byte distribution.
 
-**A rewrite must preserve the format it read.** This project tracks the format
-per file (`SavedGame.getObfuscation()`, and `read_vsav`'s third return value)
-and re-emits the same one. Converting a save between formats would work — VASSAL
-reads all three — but it would make a "nothing changed but the piece I removed"
-claim untestable.
+**A rewrite always writes XZ.** This project still tracks the format each file
+was read in (`SavedGame.getObfuscation()`, and `read_vsav`'s third return value),
+but only to report it: every write emits the plain XZ stream VASSAL 3.8.0 writes
+(`SavedGame.WRITE_FORMAT`, `swap_maps.WRITE_FORMAT`). Of the four formats read,
+the shipped engine understands only XZ and `!VCSK`, so re-emitting `!VOBS` or
+`!VCSZ` faithfully — the old behaviour — produced a file VASSAL reads as plain
+text and rejects.
 
-The key is **regenerated randomly on every write**, so two byte-identical
-rewrites of the same file are not byte-identical on disk. Compare deobfuscated
-plaintext, never raw entries.
+This does mean a rewrite is not byte-comparable with its input. The test for
+"nothing changed but the piece I removed" is therefore made on the **deobfuscated
+command log**, which is byte-exact, never on the raw entry — which was already
+true of the XOR formats, whose key is regenerated randomly on every write.
 
 ## The command log
 

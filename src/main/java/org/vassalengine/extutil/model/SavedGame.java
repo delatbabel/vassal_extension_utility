@@ -24,11 +24,8 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
 import java.util.zip.DataFormatException;
-import java.util.zip.Deflater;
-import java.util.zip.DeflaterOutputStream;
 import java.util.zip.Inflater;
 
 import org.tukaani.xz.LZMA2Options;
@@ -79,8 +76,12 @@ public class SavedGame {
     public static final String MODULE_DATA_ENTRY = "moduledata";
 
     /**
-     * The obfuscation format of a {@code savedGame} entry. A rewrite always
-     * re-emits the format the file was opened with (see docs/vsav-format.md).
+     * The storage format of a {@code savedGame} entry.
+     *
+     * <p>All four are <em>read</em>, because saves in all four exist. Only
+     * {@link #XZ} is ever <em>written</em>: it is what VASSAL 3.8.0 writes, and a
+     * rewrite upgrades the file to it whatever it was opened as (see
+     * {@link #WRITE_FORMAT} and docs/vsav-format.md).
      */
     public enum Obfuscation {
         /**
@@ -94,16 +95,22 @@ public class SavedGame {
          */
         XZ("\u00FD7zXZ\u0000", 0),
         /**
-         * {@code !VOBS} + a one-byte key + the plaintext XOR-ed with it, all raw —
-         * what VASSAL's {@code ObfuscatingOutputStream} writes from 3.8. The ZIP
-         * entry's own deflate then compresses it, which is the point of the change:
-         * the old hex encoding doubled the payload into 16 symbols the ZIP could do
-         * little with.
+         * {@code !VOBS} + a one-byte key + the plaintext XOR-ed with it, all raw — a
+         * pre-release 3.8 format, written by builds of the branch that replaced the
+         * hex encoding before XZ replaced it in turn.
+         *
+         * <p><b>Released VASSAL cannot read it.</b> 3.8.0's
+         * {@code DeobfuscatingInputStream} recognises only XZ's magic and
+         * {@code !VCSK}; anything else falls through its final branch and is passed
+         * on as though it were plain text. A save in this format is read here but
+         * never written, so a rewrite repairs it.
          */
         RAW("!VOBS", 1),
         /**
          * {@code !VCSK} + a two-hex-digit key + two-hex-digits-per-byte XOR of the
-         * plaintext — the format written through VASSAL 3.7.x, still read by 3.8.
+         * plaintext — the format written through VASSAL 3.7.x. It is the one legacy
+         * format 3.8.0 still reads, but it is no longer written: the hex doubles the
+         * payload into 16 symbols the ZIP can do little with.
          */
         HEX("!VCSK", 2),
         /**
@@ -111,8 +118,9 @@ public class SavedGame {
          * <em>deflated</em> plaintext. A pre-release 3.8 format that was abandoned
          * in favour of {@link #RAW}, never shipped in a VASSAL release — but saves
          * in it exist (written by a build of that branch, or by this utility and
-         * the {@code tools/} scripts rewriting one), and VASSAL still reads it, so
-         * this utility reads and preserves it too.
+         * the {@code tools/} scripts rewriting one before 3.8.0 shipped). Like
+         * {@link #RAW} it is <b>not</b> readable by released VASSAL, so it is read
+         * here but never written.
          */
         HEX_DEFLATED("!VCSZ", 2);
 
@@ -139,6 +147,19 @@ public class SavedGame {
     /** The LZMA2 preset VASSAL compresses the log with: a 4 MB dictionary, the fast match finder. */
     private static final int XZ_PRESET = 3;
 
+    /**
+     * The format every rewrite is written in, whatever the source was: a plain XZ
+     * stream, which is what VASSAL 3.8.0 writes
+     * ({@code GameState.compressSavedGame}, {@code SAVED_GAME_COMPRESSION_PRESET}).
+     *
+     * <p>Upgrading rather than preserving is deliberate. Of the four formats read
+     * here, released VASSAL only understands two — XZ and {@code !VCSK} — so a
+     * rewrite that faithfully re-emitted {@code !VOBS} or {@code !VCSZ} would
+     * produce a file 3.8.0 reads as plain text and rejects. Writing XZ is correct
+     * for every input, and shrinks a {@code !VCSK} save by more than twenty times.
+     */
+    public static final Obfuscation WRITE_FORMAT = Obfuscation.XZ;
+
     /** Top-level command separator in the deobfuscated log (ESC / {@code KeyEvent.VK_ESCAPE}). */
     private static final byte CMD_DELIM = 0x1b;
     private static final byte ESCAPE = '\\';
@@ -149,11 +170,6 @@ public class SavedGame {
     /** Suffix identifying a board-layout command, {@code BoardPicker.ID}. */
     private static final String BOARD_PICKER_ID = "BoardPicker";
 
-    private static final byte[] HEX = {
-        '0', '1', '2', '3', '4', '5', '6', '7',
-        '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
-    };
-
     private final java.io.File file;
     private final byte[] moduleData;
     private final byte[] saveData;
@@ -163,7 +179,7 @@ public class SavedGame {
 
     /** Deobfuscated {@code savedGame} plaintext (can be hundreds of MB). */
     private final byte[] state;
-    /** The obfuscation format the source file used — preserved on rewrite. */
+    /** The format the source file was stored in; a rewrite does not preserve it. */
     private final Obfuscation obfuscation;
     /**
      * One entry {@code {delimStart, contentStart, contentEnd}} per command token in
@@ -192,7 +208,11 @@ public class SavedGame {
 
     public java.io.File getFile() { return file; }
 
-    /** The obfuscation format the source file used (preserved on rewrite). */
+    /**
+     * The format the source file was stored in. Informational only — every rewrite
+     * emits {@link #WRITE_FORMAT}, so this says where a file came from, not where
+     * it is going.
+     */
     public Obfuscation getObfuscation() { return obfuscation; }
 
     // -----------------------------------------------------------------------
@@ -201,15 +221,18 @@ public class SavedGame {
 
     /**
      * Opens a {@code .vsav}, reading the two metadata entries whole and
-     * deobfuscating the {@code savedGame} command log into memory. Every
-     * obfuscation format VASSAL has written is read — {@link Obfuscation#RAW}
-     * ({@code !VOBS}, 3.8+), {@link Obfuscation#HEX} ({@code !VCSK}, through 3.7.x)
-     * and {@link Obfuscation#HEX_DEFLATED} ({@code !VCSZ}) — and which one the file
-     * used is remembered so a rewrite preserves it.
+     * decoding the {@code savedGame} command log into memory. Every format VASSAL
+     * has ever written is read — {@link Obfuscation#XZ} (a plain XZ stream, 3.8.0),
+     * {@link Obfuscation#HEX} ({@code !VCSK}, through 3.7.x) and the two
+     * pre-release 3.8 formats {@link Obfuscation#RAW} ({@code !VOBS}) and
+     * {@link Obfuscation#HEX_DEFLATED} ({@code !VCSZ}). Which one the file used is
+     * remembered and reported by {@link #getObfuscation()}, but it does not decide
+     * how a rewrite is written: that is always {@link #WRITE_FORMAT}.
      *
      * @throws IOException if the file is not a ZIP with the expected entries, or
-     *                     the {@code savedGame} entry carries none of the
-     *                     {@code !VOBS}, {@code !VCSK} or {@code !VCSZ} headers
+     *                     the {@code savedGame} entry is neither an XZ stream nor
+     *                     carries a {@code !VOBS}, {@code !VCSK} or {@code !VCSZ}
+     *                     header
      */
     public static SavedGame open(java.io.File f) throws IOException {
         try (ZipFile zf = new ZipFile(f)) {
@@ -966,12 +989,9 @@ public class SavedGame {
     }
 
     /**
-     * Streams the surviving command tokens through the VASSAL obfuscation, in the
-     * <em>same format the file was opened with</em>: a plain XZ stream,
-     * {@code !VOBS} (header + a random one-byte key + the plaintext XOR-ed with it,
-     * raw), {@code !VCSK} (the
-     * key as 2 hex digits and each plaintext byte as 2 more), or {@code !VCSZ} (the
-     * hex encoding of the <em>deflated</em> plaintext). Each removed token is
+     * Streams the surviving command tokens out as a plain XZ stream — the VASSAL
+     * 3.8.0 format, whatever the file was opened as (see {@link #WRITE_FORMAT}).
+     * Each removed token is
      * dropped together with its preceding delimiter, and each kept token is
      * emitted verbatim <em>with</em> its preceding delimiter — so the surviving
      * plaintext bytes (and their ESC nesting) are exactly the original minus the
@@ -986,41 +1006,11 @@ public class SavedGame {
                                  int insertBefore, List<String> insertContents,
                                  Map<Integer, byte[]> replacements)
             throws IOException {
-        // Keys are in 1-255, as in VASSAL's ObfuscatingOutputStream: XORing with 0
-        // would leave the data in plain text.
-        if (obfuscation.isXz()) {
-            // A plain XZ stream at the engine's preset; nothing precedes it and nothing is XOR-ed.
-            final XZOutputStream xz = new XZOutputStream(out, new LZMA2Options(XZ_PRESET));
-            emitCommands(xz, removeIndices, insertBefore, insertContents, replacements);
-            xz.finish();   // never close() — that would close the ZIP stream
-            return;
-        }
-        final int key = new Random().nextInt(255) + 1;
-        // Accumulate output in a large buffer so the downstream stream sees big
-        // chunks rather than a byte or two at a time (dramatically slower).
-        final XorSink sink = obfuscation.isHex() ? new HexSink(out, key) : new RawSink(out, key);
-        for (byte h : obfuscation.header) sink.rawByte(h);
-        if (obfuscation.isHex()) {
-            sink.rawByte(HEX[(key & 0xF0) >>> 4]);
-            sink.rawByte(HEX[key & 0x0F]);
-        } else {
-            sink.rawByte((byte) key);
-        }
-
-        if (obfuscation.isDeflated()) {
-            final Deflater def = new Deflater(Deflater.BEST_COMPRESSION);
-            try {
-                final DeflaterOutputStream dos = new DeflaterOutputStream(sink, def, 1 << 16);
-                emitCommands(dos, removeIndices, insertBefore, insertContents,
-                             replacements);
-                dos.finish();   // never close() — that would close the ZIP stream
-            } finally {
-                def.end();
-            }
-        } else {
-            emitCommands(sink, removeIndices, insertBefore, insertContents, replacements);
-        }
-        sink.flush();
+        // A plain XZ stream at the engine's preset: the magic bytes are the stream's
+        // own, nothing precedes them, and nothing is XOR-ed.
+        final XZOutputStream xz = new XZOutputStream(out, new LZMA2Options(XZ_PRESET));
+        emitCommands(xz, removeIndices, insertBefore, insertContents, replacements);
+        xz.finish();   // never close() — that would close the ZIP stream
     }
 
     /** Emits the surviving plaintext command bytes (see {@link #writeObfuscated}). */
@@ -1051,61 +1041,6 @@ public class SavedGame {
             final int from = firstEmitted ? r[1] : r[0];   // skip leading delimiter for the first token
             firstEmitted = false;
             out.write(state, from, r[2] - from);
-        }
-    }
-
-    /**
-     * Buffers the obfuscated output. {@link #rawByte} writes a byte of the
-     * header+key prefix as-is; the {@code OutputStream} write methods XOR each
-     * plaintext (or deflated) byte with the key and encode it as the format
-     * requires. {@code flush()} pushes the buffer downstream but never closes
-     * {@code out} (a ZIP stream with entries still to write).
-     */
-    private abstract static class XorSink extends OutputStream {
-        final OutputStream out;
-        final int key;
-        final byte[] buf = new byte[1 << 16];
-        int p;
-
-        XorSink(OutputStream out, int key) { this.out = out; this.key = key; }
-
-        void rawByte(byte b) throws IOException {
-            if (p >= buf.length) flush();
-            buf[p++] = b;
-        }
-
-        @Override
-        public void write(byte[] b, int off, int len) throws IOException {
-            for (int i = 0; i < len; i++) write(b[off + i]);
-        }
-
-        @Override
-        public void flush() throws IOException {
-            if (p > 0) { out.write(buf, 0, p); p = 0; }
-        }
-    }
-
-    /** The {@code !VOBS} payload: one XOR-ed byte out per byte in. */
-    private static final class RawSink extends XorSink {
-        RawSink(OutputStream out, int key) { super(out, key); }
-
-        @Override
-        public void write(int b) throws IOException {
-            if (p >= buf.length) flush();
-            buf[p++] = (byte) (b ^ key);
-        }
-    }
-
-    /** The {@code !VCSK}/{@code !VCSZ} payload: two hex digits out per byte in. */
-    private static final class HexSink extends XorSink {
-        HexSink(OutputStream out, int key) { super(out, key); }
-
-        @Override
-        public void write(int b) throws IOException {
-            if (p >= buf.length - 1) flush();
-            final int x = (b ^ key) & 0xFF;
-            buf[p++] = HEX[(x & 0xF0) >>> 4];
-            buf[p++] = HEX[x & 0x0F];
         }
     }
 

@@ -44,11 +44,13 @@
 - The envelope is a header, a key and the plaintext XOR-ed with it
 - The log is one long line; its record boundaries are 0x1B bytes, not newlines
 
-### Why the format is preserved
+### All four are read; only XZ is written
 
-- !VOBS (3.8+) XORs raw so the ZIP deflate can still compress it
+- XZ (3.8.0) is a plain LZMA2 stream, no key — what every rewrite now emits
+- !VOBS XORs raw so the ZIP deflate can still compress it — pre-release 3.8
 - !VCSK (through 3.7.x) hex-encodes, doubling the payload into 16 symbols
-- !VCSZ deflates before the hex — a pre-release form that never shipped but is still read
+- !VCSZ deflates before the hex — a pre-release form that never shipped
+- Released VASSAL reads only XZ and !VCSK, so re-emitting the other two was a hazard
 
 ---
 

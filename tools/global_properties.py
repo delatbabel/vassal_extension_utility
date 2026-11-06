@@ -144,7 +144,7 @@ def main(argv):
     defaults = module_defaults(module) if module else {}
     rows, grand = [], 0
     for path in saves:
-        state, entries, fmt = read_vsav(path)
+        state, entries, _ = read_vsav(path)
         toks = split_commands(state)
         props = properties(state, toks)
         by_name = {name: (idx, value) for idx, name, value, _ in props}
@@ -215,7 +215,7 @@ def main(argv):
                 f.append('')
             f[2] = edits[idx][2]
             parts.append(seq_encode(f).encode('utf-8'))
-        write_vsav(path, b''.join(parts), entries, fmt)
+        write_vsav(path, b''.join(parts), entries)
         print('    wrote %s' % os.path.basename(path))
 
     if csv_out:
