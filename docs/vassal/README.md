@@ -60,4 +60,5 @@ did not fit in a commit message.
 | [pr-reply-share-trait-data-review.md](pr-reply-share-trait-data-review.md) | #15119 — shared trait type data |
 | [pr-reply-xz-alternatives.md](pr-reply-xz-alternatives.md) | XZ vs zstd and brotli, measured |
 | [pr-reply-xz-drop-xor.md](pr-reply-xz-drop-xor.md) | Dispensing with the XOR obfuscation entirely |
+| [vassal-load-and-sync-performance.md](vassal-load-and-sync-performance.md) | [#15303](https://github.com/vassalengine/vassal/issues/15303) and [#15306](https://github.com/vassalengine/vassal/pull/15306) — the `setup()` re-serialisation and the fix; [#15305](https://github.com/vassalengine/vassal/issues/15305) — the flat trait-chain measurements |
 | [pr-review-trait-keyevent-snapshot.md](pr-review-trait-keyevent-snapshot.md) | [#15257](https://github.com/vassalengine/vassal/pull/15257) — review of riverwanderer's change to snapshot piece state only when a Dynamic Property or Layer handles the keystroke |

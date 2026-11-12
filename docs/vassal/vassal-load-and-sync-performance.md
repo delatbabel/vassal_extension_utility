@@ -80,11 +80,11 @@ So the engine builds, and then retains for the whole session, a full copy of the
 
 It is paid on every `setup(true)`: loading a game, starting one, **and finishing a network sync**. On 3.8.0 it is 67.7% of the whole `execute` phase. #15116 reduces it but does not remove it — on master it is still ~1.1 s and an 86 MB retained `String`, about a fifth of the remaining load time.
 
-**No open PR addresses this**, and it is the clearest remaining win. Options, cheapest first:
+Reported as [#15303](https://github.com/vassalengine/vassal/issues/15303) and fixed in [#15306](https://github.com/vassalengine/vassal/pull/15306). Three options were put in the issue; measuring them changed which one was worth doing, and showed one of them does not work at all.
 
-1. **Compare a digest, not the text.** Stream the encode through a `MessageDigest` and keep 32 bytes instead of 86 MB. Same semantics, removes the retention, keeps the CPU.
-2. **Make it lazy.** Only `isModified()` needs `lastSave`; `setup()` could record "clean" and let the first `isModified()` call pay. Loading a game and closing it without edits then costs nothing.
-3. **Track modification properly.** `GameState` already sees every `Command` that executes. A dirty flag set by the command stream removes both encodes outright. More work, and the honest answer to "is this game modified".
+1. **Compare a digest, not the text.** Streaming the encode through a `MessageDigest` keeps 32 bytes instead of 86 MB. But profiling the encode shows only **18.4%** of it is StringBuilder growth and array copying, which is all a digest avoids: **53.8% is the trait `getType()`/`getState()` traversal**, which it still pays in full. Roughly a 20% CPU saving. It is a memory fix, not a CPU one.
+2. ~~**Make it lazy.**~~ **Withdrawn — it cannot work.** By the time `isModified()` is called the game has already changed, so the baseline can no longer be captured; it has to be taken at `setup()` time or not at all. A "clean" flag that something later invalidates is option 3, not a cheaper alternative to it.
+3. **Track modification from the command stream.** Removes **100%** of the cost — about 5x what the digest saves. This is what [#15306](https://github.com/vassalengine/vassal/pull/15306) does: every change passes through `BasicLogger.log()` (local via `GameModule.sendAndLog`, remote via `CommandDecoder`, replayed via `step()`), while a file load does not, since `loadGameInForeground` executes the restore command directly — so a freshly loaded game is correctly clean with no suppression logic. Measured on this scenario: `execute` 2.77 s → **1.76 s**, `isModified()` 1.1 s → **0 s**, live heap after load 541 MB → **372 MB**.
 
 ## 4. Why joining is slower than loading from disk
 
@@ -102,17 +102,26 @@ This also explains the save/load asymmetry: **a save pays one encode; a load pay
 | PR | State | Effect on these numbers |
 |---|---|---|
 | [#15116](https://github.com/vassalengine/vassal/pull/15116) flat trait chain | **merged, not in 3.8.0** | **32.8 s → 5.3 s**; log 172.7 → 86.4 MB. The whole story above. |
-| [#15119](https://github.com/vassalengine/vassal/pull/15119) share trait type data | open | 9,621 distinct types back 625,120 instances (65×). Load heap after this scenario is still **541 MB** on master; this is the fix aimed at that, and at the residual per-trait parsing. |
+| [#15119](https://github.com/vassalengine/vassal/pull/15119) share trait type data | open, up to date with master, CI green | 9,621 distinct types back 625,120 instances (65×). Re-measured on master **with #15116 already in it**, so this is what it adds on top: `decodeSavedGame` 2.54 s → **1.73 s** (−32%), live heap after load 541 MB → **465 MB**. Still worth having after the flat framing took the larger share. |
 | [#15117](https://github.com/vassalengine/vassal/pull/15117) stream the command log | open | Removes the 86 MB single `String` on save/load. Mostly memory and GC, not the scan cost. |
 | [#15283](https://github.com/vassalengine/vassal/pull/15283) keystroke snapshot | merged, not in 3.8.0 | **None on load or join** — it is the per-keystroke path. It makes play smoother on big pieces; it does not touch these numbers. |
 
 ## 6. Recommendations
 
 1. **Ship #15116.** It is merged, it is measured at 6.2× on this module, and nothing else on this list comes close. Note the caveat that users only get it once saves are rewritten — worth saying in the release notes, since a player loading an old save will see no change and conclude it did nothing.
-2. **Stop materialising `saveString()`** (§3). Independent of everything else, removes ~1.1 s and 86 MB from every load and sync on master, and ~5.4 s on 3.8.0.
-3. **Merge #15119** for the heap: 541 MB for one scenario is what makes large games feel bad long after loading, and GC was the busiest JFR event in the 3.8.0 run (89,465 `GCPhaseParallel`).
+2. ~~**Stop materialising `saveString()`**~~ (§3) — **done**, [#15306](https://github.com/vassalengine/vassal/pull/15306). Removes ~1.1 s and 86 MB from every load and sync on master, and ~5.4 s on 3.8.0.
+3. **Merge #15119** for the heap: 541 MB for one scenario is what makes large games feel bad long after loading, and GC was the busiest JFR event in the 3.8.0 run (89,465 `GCPhaseParallel`). It takes a further 76 MB off and a third off the decode, on top of #15116.
 4. **Revisit the `intern()` in `nextToken`** (§2) once #15116 is in, measuring rather than assuming — its value changes completely when the long unique tokens disappear.
 5. **Move the "synchronisation complete" message**, or add progress, so it reports the state being built rather than the bytes being received.
+
+## What came of this
+
+| | |
+|---|---|
+| [#15303](https://github.com/vassalengine/vassal/issues/15303) | issue — `GameState.setup()` serialises the whole game to set the unsaved-changes flag (§3) |
+| [#15306](https://github.com/vassalengine/vassal/pull/15306) | pull request fixing it, from `perf/track-game-modified-without-reserialising` |
+| [#15305](https://github.com/vassalengine/vassal/issues/15305) | issue — the #15116 measurements, and the caveat that the gain is write-side (§2) |
+| [#15119](https://github.com/vassalengine/vassal/pull/15119) | brought up to date with master and re-measured against it (§5) |
 
 ## Reproducing
 

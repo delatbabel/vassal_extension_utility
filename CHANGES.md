@@ -1,5 +1,11 @@
 # Changes
 
+## Unreleased
+
+### Documentation
+
+- **Why a large module takes half a minute to load, and longer to join — measured.** [docs/vassal/vassal-load-and-sync-performance.md](docs/vassal/vassal-load-and-sync-performance.md) profiles VASSAL 3.8.0 against the WiF 2.2.0 module and an 8,192-piece scenario. No change to this utility; it is engine analysis and the upstream work that came out of it. 79.5% of a load is `SequenceEncoder`, because the nested trait-chain framing makes reading 97 MB of trait type text scan 3.9 GB — 113 levels deep, a 40× amplification. [vassal#15116](https://github.com/vassalengine/vassal/pull/15116), merged upstream after 3.8.0 shipped, takes the load from 32.8 s to 5.3 s and halves the command log; the gain is write-side, so an existing save sees it only once rewritten, while network play gets it immediately because the host encodes from memory ([vassal#15305](https://github.com/vassalengine/vassal/issues/15305)). Separately, `GameState.setup()` re-serialised the entire game to a `String` on every load, new game and network sync purely to set the unsaved-changes flag — 19.4% of a 3.8.0 load, and an 86 MB retained `String` on master ([vassal#15303](https://github.com/vassalengine/vassal/issues/15303), fixed by [vassal#15306](https://github.com/vassalengine/vassal/pull/15306), which tracks modification from the command stream instead: `execute` 2.77 s → 1.76 s, `isModified()` 1.1 s → 0 s, heap 541 MB → 372 MB). [vassal#15119](https://github.com/vassalengine/vassal/pull/15119) was brought up to date with master and re-measured on it: a further 32% off the decode and 76 MB off the heap.
+
 ## 1.0.23
 
 Saved games are written in the VASSAL 3.8.0 format. VASSAL 3.7 is no longer supported as a target: the formats it wrote are still read, but none is written.
