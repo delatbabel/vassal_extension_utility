@@ -14,6 +14,7 @@ the reasoning survive in one place even when only the patch lands in the engine.
 
 | Document | What it covers |
 |---|---|
+| [reading-abr-error-logs.md](reading-abr-error-logs.md) | How to fetch and read the error log attached to an automated bug report: it is brotli-compressed behind a redirect, so `curl -sL --compressed` (both flags) is the whole trick, and the `Caused by` that the issue body omits is usually in there |
 | [vassal-deb-missing-xz.md](vassal-deb-missing-xz.md) | `NoClassDefFoundError: org/tukaani/xz/FilterOptions` on the 3.8.0 `.deb` — the new `libxz-java` dependency, why a dangling `Class-Path` symlink fails silently, and how to install the `.deb` so it cannot happen ([#15256](https://github.com/vassalengine/vassal/issues/15256)) |
 | [vassal-load-and-sync-performance.md](vassal-load-and-sync-performance.md) | Why a large module takes 30+ seconds to load and longer to join: 80% of the CPU is `SequenceEncoder`, the nested trait framing scans 3.9 GB to read 97 MB, and every `setup()` re-encodes the whole game to set a boolean. Measured on WiF 2.2.0, before and after [#15116](https://github.com/vassalengine/vassal/pull/15116) |
 | [vassal-editor-extensions.md](vassal-editor-extensions.md) | Why a module opened with **Edit Module** shows none of its extensions' maps or counters, and the change that loads them without the editor then saving them into the module |
