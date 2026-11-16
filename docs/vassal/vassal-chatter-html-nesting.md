@@ -219,6 +219,13 @@ Searching issue bodies for a class name only finds reports whose quoted four fra
 contain it, which — per the previous section — is a lottery. Searching for the *second* and later
 distinct frames in a recursive trace is more reliable than searching for the first.
 
+[vassal-record-module-load-crash.md](vassal-record-module-load-crash.md) is the same lesson from
+the other end: there the thrown exception is an `ExecutionException` wrapping the real one, so the
+four quoted frames are the *outermost* and are identical for every failure anywhere in module
+loading. Between them the two notes give the rule — an ABR's quoted frames are whichever four sit
+at the top of the printed trace, which is an accident of the exception's shape, not a summary of
+the fault. Only the attached log tells one report from another.
+
 ## What this means for the utility
 
 Nothing directly: the extension utility does not render chat, and none of its features touch
