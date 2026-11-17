@@ -283,6 +283,10 @@ anywhere in module loading.
 [#15209](vassal-apply-on-move-recursion.md) is a fourth, where five reports of one bug quote five
 disjoint sets of BeanShell frames, none of them the fault.
 
+[#15107](vassal-room-list-concurrency.md) is a fifth, and the limiting case: all four quoted frames
+are the JDK's own bounds-check plumbing, so the report names neither the fault nor even the
+subsystem it happened in.
+
 This one is the third case and the most quietly misleading of the four: the quoted frames are
 **complete, correct, and the whole of the trace** — and still read as a VASSAL bug, because nothing
 in them says the classes are not VASSAL's. `gboa.StateDelta` looks exactly like

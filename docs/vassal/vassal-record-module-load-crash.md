@@ -196,7 +196,10 @@ fault.** ([vassal-custom-code-misattribution.md](vassal-custom-code-misattributi
 case, where the quoted frames are the complete trace and are still misread, because they belong to
 the module's own compiled code rather than to VASSAL, and
 [vassal-apply-on-move-recursion.md](vassal-apply-on-move-recursion.md) a fourth, where five reports
-of one bug quote five disjoint sets of frames and no two of them can be found by the same search.) Only the attached log distinguishes one report from another. The two other open
+of one bug quote five disjoint sets of frames and no two of them can be found by the same search;
+[vassal-room-list-concurrency.md](vassal-room-list-concurrency.md) a fifth, where all four quoted
+frames are the JDK's own bounds checking and name neither the fault nor the subsystem it is in.)
+Only the attached log distinguishes one report from another. The two other open
 `StringIndexOutOfBoundsException` reports whose logs could be checked, #12471 and #13411, have no
 `DependencyWalker` frame in them and are something else; beyond that, any duplicate of this bug
 would be invisible in the issue list.

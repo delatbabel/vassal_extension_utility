@@ -50,3 +50,60 @@ Beyond the full stack, the surrounding lines usually settle questions the report
 - **Timestamps.** The gap between loading the module and the failure tells you whether it happened during load or minutes later in play. In #15298 it was 43 seconds after load, during a repaint, which ruled out the load path.
 
 Treat everything in the log as the reporter's own data: it carries their file paths and Windows user name.
+
+## Finding which reports are worth opening
+
+There are hundreds of open ABRs, so the first question is usually which of them are the same bug.
+The issue body is poor at answering that — see the five notes listed at the end of
+[vassal-room-list-concurrency.md](vassal-room-list-concurrency.md) for the ways its four quoted
+frames mislead — but it is good enough to *group* by, because the frames are at least consistent
+for any one fault.
+
+Pull every open ABR body and key each on `(exception type, topmost VASSAL frame)`. The issues
+list endpoint returns bodies, so this is four calls, not hundreds:
+
+```bash
+for p in 1 2 3 4; do
+  gh api "repos/vassalengine/vassal/issues?labels=ABR&state=open&per_page=100&page=$p" \
+    --jq '.[] | {n: .number, d: .created_at[0:10], t: .title, b: .body}'
+done > open_abrs.jsonl
+```
+
+Taking the **topmost `VASSAL.` frame** rather than the topmost frame of all is what makes the
+grouping work: it skips the JDK and library plumbing that varies between reports of one bug.
+
+Of 346 open ABRs in November 2026, **84 quote no VASSAL frame at all** — those need the log
+before they can even be filed into a family. The rest group like this (families of three or more):
+
+| reports | exception | topmost VASSAL frame |
+|---|---|---|
+| 79 | `ExecutionException` | `launch.AbstractLaunchAction$LaunchTask.done` |
+| 28 | `RuntimeException` | `launch.Launcher.<init>` |
+| 23 | `IllegalBuildException` | `build.Builder.create` |
+| 16 | `IllegalStateException` | `counters.Decorator.setState` |
+| 11 | `InvocationTargetException` | `launch.StartUp.initUIProperties` |
+| 10 | `ExecutionException` | `tools.opcache.OpCache.getFuture` |
+| 7 | `NullPointerException` | `command.Command.execute` |
+| 6 | `NoSuchElementException` | `tools.SequenceEncoder$Decoder.nextToken` |
+| 6 | `NullPointerException` | `build.widget.MapWidget.remove` |
+| 5 | `IllegalArgumentException` | `build.module.Map.positionOf` |
+| 3 each | | `launch.ModuleManager.launch`, `tools.opcache.OpCache$Request.done`, `counters.PieceVisitorDispatcher.accept`, `boardPicker.board.Region.move`, `counters.Decorator.getProperty`, `counters.Decorator.getOutermost`, `configure.ConfigureTree$AddAction.doIt` |
+
+Two things to read off it.
+
+**The big buckets are wrappers, not bugs.** The 79 on `LaunchTask.done` and the 28 on
+`Launcher.<init>` are an `ExecutionException` and a `RuntimeException` wrapping whatever actually
+failed; they are one *path*, not one fault, and the real cause is only in the log
+([vassal-record-module-load-crash.md](vassal-record-module-load-crash.md) is one of the 79). The
+same goes for the 23 on `Builder.create`.
+
+**The useful ones are the middling buckets with a specific frame.** Six reports on
+`MapWidget.remove` turned out to be one two-line bug
+([vassal-mapwidget-delete-npe.md](vassal-mapwidget-delete-npe.md)); its frames were identical in
+all six, and nobody had put them together. A frame that names a concrete method rather than a
+dispatch or wrapper is where to look first.
+
+Two caveats. The grouping sees only what the body quotes, so a bug whose reports quote disjoint
+frame sets is scattered across several keys and may look like several singletons — the
+apply-on-move recursion is five reports under three different keys. And a singleton is not
+necessarily rare: #15107 is the only report of a race that any busy peer-to-peer session can hit.

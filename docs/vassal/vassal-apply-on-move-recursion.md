@@ -150,8 +150,11 @@ in both cases the quoted frames sent anyone searching the tracker to the wrong p
 The companion notes are [vassal-record-module-load-crash.md](vassal-record-module-load-crash.md),
 where the quoted frames are the *outermost* and are identical for every module-load failure, and
 [vassal-custom-code-misattribution.md](vassal-custom-code-misattribution.md), where they are the
-complete trace and are still misread. Together: **an ABR's quoted frames are whichever four sit at
-the top of the printed trace, which is an accident of the exception's shape. Fetch the log.**
+complete trace and are still misread, and
+[vassal-room-list-concurrency.md](vassal-room-list-concurrency.md), where all four are the JDK's
+own bounds checking and name neither the fault nor the subsystem. Together: **an ABR's quoted
+frames are whichever four sit at the top of the printed trace, which is an accident of the
+exception's shape. Fetch the log.**
 
 For this family in particular there is a quick test. A `StackOverflowError` whose log holds a
 thousand VASSAL frames and a few dozen library ones is a VASSAL recursion, whatever the library at

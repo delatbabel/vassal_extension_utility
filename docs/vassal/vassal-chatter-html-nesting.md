@@ -236,6 +236,10 @@ the sharpest instance of it: five reports of one bug, quoting five *disjoint* se
 BeanShell frames, none of which is the fault. Twenty-six of those 1,024 frames are BeanShell and
 998 are VASSAL.
 
+[vassal-room-list-concurrency.md](vassal-room-list-concurrency.md) is the limiting case: there all
+four quoted frames are the JDK's own bounds checking, so the report names neither the fault nor
+the subsystem it is in. The log holds twelve more frames and the first of them is the bug.
+
 ## What this means for the utility
 
 Nothing directly: the extension utility does not render chat, and none of its features touch
