@@ -146,14 +146,36 @@ Rather than guess at the sequence, the fix makes `remove()` correct for all of t
 non-map, and what the panel and the widget hold afterwards — including that the component really
 does leave the widget, which is the user-visible symptom.
 
-Building a real `WidgetMap` in a test needs a `GameModule`: `Map`'s constructor registers key
-listeners, `Map.build` reads preferences, makes a launch button (which wants a `DataArchive`)
-and adds a `BoardPicker` (which wants a `GameState`). `mock(GameModule.class,
-RETURNS_DEEP_STUBS)` covers the chain, with two explicit overrides — `getPrefs().getValue()` has
-to return something unboxable to `int`, and `getPlayerWindow()` must **not** be a deep stub,
-because AWT calls real methods on whatever window it is handed and a mocked `Window` has none of
-its internals (`Cannot enter synchronized block because "this.ownedWindowList" is null`, thrown
-on the EDT).
+Building a real `WidgetMap` in a test takes two pieces of scaffolding, both worth recording.
+
+**A `GameModule`.** `Map`'s constructor registers key listeners, `Map.build` reads preferences,
+makes a launch button (which wants a `DataArchive`) and adds a `BoardPicker` (which wants a
+`GameState`). `mock(GameModule.class, RETURNS_DEEP_STUBS)` covers the chain, with two explicit
+overrides — `getPrefs().getValue()` has to return something unboxable to `int`, and
+`getPlayerWindow()` must **not** be a deep stub, because AWT calls real methods on whatever
+window it is handed and a mocked `Window` has none of its internals (`Cannot enter synchronized
+block because "this.ownedWindowList" is null`, thrown on the EDT).
+
+**No display.** VASSAL's CI has no X11, and two of the obvious ways to set a map up need one:
+
+```
+java.awt.HeadlessException
+  at java.desktop/java.awt.dnd.DragSource.getDefaultDragSource(DragSource.java:224)
+  at VASSAL.build.module.map.CounterDetailViewer.addTo(CounterDetailViewer.java:319)
+  at VASSAL.build.module.Map.addChild(Map.java:793)
+  at VASSAL.build.module.Map.build(Map.java:762)
+```
+
+`Map.build(null)` takes the branch which adds a `CounterDetailViewer`, and `Map.addTo` asks for
+the default `DragSource` itself (`Map.java:979`). Building the map from an *element* takes the
+other branch, and handing it straight to `MapWidget.add` skips `addTo`; neither omitted step
+touches the panel, which is all this class does. The lesson generalises to any test here that
+instantiates a `Map`: **run it with `DISPLAY` unset before pushing**, since a developer machine
+will not tell you.
+
+```bash
+env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY ./mvnw -pl vassal-app -am test
+```
 
 Red check: against the unfixed class four of the six fail, two with the reported message
 `Cannot read field "parent" because "comp" is null`. With the fix the full `vassal-app` suite is
