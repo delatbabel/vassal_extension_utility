@@ -230,7 +230,7 @@ Checked red: with the loader naming reverted, `DataArchiveTest` fails with
 `expected: <module:Great Battles.vmod> but was: <null>` — which is the state of affairs the PR
 changes. Full `vassal-app` suite 804 tests, 0 failures, Checkstyle clean, all five CI jobs green.
 
-## A latent defect found along the way, and not fixed
+## A latent defect found along the way
 
 `GameState.loadFastForward` sets a flag and clears it at the end, with nothing in between:
 
@@ -261,8 +261,16 @@ places:
 - `GameState.setup` takes the fast-forward branch, which omits the *"start a new logfile?"* prompt
   — so every game started afterwards in that session is silently unlogged.
 
-A three-line `try`/`finally` fixes it. It is a separate concern from the attribution and was left
-out of #15348 rather than widening the change.
+A `try`/`finally` fixes it, which is
+[#15349](https://github.com/vassalengine/vassal/pull/15349) — kept separate from #15348 rather than
+widening that change, since it is a different concern. Its regression test asserts both halves: the
+flag *was* set while the load ran, and is clear after the load throws.
+
+There is a second way in which does not involve module code at all. `GameState.loadGame` catches
+`IllegalStateException`, handles the `Decorator.no_state_for_trait` case and **rethrows anything
+else** (`GameState.java:858`) — which is what a log saved by a different module version can
+produce. Cancelling the file chooser is *not* one of these: `loadGame` returns false and the clear
+is still reached, which the second test pins.
 
 ## The third way an ABR misleads
 
@@ -272,7 +280,10 @@ are the least characteristic ones. [#15262](vassal-record-module-load-crash.md) 
 *outermost* four, which for an `ExecutionException` wrapper are identical for every failure
 anywhere in module loading.
 
-This one is the third case and the most quietly misleading of the three: the quoted frames are
+[#15209](vassal-apply-on-move-recursion.md) is a fourth, where five reports of one bug quote five
+disjoint sets of BeanShell frames, none of them the fault.
+
+This one is the third case and the most quietly misleading of the four: the quoted frames are
 **complete, correct, and the whole of the trace** — and still read as a VASSAL bug, because nothing
 in them says the classes are not VASSAL's. `gboa.StateDelta` looks exactly like
 `VASSAL.counters.Decorator` to anyone who does not already know the module. The first commit of

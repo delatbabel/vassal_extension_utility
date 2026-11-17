@@ -231,6 +231,11 @@ the one that does not even need the log: there the four frames are the *whole* t
 correct, and still misread — because they are a module's own compiled classes and nothing in a
 VASSAL stack trace said which frames were not VASSAL's.
 
+[vassal-apply-on-move-recursion.md](vassal-apply-on-move-recursion.md) is this same case again, and
+the sharpest instance of it: five reports of one bug, quoting five *disjoint* sets of four
+BeanShell frames, none of which is the fault. Twenty-six of those 1,024 frames are BeanShell and
+998 are VASSAL.
+
 ## What this means for the utility
 
 Nothing directly: the extension utility does not render chat, and none of its features touch
