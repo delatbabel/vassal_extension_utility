@@ -103,6 +103,18 @@ same goes for the 23 on `Builder.create`.
 all six, and nobody had put them together. A frame that names a concrete method rather than a
 dispatch or wrapper is where to look first.
 
+**A wrapper bucket can still hide a family — split it on the message.** The 79 on
+`LaunchTask.done` are one path, but 30 of them carry `Tiling failed with return value` and 16 of
+*those* are a single fault ([vassal-tiling-not-out-of-memory.md](vassal-tiling-not-out-of-memory.md)).
+Likewise all 11 on `StartUp.initUIProperties` are one fault
+([vassal-corrupt-prefs-startup.md](vassal-corrupt-prefs-startup.md)) — the only bucket so far that
+was unanimous. When a bucket is large, group it again on the exception message, then on the
+`Caused by` class from the logs.
+
+**Group on the exception class, never the English around it.** Six of those 16 tiling logs are
+Italian (`Causato da:`) or Chinese, and in the Chinese ones the prefix is mojibake. A classifier
+keying on `Caused by:` silently loses a third of the family.
+
 Two caveats. The grouping sees only what the body quotes, so a bug whose reports quote disjoint
 frame sets is scattered across several keys and may look like several singletons — the
 apply-on-move recursion is five reports under three different keys. And a singleton is not
