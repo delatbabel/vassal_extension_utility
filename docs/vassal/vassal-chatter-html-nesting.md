@@ -226,6 +226,11 @@ loading. Between them the two notes give the rule — an ABR's quoted frames are
 at the top of the printed trace, which is an accident of the exception's shape, not a summary of
 the fault. Only the attached log tells one report from another.
 
+[vassal-custom-code-misattribution.md](vassal-custom-code-misattribution.md) is the third case, and
+the one that does not even need the log: there the four frames are the *whole* trace, complete and
+correct, and still misread — because they are a module's own compiled classes and nothing in a
+VASSAL stack trace said which frames were not VASSAL's.
+
 ## What this means for the utility
 
 Nothing directly: the extension utility does not render chat, and none of its features touch
