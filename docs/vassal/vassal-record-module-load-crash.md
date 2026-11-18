@@ -202,7 +202,11 @@ frames are the JDK's own bounds checking and name neither the fault nor the subs
 and [vassal-module-manager-edt.md](vassal-module-manager-edt.md) a sixth and most extreme, where
 all four belong to a third-party widget and none to VASSAL at all — five maintainers closed
 reports on that basis, when the absence was itself the signature of the fault, a threading
-violation whose offending thread had returned long before the trace was taken.)
+violation whose offending thread had returned long before the trace was taken; and
+[vassal-trailing-backslash-state.md](vassal-trailing-backslash-state.md) a seventh, which inverts
+the lesson -- there all four frames are accurate, VASSAL's own, and name the fault exactly, and
+sixteen reports of it still went ungrouped for two and a half years, because the *message* embeds
+the whole type string of a trait and so no two of them share a title.)
 Only the attached log distinguishes one report from another. The two other open
 `StringIndexOutOfBoundsException` reports whose logs could be checked, #12471 and #13411, have no
 `DependencyWalker` frame in them and are something else; beyond that, any duplicate of this bug

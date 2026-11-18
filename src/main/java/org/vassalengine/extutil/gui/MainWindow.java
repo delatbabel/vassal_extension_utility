@@ -2989,7 +2989,16 @@ public class MainWindow extends JFrame implements UiTheme.ThemeAware {
     private static void seqAppend(StringBuilder buf, String s, char delim, boolean addDelimiter) {
         if (addDelimiter) buf.append(delim);
         if (s == null || s.isEmpty()) return;
+        // Quote when escaping the delimiters is not enough to read the value back unaltered.
+        // The decoder reads a delimiter as escaped when the character before it is a backslash,
+        // so a value ENDING with one would swallow the delimiter after it and every token that
+        // follows; quoting puts the quote in that position instead and seqDecode strips it again.
+        // A value STARTING with a backslash is quoted for the mirror-image reason, and one
+        // already enclosed in quotes so the decoder does not strip quotes that are part of it.
+        // The trailing-backslash arm is vassalengine/vassal#15337, fixed there by #15363 --
+        // values written this way are read correctly by every VASSAL back to 3.4.
         boolean quote = s.charAt(0) == '\\'
+                || s.charAt(s.length() - 1) == '\\'
                 || (s.charAt(0) == '\'' && s.charAt(s.length() - 1) == '\'');
         if (quote) buf.append('\'');
         for (int i = 0; i < s.length(); i++) {
