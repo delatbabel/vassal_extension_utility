@@ -1,10 +1,15 @@
 # VASSAL bug: one bad character in the preferences file and VASSAL will not start
 
 This note documents a bug in the VASSAL engine (not in this utility), reported eleven times
-between 2024 and 2026 and fixed by
-[#15353](https://github.com/vassalengine/vassal/pull/15353). It is the clearest case in this
-folder of a defect that was *already understood* — the handling exists, with a comment
-explaining why, one class away from where it was needed.
+between 2024 and 2026 and fixed upstream by
+[78a7a04a8](https://github.com/vassalengine/vassal/commit/78a7a04a8d75d56484caafd9b35a16f9d1be031c).
+It is the clearest case in this folder of a defect that was *already understood* — the handling
+exists, with a comment explaining why, one class away from where it was needed.
+
+It is also this folder's one case of **being beaten to the fix**, which is worth as much as the
+diagnosis; see [Overtaken](#overtaken-while-the-pr-was-open). What remains of the work done here
+is [#15353](https://github.com/vassalengine/vassal/pull/15353), now scoped to the saving half,
+which the upstream commit did not touch.
 
 ## Symptom
 
@@ -104,18 +109,79 @@ only the one that was reported.
 
 ## The fix
 
-The conversion becomes one `Prefs.loadProperties`, used by all three callers, with its own
-exception type so a corrupted file can be distinguished from a disk error.
-
-- **`ReadOnlyPrefs`** lets it fall through to the `catch (IOException)` the class already had,
-  which reports it with `ReadErrorDialog.error` exactly as any other unreadable preferences file
-  is reported. See [below](#review-silence-was-the-wrong-default) — the first version of this
-  logged it and said nothing.
+- **`ReadOnlyPrefs`** converts the unchecked exception into an `IOException`, which the class's
+  existing handler already reports with `ReadErrorDialog`. This is what [78a7a04a8][c] landed,
+  and it is what closes all eleven reports.
 - **`Prefs.save`** keeps a copy of the unreadable file as `<name>.corrupted` and writes a
   readable one in its place. Discarding a file nobody could parse without keeping it would be
-  the wrong kind of robustness.
+  the wrong kind of robustness. This is [#15353][p], still open.
 
-### Review: silence was the wrong default
+[c]: https://github.com/vassalengine/vassal/commit/78a7a04a8d75d56484caafd9b35a16f9d1be031c
+[p]: https://github.com/vassalengine/vassal/pull/15353
+
+The saving half has one trap the obvious implementation walks into. `save()` holds an exclusive
+`FileLock` over the preferences file for the whole read-modify-write, so keeping a copy with
+`Files.copy` — which opens a second handle — fails on Windows, where that lock is mandatory
+rather than advisory. The copy has to be taken **through the channel `save()` already holds**:
+
+```java
+  private void keepCorrupted(FileChannel ch) {
+    final Path to = file.toPath().resolveSibling(file.getName() + ".corrupted");
+    try {
+      ch.position(0);
+      try (OutputStream out = Files.newOutputStream(to)) {
+        Channels.newInputStream(ch).transferTo(out);
+      }
+    }
+    catch (IOException e) {
+      // best effort: failing to keep the copy must not fail the save
+    }
+  }
+```
+
+A Linux-only test would never have caught that, and nor would review. It is the kind of thing
+only reading the lock semantics finds.
+
+## Overtaken while the PR was open
+
+[#15353][p] opened covering both halves. Four days later, rebasing it onto `main` conflicted —
+and the conflict *was* the fix: [78a7a04a8][c], "Report a corrupt module prefs file as a read
+error instead of a bug", had landed the `ReadOnlyPrefs` guard on 15 November 2026, under
+**#14177, #14176, #14098 and #13910**. Four issue numbers, none of them among the eleven found
+here, and the same defect.
+
+Three things in that are worth keeping.
+
+**The duplicate-hunting cut both ways.** Grouping eleven reports under one frame was the useful
+part of the analysis, and it still is — but it searched the *open* issues for reports of the
+bug, and never searched the *commits* for a fix. Two people can work the same ABR queue and find
+the same fault through two disjoint sets of duplicates. The check that was missing is cheap:
+before responding to review on an old bug, re-read the file on the current base, not the branch.
+
+**The symptom came back with no CI.** The first sign was not a conflict notice but the *absence*
+of check runs on the PR: GitHub will not run a `pull_request` workflow when it cannot compute
+the merge. A PR sitting with no checks at all, where its siblings have five each, means
+`mergeable_state: dirty` far more often than it means a queue backlog —
+
+```
+gh api repos/<owner>/<repo>/pulls/<n> --jq .mergeable_state
+```
+
+— and that is a one-line question worth asking before investigating anything else.
+
+**The rebase improved the surviving half.** The `Files.copy` above was in the original branch and
+would have shipped. Being forced back through the code on a new base is what surfaced the
+`FileLock` problem.
+
+The correction was made on all eleven issues, naming the commit that actually fixes them, rather
+than left to be discovered by whoever closes them.
+
+### Review: silence was the wrong default — and then moot
+
+The exchange below happened on the reading half, and was overtaken a few hours later by
+[78a7a04a8][c], whose own test asserts exactly the behaviour it argues for. It is kept because
+the reasoning is the point, not the patch.
+
 
 `ReadOnlyPrefs` originally logged the `CorruptedException` and carried on without a dialog, on
 the reasoning that everything it offers has a default and that whichever `Prefs` went on to read
@@ -146,21 +212,27 @@ first. The test now asserts the report, not just the survival.
 
 ## Red-checking a fix that adds API
 
-Both earlier notes in this folder could revert the source and rerun the new tests. Here that
-does not compile: the tests reference `Prefs.loadProperties` and `Prefs.CorruptedException`,
-which do not exist before the fix.
+The first version of this fix introduced `Prefs.loadProperties` and `Prefs.CorruptedException`,
+a shared conversion for all three readers. That made the usual red check impossible: reverting
+the source and rerunning the new tests does not *compile*, because the tests name API that does
+not exist before the fix.
 
 The way through is a throwaway test written against the **old** API only — construct a
 `ReadOnlyPrefs` over a corrupt file, and call `save()` on a `Prefs` over one — run against
-unmodified `release-3.8`. Both fail with
+unmodified upstream. Both fail with
 
 ```
 Unexpected exception thrown: java.lang.IllegalArgumentException: Malformed \uxxxx encoding.
 ```
 
-the reporters' message exactly, and both pass with the fix. The committed tests then cover the
-new API as well. It is worth doing this way round rather than skipping the red check: a test
-that has never failed has never been shown to test anything.
+the reporters' message exactly, and both pass with the fix. It is worth doing this way round
+rather than skipping the red check: a test that has never failed has never been shown to test
+anything.
+
+The shared helper is gone from the surviving PR — with the reading half fixed upstream in its
+own idiom, a refactor of three call sites into one would have been rewriting a colleague's
+just-landed commit to no behavioural end. `PrefsSaveTest` names no new API, so it red-checks the
+ordinary way, and two of its four tests fail against the current base.
 
 ### A smaller trap, worth knowing
 
