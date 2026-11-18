@@ -206,7 +206,11 @@ violation whose offending thread had returned long before the trace was taken; a
 [vassal-trailing-backslash-state.md](vassal-trailing-backslash-state.md) a seventh, which inverts
 the lesson -- there all four frames are accurate, VASSAL's own, and name the fault exactly, and
 sixteen reports of it still went ungrouped for two and a half years, because the *message* embeds
-the whole type string of a trait and so no two of them share a title.)
+the whole type string of a trait and so no two of them share a title; and
+[vassal-multi-piece-editor-drift.md](vassal-multi-piece-editor-drift.md) an eighth, where the
+first VASSAL frame is accurate but is `SequenceEncoder`, which is called from everywhere, so the
+seven reports it groups are three unrelated faults and the *second* frame is what tells them
+apart.)
 Only the attached log distinguishes one report from another. The two other open
 `StringIndexOutOfBoundsException` reports whose logs could be checked, #12471 and #13411, have no
 `DependencyWalker` frame in them and are something else; beyond that, any duplicate of this bug
