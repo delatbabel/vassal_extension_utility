@@ -30,7 +30,7 @@ Every open ABR carrying `Tiling failed with return value` was fetched and classi
 |---:|---|---|
 | **16** | `ClassNotFoundException: VASSAL.tools.image.tilecache.ZipFileImageTiler` — the tiler never ran | wrong |
 | **13** | a genuine `OutOfMemoryError` inside the tiler | right |
-| **1** | [#14193](https://github.com/vassalengine/vassal/issues/14193): a module path containing `æ` reaching the child as `?` | wrong, and a different bug |
+| **1** | [#14193](https://github.com/vassalengine/vassal/issues/14193): a module path containing `æ` reaching the child as `?` | wrong, and a different bug -- see [vassal-ansi-arg-mangling.md](vassal-ansi-arg-mangling.md) |
 
 A classifier that keys on the English `Caused by:` finds only ten of the sixteen. The other six
 logs are Italian (`Causato da:`) or Chinese, and in the Chinese ones the prefix arrives as

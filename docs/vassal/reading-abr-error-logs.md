@@ -48,6 +48,14 @@ Beyond the full stack, the surrounding lines usually settle questions the report
 - **`TilingHandler` lines** — `No images to tile` versus a tiling run, which matters for anything touching the image pipeline.
 - **Earlier warnings** that did not crash anything, such as `Source: (No Image) Error: Image not found`.
 - **Timestamps.** The gap between loading the module and the failure tells you whether it happened during load or minutes later in play. In #15298 it was 43 seconds after load, during a repaint, which ruled out the load path.
+- **The parent's own log lines, set beside the child's.** When VASSAL launches a subprocess it
+  logs the command line first, and the subprocess logs its own failure afterwards. Comparing the
+  two character by character is what found
+  [#14193](https://github.com/vassalengine/vassal/issues/14193): the parent logged
+  `La Bataille d'Auerstædt`, the child reported `La Bataille d'Auerst?dt`, and the one changed
+  character is the entire bug. No encoding fault is ever visible in the issue body, because the
+  body quotes the *parent's* exception, which is about the child's exit code. See
+  [vassal-ansi-arg-mangling.md](vassal-ansi-arg-mangling.md).
 
 Treat everything in the log as the reporter's own data: it carries their file paths and Windows user name.
 
