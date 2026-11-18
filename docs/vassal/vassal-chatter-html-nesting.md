@@ -172,6 +172,38 @@ Chatter does leaves the depth unchanged as N grows. The test first asserts that 
 wrapper does deepen the document, so it cannot quietly stop meaning anything if Swing's fragment
 handling ever changes.
 
+### Review: the head element has to go whole
+
+Stripping `<head>` and `</head>` and leaving what sat between them was wrong, as uckelman pointed
+out in review, and not merely untidy. The head's contents are not all invisible. Swing's
+`HTMLDocument.HTMLReader` discards the text of a `<title>`, but the body of a `<style>` is
+inserted as ordinary text, so
+
+```html
+<html><head><style>b{color:red}</style></head><body>* A unit moved to 1204</body></html>
+```
+
+printed `b{color:red}* A unit moved to 1204` in the chat window. Verified by inserting the
+fragment into a real `JTextPane` and reading back `doc.getText`.
+
+So the head element is matched whole, contents and all, before the remaining structure tags are
+stripped:
+
+```java
+  private static final Pattern HEAD_ELEMENT =
+    Pattern.compile("<head\\b[^>]*>.*?</head\\b[^>]*>",
+                    Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+```
+
+Non-greedy and `DOTALL`, so a head spanning several lines goes; `\b` keeps `<header>` out of it;
+and the second pass still catches an unpaired `<head>` or `</head>`, which has no contents to take
+with it but must not reach the document either.
+
+One behaviour change falls out of this and is worth stating rather than discovering later: a
+`<style>` in a message's head is now **dropped**, where Swing would previously have registered it
+into the pane's shared stylesheet — affecting every later message, not just the one carrying it.
+Dropping it is the better of the two, but it is not a no-op.
+
 ## A second issue, same cause
 
 [#13117](https://github.com/vassalengine/vassal/issues/13117) (*[Star Trek The Dice Game]

@@ -107,12 +107,42 @@ only the one that was reported.
 The conversion becomes one `Prefs.loadProperties`, used by all three callers, with its own
 exception type so a corrupted file can be distinguished from a disk error.
 
-- **`ReadOnlyPrefs`** logs it and carries on. Everything it offers has a default, and whichever
-  `Prefs` goes on to read the same file for real reports the problem — so a second dialog in
-  front of the same user adds nothing.
+- **`ReadOnlyPrefs`** lets it fall through to the `catch (IOException)` the class already had,
+  which reports it with `ReadErrorDialog.error` exactly as any other unreadable preferences file
+  is reported. See [below](#review-silence-was-the-wrong-default) — the first version of this
+  logged it and said nothing.
 - **`Prefs.save`** keeps a copy of the unreadable file as `<name>.corrupted` and writes a
   readable one in its place. Discarding a file nobody could parse without keeping it would be
   the wrong kind of robustness.
+
+### Review: silence was the wrong default
+
+`ReadOnlyPrefs` originally logged the `CorruptedException` and carried on without a dialog, on
+the reasoning that everything it offers has a default and that whichever `Prefs` went on to read
+the same file for real would report the problem anyway. uckelman asked the obvious question in
+review — *how will the user know there was a problem?* — and the reasoning does not survive it.
+
+It holds for `V_Global`, which a full `Prefs` does read. It does not hold for a module's
+preferences: `AbstractLaunchAction` reads those through `ReadOnlyPrefs` on its own, to find the
+heap size, and the `Prefs` for that module is built later, inside the child process. So there was
+a real case where nobody was told at all.
+
+And even where the reasoning did hold, it was answering the wrong question. A user whose
+preferences have gone back to their defaults should not have to work out why by noticing.
+
+Two things were worth checking before making it a dialog, since this runs before any window
+exists:
+
+- **It cannot produce a run of dialogs.** `ReadOnlyPrefs` has exactly two call sites —
+  `StartUp.initUIProperties` and `AbstractLaunchAction` — and neither is in a loop. Had it been
+  constructed once per module in a list, a dialog would have been the wrong answer.
+- **It cannot deadlock start-up.** `ReadErrorDialog.error` reaches `DialogUtils.enqueue`, which
+  submits to an executor rather than showing anything inline, so nothing blocks inside the
+  `SwingUtilities.invokeAndWait` that `initUIProperties` runs in.
+
+The general lesson is the one the review supplies: *degrading gracefully* and *saying nothing*
+are different things, and it is easy to reach for the second while believing you have done the
+first. The test now asserts the report, not just the survival.
 
 ## Red-checking a fix that adds API
 
