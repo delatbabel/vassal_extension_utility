@@ -198,7 +198,11 @@ the module's own compiled code rather than to VASSAL, and
 [vassal-apply-on-move-recursion.md](vassal-apply-on-move-recursion.md) a fourth, where five reports
 of one bug quote five disjoint sets of frames and no two of them can be found by the same search;
 [vassal-room-list-concurrency.md](vassal-room-list-concurrency.md) a fifth, where all four quoted
-frames are the JDK's own bounds checking and name neither the fault nor the subsystem it is in.)
+frames are the JDK's own bounds checking and name neither the fault nor the subsystem it is in;
+and [vassal-module-manager-edt.md](vassal-module-manager-edt.md) a sixth and most extreme, where
+all four belong to a third-party widget and none to VASSAL at all — five maintainers closed
+reports on that basis, when the absence was itself the signature of the fault, a threading
+violation whose offending thread had returned long before the trace was taken.)
 Only the attached log distinguishes one report from another. The two other open
 `StringIndexOutOfBoundsException` reports whose logs could be checked, #12471 and #13411, have no
 `DependencyWalker` frame in them and are something else; beyond that, any duplicate of this bug
