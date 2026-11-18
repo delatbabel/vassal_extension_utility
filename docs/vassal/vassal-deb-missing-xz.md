@@ -140,7 +140,11 @@ rough order of value:
 
 - **Say so in the release notes and in `debian/README.Debian`** — that 3.8.0 adds a dependency
   on `libxz-java`, and that a downloaded `.deb` should be installed with `apt install ./…`.
-  Neither `CHANGES` nor `README.Debian` currently mentions it.
+  Neither `CHANGES` nor `README.Debian` mentioned it. **Done:**
+  [#15361](https://github.com/vassalengine/vassal/pull/15361) adds that section to
+  `README.Debian`, which is installed as `/usr/share/doc/vassal/README.Debian`; it quotes the
+  `NoClassDefFoundError` verbatim so the next person can find it by searching for the error
+  text, and gives `apt --fix-broken install` for an installation already in that state.
 - **Fail legibly.** A check at launch for the classes the engine cannot run without, reporting
   "the XZ for Java library is missing — install libxz-java" instead of letting it surface as a
   `NoClassDefFoundError`, would turn a bug report into a one-line fix by the user.
