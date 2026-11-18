@@ -182,7 +182,10 @@ Two facts shape that fix and are worth recording here, because both are counter-
   `setlocale(LC_ALL, "")` fail as a whole, which defeats a per-category `LC_CTYPE` — even though
   `locale charmap` then cheerfully reports UTF-8, so `charmap` alone is not a sufficient test.
 
-That work lives on branch `fix/15314-filename-encoding-locale` and is a separate change.
+That work is [#15319](https://github.com/vassalengine/vassal/pull/15319), a separate change on
+branch `fix/15314-filename-encoding-locale`. Note that it names only #15314, #15241 and #15240
+as fixed — the other four open reports above carry the same `sun.jnu.encoding` cause and are
+worth linking to it.
 
 ## Tests
 
