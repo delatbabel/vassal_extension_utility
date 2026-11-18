@@ -223,15 +223,30 @@ against the old one.)
 
 Three things made this testable at all, none of them obvious beforehand:
 
-- **The dialog runs headless.** `PieceDefiner extends JPanel`, and a `JPanel` is not a `Window`,
-  so nothing in building or driving it needs a display. Only `edit()` on the *visible* definer
-  opens a `Dialog`, and these tests never call it. CI has no X display and no `xvfb`, so this is
-  the difference between a test and no test.
+- **The dialog does *not* run headless, and finding that out cost a red CI run.** It looked as
+  though it would: `PieceDefiner extends JPanel`, a `JPanel` is not a `Window`, and only
+  `edit()` on the visible definer opens a `Dialog`, which these tests never call. But
+  `initComponents` calls `JList.setDragEnabled(true)` and, through `getCtrlKeyName`,
+  `Toolkit.getMenuShortcutKeyMaskEx()`, and both throw `HeadlessException` outright. CI has no
+  X display and no `xvfb`, so a second commit guards both — in the idiom the codebase already
+  uses for precisely this, three times over (`StringConfigurer`, `TextConfigurer` and
+  `BeanShellExpressionConfigurer` all wrap `setDragEnabled(true)` the same way, and
+  `SwingUtils.getScreenSize()`'s javadoc gives the reason in as many words: *"some tests can
+  force some parts of the gui to try and initialise"*).
+- **The local headless check was a false negative, which is the part worth remembering.**
+  Running the tests with `-Djava.awt.headless=true` passed, so the question looked settled.
+  It passed because `vassal-app/pom.xml` sets surefire's `<argLine>` itself, and a
+  command-line `-DargLine` does not reach the forked JVM through it. The faithful
+  reproduction is `env -u DISPLAY -u WAYLAND_DISPLAY ./mvnw …` — reproduce the *environment*,
+  not the flag you think encodes it.
 - **A stubbed `GameModule` is enough**, but it needs five things, each discovered by running
   into it: `getPrefs()` (an `Integer` for the trait-list split), `getResourcePathFinder()` and
   `getDataArchive()` (the available-traits list instantiates every trait, and a few load icons),
   and both `createPiece` overloads answered by a real `BasicCommandEncoder` — without which
-  `PieceCloner` returns a chain whose innermost piece is `null`.
+  `PieceCloner` returns a chain whose innermost piece is `null`. The archive has to answer with
+  a *real* image, even a 1×1 PNG: a name it cannot open is reported through `ErrorDialog`, which
+  then tries to open a dialog on the event thread and prints a second headless stack trace that
+  has nothing to do with the test.
 - **Assert through `save()` and the slots, not the internals.** `MassPieceDefiner.save()` writes
   each definer's piece back into its `PieceSlot`, so comparing each slot's trait list with the
   visible definer's tests the invariant on the thing that actually reaches the module.
