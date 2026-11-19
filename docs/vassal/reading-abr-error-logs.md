@@ -46,7 +46,14 @@ Beyond the full stack, the surrounding lines usually settle questions the report
 - **OS, Java and VASSAL versions**, and whether the bundled JRE is in use (`Java home C:\Program Files\VASSAL-3.8.0\jre`).
 - **Which module and version**, and the path it was loaded from — often a different module from the one named in the issue title, because the log covers the whole session.
 - **`TilingHandler` lines** — `No images to tile` versus a tiling run, which matters for anything touching the image pipeline.
-- **Earlier warnings** that did not crash anything, such as `Source: (No Image) Error: Image not found`.
+- **Earlier warnings**, which have usually crashed nothing — `Source: (No Image) Error: Image not
+  found` is routine — but are occasionally the whole trigger. In
+  [#15368](https://github.com/vassalengine/vassal/issues/15368) the four quoted frames name the
+  fault exactly, and the two lines immediately *above* the trace are what say why the module would
+  not open: an `Image not found` warning naming the die face, then `Builder - Error building
+  VASSAL.build.module.AnimatedDiceButton`, which is the component build rethrowing. Read upwards
+  from the trace as well as downwards. See
+  [vassal-animated-dice-missing-image.md](vassal-animated-dice-missing-image.md).
 - **Timestamps.** The gap between loading the module and the failure tells you whether it happened during load or minutes later in play. In #15298 it was 43 seconds after load, during a repaint, which ruled out the load path.
 - **The parent's own log lines, set beside the child's.** When VASSAL launches a subprocess it
   logs the command line first, and the subprocess logs its own failure afterwards. Comparing the
