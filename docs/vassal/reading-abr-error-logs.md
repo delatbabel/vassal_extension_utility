@@ -126,6 +126,13 @@ Likewise all 11 on `StartUp.initUIProperties` are one fault
 was unanimous. When a bucket is large, group it again on the exception message, then on the
 `Caused by` class from the logs.
 
+**A bucket can also be one message covering many faults — then only the logs separate them.**
+The inverse of the case above: twenty-two reports share the message `failed to load class <X>`,
+and they are at least eight unrelated faults, grouped by the one thing none of them is, because
+the message blames the class named by an XML tag for anything that goes wrong anywhere beneath it
+([vassal-builder-load-vs-build.md](vassal-builder-load-vs-build.md)). No amount of regrouping on
+the body helps; every one of them has to be read from its attached log.
+
 **Group on the exception class, never the English around it.** Six of those 16 tiling logs are
 Italian (`Causato da:`) or Chinese, and in the Chinese ones the prefix is mojibake. A classifier
 keying on `Caused by:` silently loses a third of the family.
