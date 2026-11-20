@@ -115,7 +115,16 @@ Wrap the build and route a failure to the report the branch above already uses:
 The slot ends in exactly the state the sibling branch leaves it in — empty, definition dropped, no
 retry — so the module opens with one piece missing and a Bad Data message naming it.
 
-Two choices worth recording:
+Three choices worth recording:
+
+- **Only the two statements which read the definition are guarded** — `decode()`, which builds the
+  piece from the type string, and `setState()`, which reads the state. Review asked for this
+  narrowing and it is worth more than tidiness: detaching the piece from its map and centring it
+  in the slot's panel cannot fail on bad module data, so an exception from either would be a bug
+  in VASSAL, and the wider block would have reported it as bad data in the module and sent the
+  user looking in the wrong place. `decode()` stays in because it is the same failure one string
+  earlier — `FreeRotator.mySetType()` sizes an array from a parsed token, so a malformed type
+  throws there and means exactly the same thing.
 
 - **The exception becomes the report's cause.** The aim is to stop it killing the launch, not to
   hide it; the error log still names what happened.
